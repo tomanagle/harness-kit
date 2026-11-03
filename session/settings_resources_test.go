@@ -95,7 +95,7 @@ func TestUnifiedSettingsAtomicRevisionAndStartupDefaults(t *testing.T) {
 func TestUnifiedSessionAndTurnSettings(t *testing.T) {
 	ctx := context.Background()
 	m := newManager(t, session.Options{})
-	info := create(t, m, agent.SessionConfig{Model: "base", Effort: "low", Cwd: "/tmp"})
+	info := create(t, m, agent.SessionConfig{Model: "base", Effort: "low", Cwd: t.TempDir()})
 	scope := settings.Target{SessionID: info.ID}
 	before, _ := m.Settings(ctx, scope)
 	updated, err := m.ConfigureSettings(ctx, settings.ConfigureParams{Target: scope, ExpectedRevision: &before.Revision, Patch: resourcePatch(t, `{"session":{"model":"session","effort":"high"},"memory":{"pinned":true}}`)})
@@ -105,7 +105,11 @@ func TestUnifiedSessionAndTurnSettings(t *testing.T) {
 	if _, err := m.ConfigureSettings(ctx, settings.ConfigureParams{Target: scope, ExpectedRevision: &before.Revision, Patch: resourcePatch(t, `{"session":{"model":"stale"}}`)}); !errors.Is(err, settings.ErrConflict) {
 		t.Fatalf("scoped stale update: %v", err)
 	}
-	if _, err := m.ConfigureSettings(ctx, settings.ConfigureParams{Target: scope, Patch: resourcePatch(t, `{"session":{"cwd":"/different","model":"bad"}}`)}); !errors.Is(err, settings.ErrNewSessionRequired) {
+	immutable, err := json.Marshal(map[string]string{"cwd": t.TempDir(), "model": "bad"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ConfigureSettings(ctx, settings.ConfigureParams{Target: scope, Patch: settings.Patch{"session": immutable}}); !errors.Is(err, settings.ErrNewSessionRequired) {
 		t.Fatalf("immutable: %v", err)
 	}
 	evs := []event.Event{}

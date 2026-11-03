@@ -89,7 +89,7 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("discover: %+v %v", disc, err)
 	}
 
-	sess, err := h.c.CreateSession(ctx, protocol.SessionCreateParams{Runtime: "fake", Cwd: "/tmp", Metadata: map[string]string{"app": "test"}})
+	sess, err := h.c.CreateSession(ctx, protocol.SessionCreateParams{Runtime: "fake", Cwd: t.TempDir(), Metadata: map[string]string{"app": "test"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,11 +298,15 @@ func TestSessionsOverRPC(t *testing.T) {
 	ctx := context.Background()
 	var ce *client.Error
 
-	sess, _ := h.c.CreateSession(ctx, protocol.SessionCreateParams{Runtime: "fake", Cwd: "/tmp"})
+	cwd := t.TempDir()
+	sess, err := h.c.CreateSession(ctx, protocol.SessionCreateParams{Runtime: "fake", Cwd: cwd})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := h.c.RestoreSession(ctx, sess.ID); err != nil {
 		t.Fatalf("restore live session: %v", err)
 	}
-	native, err := h.c.RuntimeSessions(ctx, protocol.RuntimeSessionsParams{Runtime: "fake", Cwd: "/tmp"})
+	native, err := h.c.RuntimeSessions(ctx, protocol.RuntimeSessionsParams{Runtime: "fake", Cwd: cwd})
 	if err != nil || len(native) != 1 || native[0].ID != sess.RuntimeSessionID {
 		t.Fatalf("runtime.sessions: %+v %v", native, err)
 	}

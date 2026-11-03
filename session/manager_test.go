@@ -59,7 +59,7 @@ func types(evs []event.Event) []event.Type {
 
 func TestSessionLifecycle(t *testing.T) {
 	m := newManager(t, session.Options{})
-	info := create(t, m, agent.SessionConfig{Cwd: "/tmp"})
+	info := create(t, m, agent.SessionConfig{Cwd: t.TempDir()})
 	if info.State != session.StateIdle || info.RuntimeSessionID == "" || info.Metadata["k"] != "v" || !strings.HasPrefix(info.ID, "ses_") {
 		t.Fatalf("info: %+v", info)
 	}

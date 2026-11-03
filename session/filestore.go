@@ -192,7 +192,9 @@ func (s *FileStore) AppendEvent(ctx context.Context, ev event.Event) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(s.eventPath(ev.SessionID), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o600)
+	// Windows append-only handles cannot truncate an interrupted final record.
+	// One writer per session is required; our mutex serializes repair and seek.
+	f, err := os.OpenFile(s.eventPath(ev.SessionID), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
 	}
@@ -215,6 +217,9 @@ func (s *FileStore) AppendEvent(ctx context.Context, ev event.Event) error {
 		if err := f.Truncate(state.size); err != nil {
 			return err
 		}
+	}
+	if _, err := f.Seek(state.size, io.SeekStart); err != nil {
+		return err
 	}
 	b = append(b, '\n')
 	n, err := f.Write(b)

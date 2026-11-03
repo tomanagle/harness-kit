@@ -3,6 +3,7 @@ package mcp
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -163,7 +164,12 @@ func TestSaveFileStripsSource(t *testing.T) {
 	if err != nil || strings.Contains(string(b), "source") {
 		t.Fatalf("%s %v", b, err)
 	}
-	if fi, _ := os.Stat(p); fi.Mode().Perm()&0o077 != 0 {
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Windows ACLs, rather than Unix mode bits, govern access there.
+	if runtime.GOOS != "windows" && fi.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("mode %v", fi.Mode().Perm())
 	}
 }
