@@ -1,0 +1,126 @@
+name: Publish npm
+
+on:
+  push:
+    tags: ["npm-v*"]
+  workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: "Use NPM_TOKEN for the first publish, before npm trusted publishing is configured"
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages/client-ts
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      # OIDC publishing requires npm >= 11.5.1. Keep the CLI independent
+      # of the npm version bundled with the selected Node release.
+      - name: Install npm with trusted publishing support
+        run: npm install --global npm@11
+      - name: Check package identity and release version
+        id: release
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+          assert.equal(pkg.name, '@harness-kit/kit');
+          assert.equal(pkg.private, undefined);
+          assert.equal(lock.name, pkg.name);
+          assert.equal(lock.version, pkg.version);
+          assert.equal(lock.packages[''].name, pkg.name);
+          assert.equal(lock.packages[''].version, pkg.version);
+          assert.match(pkg.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
+          if (process.env.GITHUB_REF_TYPE === 'tag') {
+            assert.equal(process.env.GITHUB_REF_NAME, `npm-v${pkg.version}`, 'tag must match package.json');
+          }
+          const tag = pkg.version.includes('-') ? 'next' : 'latest';
+          appendFileSync(process.env.GITHUB_OUTPUT, `tag=${tag}\n`);
+          NODE
+      - run: npm ci
+      - run: npm run typecheck
+      # These integration tests build and exercise the Go sidecar too.
+      - run: npm test
+      - run: npm run build
+      - name: Pack the exact artifact to publish
+        id: pack
+        run: |
+          npm pack --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/npm-pack.json"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const [pkg] = JSON.parse(readFileSync(join(process.env.RUNNER_TEMP, 'npm-pack.json'), 'utf8'));
+          const files = new Set(pkg.files.map(file => file.path));
+          for (const file of ['dist/index.js', 'dist/index.d.ts', 'dist/node.js', 'dist/node.d.ts', 'README.md', 'LICENSE']) {
+            assert.ok(files.has(file), `package is missing ${file}`);
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `tarball=${join(process.env.RUNNER_TEMP, pkg.filename)}\n`);
+          NODE
+      - name: Smoke test the packed package
+        env:
+          PACKAGE_TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: |
+          smoke_dir=$(mktemp -d)
+          cd "$smoke_dir"
+          npm init -y > /dev/null
+          npm install --ignore-scripts --no-audit --no-fund "$PACKAGE_TARBALL"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { createHarnessKit } from '@harness-kit/kit';
+          import { stdio } from '@harness-kit/kit/node';
+          assert.equal(typeof createHarnessKit, 'function');
+          assert.equal(typeof stdio, 'function');
+          NODE
+      - name: Save the publish artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: ${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+      - name: Publish with npm trusted publishing
+        if: ${{ !inputs.bootstrap }}
+        env:
+          PACKAGE_TARBALL: ${{ steps.pack.outputs.tarball }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: npm publish "$PACKAGE_TARBALL" --access public --provenance --tag "$RELEASE_TAG"
+      - name: Bootstrap the first publish with NPM_TOKEN
+        if: ${{ inputs.bootstrap }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PACKAGE_TARBALL: ${{ steps.pack.outputs.tarball }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo '::error::Add the NPM_TOKEN repository secret before using bootstrap mode.'
+            exit 1
+          fi
+          npm publish "$PACKAGE_TARBALL" --access public --provenance --tag "$RELEASE_TAG"

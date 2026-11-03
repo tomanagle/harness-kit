@@ -1,0 +1,10 @@
+/bin/
+/dist/
+node_modules/
+packages/client-ts/dist/
+*.test
+coverage.out
+.DS_Store
+examples/wails/frontend/dist/*
+!examples/wails/frontend/dist/.gitkeep
+examples/electron/node_modules/

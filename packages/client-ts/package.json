@@ -1,0 +1,46 @@
+{
+  "name": "@harness-kit/kit",
+  "version": "0.1.0",
+  "description": "TypeScript client for the Harness Kit sidecar (JSON-RPC over stdio).",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tomanagle/harness-kit.git",
+    "directory": "packages/client-ts"
+  },
+  "homepage": "https://github.com/tomanagle/harness-kit#readme",
+  "bugs": {
+    "url": "https://github.com/tomanagle/harness-kit/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  }
+}

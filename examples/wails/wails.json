@@ -1,0 +1,9 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "harness-kit-wails-example",
+  "outputfilename": "harness-kit-wails-example",
+  "frontend:dir": "frontend",
+  "frontend:install": "",
+  "frontend:build": "",
+  "author": { "name": "Harness Kit" }
+}
