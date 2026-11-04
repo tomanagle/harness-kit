@@ -3,10 +3,13 @@ package session_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +18,144 @@ import (
 	"github.com/tomanagle/harness-kit/core/runtimes/fake"
 	"github.com/tomanagle/harness-kit/core/session"
 )
+
+func TestFileStoreConcurrentRecordReadsAndReplacements(t *testing.T) {
+	ctx := context.Background()
+	store, err := session.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := func(version int) session.Record {
+		value := strconv.Itoa(version)
+		return session.Record{
+			Info:   session.Info{ID: "ses_atomic", Turns: version, Title: value, Metadata: map[string]string{"version": value, "payload": strings.Repeat(value+"/", 8192)}},
+			Config: agent.SessionConfig{Model: value},
+		}
+	}
+	if err := store.Put(ctx, record(0)); err != nil {
+		t.Fatal(err)
+	}
+	check := func(rec session.Record) error {
+		expected := strconv.Itoa(rec.Info.Turns)
+		if rec.Info.ID != "ses_atomic" || rec.Info.Title != expected || rec.Config.Model != expected || rec.Info.Metadata["version"] != expected || rec.Info.Metadata["payload"] != strings.Repeat(expected+"/", 8192) {
+			return fmt.Errorf("inconsistent record for version %d", rec.Info.Turns)
+		}
+		return nil
+	}
+	start := make(chan struct{})
+	failures := make(chan error, 5)
+	var workers sync.WaitGroup
+	workers.Add(5)
+	go func() {
+		defer workers.Done()
+		<-start
+		for version := 1; version <= 100; version++ {
+			if err := store.Put(ctx, record(version)); err != nil {
+				failures <- fmt.Errorf("replace: %w", err)
+				return
+			}
+		}
+	}()
+	for reader := range 4 {
+		go func() {
+			defer workers.Done()
+			<-start
+			for range 200 {
+				var rec session.Record
+				var err error
+				if reader%2 == 0 {
+					rec, err = store.Get(ctx, "ses_atomic")
+				} else {
+					var records []session.Record
+					records, err = store.List(ctx)
+					if err == nil && len(records) != 1 {
+						err = fmt.Errorf("List omitted the existing record: got %d", len(records))
+					}
+					if err == nil {
+						rec = records[0]
+					}
+				}
+				if err == nil {
+					err = check(rec)
+				}
+				if err != nil {
+					failures <- fmt.Errorf("reader %d: %w", reader, err)
+					return
+				}
+			}
+		}()
+	}
+	close(start)
+	done := make(chan struct{})
+	go func() { workers.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("concurrent record operations did not finish")
+	}
+	close(failures)
+	for err := range failures {
+		t.Error(err)
+	}
+}
+
+func TestFileStoreRecordDeletionAndEventReadsShareLockOrder(t *testing.T) {
+	ctx := context.Background()
+	store, err := session.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := session.Record{Info: session.Info{ID: "ses_lock_order"}}
+	if err := store.Put(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	failures := make(chan error, 2)
+	var workers sync.WaitGroup
+	workers.Add(2)
+	go func() {
+		defer workers.Done()
+		<-start
+		for range 100 {
+			if err := store.Delete(ctx, record.Info.ID); err != nil {
+				failures <- err
+				return
+			}
+			if err := store.Put(ctx, record); err != nil {
+				failures <- err
+				return
+			}
+		}
+	}()
+	go func() {
+		defer workers.Done()
+		<-start
+		for range 200 {
+			_, _, err := store.Events(ctx, record.Info.ID, 0, 1)
+			if err != nil && !errors.Is(err, session.ErrNotFound) {
+				failures <- err
+				return
+			}
+			_, err = store.EventsPage(ctx, record.Info.ID, 0, 1, nil)
+			if err != nil && !errors.Is(err, session.ErrNotFound) {
+				failures <- err
+				return
+			}
+		}
+	}()
+	close(start)
+	done := make(chan struct{})
+	go func() { workers.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("record/transcript lock order deadlocked")
+	}
+	close(failures)
+	for err := range failures {
+		t.Error(err)
+	}
+}
 
 func TestFileStore(t *testing.T) {
 	ctx := context.Background()

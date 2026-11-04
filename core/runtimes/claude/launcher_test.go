@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -61,10 +63,17 @@ func TestInjectedLauncherHandlesProbesAndPrompt(t *testing.T) {
 	}
 }
 
+type virtualInputFiles struct{ fstest.MapFS }
+
+func (f virtualInputFiles) Open(name string) (fs.File, error) {
+	// InputFileOpener receives native paths; MapFS requires slash-separated names.
+	return f.MapFS.Open(filepath.ToSlash(name))
+}
+
 func TestInjectedImageFilesRetainSizeAndTypeChecks(t *testing.T) {
 	image := []byte("\x89PNG\r\n\x1a\n" + strings.Repeat("\x00", 64))
 	files := fstest.MapFS{"virtual/image.png": &fstest.MapFile{Data: image}, "virtual/text.png": &fstest.MapFile{Data: []byte("not an image")}}
-	runtime := New(WithInputFiles(files))
+	runtime := New(WithInputFiles(virtualInputFiles{files}))
 	input := []agent.InputPart{{Type: "image", Path: "image.png"}}
 	data, streaming, err := encodeInput(context.Background(), runtime.inputFiles, input, "virtual", nil)
 	if err != nil || !streaming || !strings.Contains(string(data), base64.StdEncoding.EncodeToString(image)) {

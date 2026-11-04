@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -67,10 +69,17 @@ func TestInjectedLauncherHandlesDiscoveryAndSession(t *testing.T) {
 	}
 }
 
+type virtualInputFiles struct{ fstest.MapFS }
+
+func (f virtualInputFiles) Open(name string) (fs.File, error) {
+	// InputFileOpener receives native paths; MapFS requires slash-separated names.
+	return f.MapFS.Open(filepath.ToSlash(name))
+}
+
 func TestInjectedImageFilesRetainSizeAndTypeChecks(t *testing.T) {
 	image := []byte("\x89PNG\r\n\x1a\n" + strings.Repeat("\x00", 64))
 	files := fstest.MapFS{"virtual/image.png": &fstest.MapFile{Data: image}, "virtual/text.png": &fstest.MapFile{Data: []byte("not an image")}}
-	runtime := New("virtual-agent", WithInputFiles(files))
+	runtime := New("virtual-agent", WithInputFiles(virtualInputFiles{files}))
 	session := &Session{rt: runtime, cwd: "virtual"}
 	session.init.AgentCapabilities.Prompt.Image = true
 	input := []agent.InputPart{{Type: "image", Path: "image.png"}}

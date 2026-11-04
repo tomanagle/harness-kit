@@ -28,6 +28,10 @@ type FileStore struct {
 	dir  string
 	mu   sync.Mutex
 	logs map[string]eventFileState
+	// Windows cannot reliably replace/delete a record while a reader has it
+	// open. Keep record handles separate from the transcript lock: event reads
+	// already hold mu when calling Get. When both are needed, lock mu first.
+	recordsMu sync.RWMutex
 }
 
 type eventFileState struct {
@@ -94,7 +98,10 @@ func (s *FileStore) Put(_ context.Context, rec Record) error {
 		os.Remove(tmp.Name())
 		return err
 	}
-	if err := os.Rename(tmp.Name(), p); err != nil {
+	s.recordsMu.Lock()
+	err = os.Rename(tmp.Name(), p)
+	s.recordsMu.Unlock()
+	if err != nil {
 		os.Remove(tmp.Name())
 		return err
 	}
@@ -107,7 +114,9 @@ func (s *FileStore) Get(_ context.Context, id string) (Record, error) {
 	if err != nil {
 		return Record{}, ErrNotFound
 	}
+	s.recordsMu.RLock()
 	b, err := os.ReadFile(p)
+	s.recordsMu.RUnlock()
 	if errors.Is(err, fs.ErrNotExist) {
 		return Record{}, ErrNotFound
 	}
@@ -158,6 +167,8 @@ func (s *FileStore) Delete(_ context.Context, id string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.recordsMu.Lock()
+	defer s.recordsMu.Unlock()
 	var errs []error
 	for _, name := range []string{p, s.eventPath(id)} {
 		if err := os.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
