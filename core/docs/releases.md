@@ -23,6 +23,7 @@ artifact yet, and applications can use the kit independently.
 | Go core and local sidecar | `github.com/tomanagle/harness-kit/core` | `core/v0.3.0` |
 | OpenAI SDK adapter | `github.com/tomanagle/harness-kit/core/providers/openai` | `core/providers/openai/v0.3.0` |
 | Anthropic SDK adapter | `github.com/tomanagle/harness-kit/core/providers/anthropic` | `core/providers/anthropic/v0.3.0` |
+| Go sidecar client | `github.com/tomanagle/harness-kit/packages/client-go` | `packages/client-go/v0.1.0` |
 | TypeScript client | `packages/client-ts`, npm `@tomanagle/harness-kit` | `npm-v0.3.0` |
 
 The new Go module paths have **not been tagged**. The tag names above describe
@@ -55,6 +56,16 @@ replacement, not a published version. Provider users need corresponding local
 replacements for the chosen `core/providers/...` module as well. Once the new
 modules are released, replace these local directives with their published versions.
 The npm import remains `@tomanagle/harness-kit`; no package rename is required.
+
+The standalone Go client has no core-module dependency. Until its first tag,
+use a local replacement for
+`github.com/tomanagle/harness-kit/packages/client-go` pointing to this checkout's
+`packages/client-go` directory; see its [README](../../packages/client-go/README.md).
+The existing `core/rpc/client` package remains available for compatibility.
+
+Before either client release, run `make generate`, commit the updated schema and
+generated clients, and run `make check-generated test-clients`. Consumers use the
+committed generated code; they do not run the generator at install time.
 
 ## First npm publish
 
@@ -147,6 +158,10 @@ update each provider module's core requirement to an available `core/v…` versi
 a local `replace` directive is not inherited by consumers. Provider tags are
 independent of core binary tags and use the full module subdirectory, for example
 `core/providers/openai/v0.3.0` and `core/providers/anthropic/v0.3.0`.
+
+The standalone Go client's tags use `packages/client-go/v…`; they do not trigger
+the sidecar binary workflow and can advance independently. No standalone Go
+client version has been tagged or published as part of adding generation.
 
 These are instructions for a future release; no new version was published as part
 of reorganizing the repository.

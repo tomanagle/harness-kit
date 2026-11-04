@@ -5,8 +5,10 @@
 // the sidecar from Node.js, use `stdio()` from "@tomanagle/harness-kit/node".
 
 import { JsonRpcConnection, type RequestOptions, type Transport } from "./rpc.ts";
+import { ProtocolClient } from "./methods.gen.ts";
 import {
   PROTOCOL_VERSION,
+  ErrorCodes,
   type ApprovalRequest,
   type CreateSessionParams,
   type ConfigPatch,
@@ -33,6 +35,7 @@ import {
 } from "./protocol.ts";
 
 export * from "./protocol.ts";
+export { ProtocolClient } from "./methods.gen.ts";
 export { ConnectionClosedError, HarnessKitError, JsonRpcConnection, LineDecoder, type Transport } from "./rpc.ts";
 
 export interface HarnessKitOptions {
@@ -86,6 +89,8 @@ export async function createHarnessKit(options: HarnessKitOptions): Promise<Harn
 
 /** A connected Harness Kit client. Create one with `createHarnessKit`. */
 export class HarnessKit {
+  /** Schema-generated methods, with the protocol's exact request and result shapes. */
+  readonly protocol: ProtocolClient;
   readonly #rpc: JsonRpcConnection;
   readonly #transport: Transport;
   readonly #listeners = new Set<EventListener>();
@@ -114,8 +119,9 @@ export class HarnessKit {
         }
       }
     });
+    this.protocol = new ProtocolClient((method, params, opts) => this.#rpc.request(method, params, opts));
     this.#rpc.setRequestHandler(async (method, params, signal) => {
-      if (method !== "tool.call") throw Object.assign(new Error("method not found: " + method), { code: -32601 });
+      if (method !== "tool.call") throw Object.assign(new Error("method not found: " + method), { code: ErrorCodes.MethodNotFound });
       const p = params as ToolCallParams;
       const def = this.#tools.get(p.name);
       if (!def) return toToolResult({ content: [{ type: "text", text: `tool ${p.name} is not registered` }], isError: true });
@@ -129,7 +135,7 @@ export class HarnessKit {
 
   /** @internal */
   async _initialize(clientInfo: { name: string; version?: string }): Promise<void> {
-    this.#server = await this.#rpc.request<InitializeResult>("initialize", { protocolVersion: PROTOCOL_VERSION, clientInfo });
+    this.#server = await this.protocol.initialize({ protocolVersion: PROTOCOL_VERSION, clientInfo });
   }
 
   /** The server's initialize result: version, runtimes and limits. */
@@ -171,9 +177,9 @@ export class HarnessKit {
 
   /** One settings surface for host policy, session defaults and scoped changes. */
   readonly settings = {
-    get: (target: SettingsTarget = {}): Promise<SettingsSnapshot> => this.request("settings.get", { target }),
+    get: (target: SettingsTarget = {}): Promise<SettingsSnapshot> => this.protocol.settingsGet({ target }),
     configure: async (params: ConfigureSettingsParams): Promise<SettingsSnapshot> => {
-      const snapshot = await this.request<SettingsSnapshot>("settings.configure", params);
+      const snapshot = await this.protocol.settingsConfigure(params);
       this.#settingsChanged(snapshot);
       return snapshot;
     },
@@ -183,51 +189,50 @@ export class HarnessKit {
       this.#settingsListeners.add(listener);
       return () => this.#settingsListeners.delete(listener);
     },
-    stats: (): Promise<ResourceStats> => this.request("settings.stats"),
+    stats: (): Promise<ResourceStats> => this.protocol.settingsStats(),
   };
 
   readonly runtimes = {
     /** Registered runtimes (no probing). */
-    list: async (): Promise<RuntimeInfo[]> => (await this.request<{ runtimes: RuntimeInfo[] }>("runtime.list")).runtimes,
+    list: async (): Promise<RuntimeInfo[]> => (await this.protocol.runtimeList()).runtimes,
     /** Probes installation, version and sign-in status. */
     discover: async (opts: { runtimes?: string[]; signal?: AbortSignal } = {}): Promise<Discovery[]> =>
-      (await this.request<{ runtimes: Discovery[] }>("runtime.discover", { runtimes: opts.runtimes }, { signal: opts.signal })).runtimes,
+      (await this.protocol.runtimeDiscover({ runtimes: opts.runtimes }, { signal: opts.signal })).runtimes,
     /**
      * Lists a runtime's own stored sessions, including ones started outside
      * Harness Kit, newest first. Fails with reason "unsupported" for
      * runtimes without `capabilities.listSessions`.
      */
     sessions: async (runtime: string, opts: { cwd?: string; limit?: number } = {}): Promise<RuntimeSession[]> =>
-      (await this.request<{ sessions: RuntimeSession[] }>("runtime.sessions", { runtime, ...opts })).sessions,
+      (await this.protocol.runtimeSessions({ runtime, ...opts })).sessions,
   };
 
   readonly sessions = {
 	/** Reads a saved turn-boundary diff without starting an agent or running Git. */
 	diff: (sessionId: string, turnId: string, options: { maxBytes?: number } = {}): Promise<import("./protocol.ts").WorkspaceDiff> =>
-	  this.request("session.diff", {sessionId, turnId, ...options}),
+	  this.protocol.sessionDiff({sessionId, turnId, ...options}),
 	/** Explicitly removes only a clean owned worktree; first close/suspend its runtime. */
-	removeWorkspace: (sessionId: string): Promise<void> => this.request("workspace.remove", {sessionId}),
+	removeWorkspace: async (sessionId: string): Promise<void> => { await this.protocol.workspaceRemove({sessionId}); },
     /** Starts a session (or resumes `resumeId`). */
     create: async (params: CreateSessionParams): Promise<Session> => {
-      const { session } = await this.request<{ session: SessionInfo }>("session.create", params);
+      const { session } = await this.protocol.sessionCreate(params);
       return new Session(this, session);
     },
     get: async (sessionId: string): Promise<SessionInfo> =>
-      (await this.request<{ session: SessionInfo }>("session.get", { sessionId })).session,
-    list: async (options: import("./protocol.js").ListSessionsOptions = {}): Promise<SessionInfo[]> => (await this.request<{ sessions: SessionInfo[] }>("session.list", options)).sessions,
+      (await this.protocol.sessionGet({ sessionId })).session,
+    list: async (options: import("./protocol.js").ListSessionsOptions = {}): Promise<SessionInfo[]> => (await this.protocol.sessionList(options)).sessions,
     /** Branches the whole conversation; forkPending means native materialization waits for the first prompt. */
     fork: async (sessionId: string, options: import("./protocol.js").ForkSessionOptions = {}): Promise<Session> => {
-      const {session} = await this.request<{session: SessionInfo}>("session.fork", {sessionId, ...options});
+      const {session} = await this.protocol.sessionFork({sessionId, ...options});
       return new Session(this, session);
     },
     archive: async (sessionId: string, archived = true): Promise<SessionInfo> =>
-      (await this.request<{session: SessionInfo}>("session.archive", {sessionId, archived})).session,
+      (await this.protocol.sessionArchive({sessionId, archived})).session,
     setTags: async (sessionId: string, tags: string[]): Promise<SessionInfo> =>
-      (await this.request<{session: SessionInfo}>("session.tags", {sessionId, tags})).session,
+      (await this.protocol.sessionTags({sessionId, tags})).session,
     /** Reads one bounded page without starting the runtime. Use nextSeq while hasMore. */
     eventsPage: async (sessionId: string, opts: { afterSeq?: number; limit?: number } = {}): Promise<EventPage> => {
-      const page = await this.request<Partial<EventPage> & { events: HarnessEvent[]; truncated: boolean }>(
-        "session.events", { sessionId, ...opts });
+      const page = await this.protocol.sessionEvents({ sessionId, ...opts });
       return { ...page, nextSeq: page.nextSeq ?? page.events.at(-1)?.seq ?? opts.afterSeq ?? 0, hasMore: page.hasMore ?? false };
     },
     /** Reads saved history in bounded RPC pages and collects it in the caller.
@@ -249,9 +254,9 @@ export class HarnessKit {
       return { events, truncated };
     },
     /** Releases cached transcript data while retaining durable history. */
-    evict: async (sessionId: string): Promise<void> => { await this.request("session.evict", { sessionId }); },
+    evict: async (sessionId: string): Promise<void> => { await this.protocol.sessionEvict({ sessionId }); },
     /** Stops an idle runtime; a subsequent restore can resume the conversation. */
-    suspend: async (sessionId: string): Promise<void> => { await this.request("session.suspend", { sessionId }); },
+    suspend: async (sessionId: string): Promise<void> => { await this.protocol.sessionSuspend({ sessionId }); },
     /** Convenience for the same setting available at settings.configure(memory.pinned). */
     pin: async (sessionId: string, pinned = true): Promise<SessionInfo> => {
       await this.settings.configure({ target: { sessionId }, patch: { memory: { pinned } } });
@@ -264,7 +269,7 @@ export class HarnessKit {
      * conversation (the sidecar needs `--store` for sessions from earlier runs).
      */
     restore: async (sessionId: string): Promise<Session> => {
-      const { session } = await this.request<{ session: SessionInfo }>("session.restore", { sessionId });
+      const { session } = await this.protocol.sessionRestore({ sessionId });
       return new Session(this, session);
     },
     /**
@@ -272,13 +277,13 @@ export class HarnessKit {
      * rejected). Works for stored sessions that aren't live.
      */
     rename: async (sessionId: string, title: string): Promise<SessionInfo> =>
-      (await this.request<{ session: SessionInfo }>("session.rename", { sessionId, title })).session,
+      (await this.protocol.sessionRename({ sessionId, title })).session,
     /** Compatibility helper. New settings UIs can use settings.configure with a session target. */
     configure: async (sessionId: string, config: ConfigPatch): Promise<SessionInfo> =>
-      (await this.request<{ session: SessionInfo }>("session.configure", { sessionId, config })).session,
+      (await this.protocol.sessionConfigure({ sessionId, config })).session,
     /** Closes a session if live and deletes its record and saved events. The runtime's transcript is kept. */
     delete: async (sessionId: string): Promise<void> => {
-      await this.request("session.delete", { sessionId });
+      await this.protocol.sessionDelete({ sessionId });
     },
   };
 
@@ -295,7 +300,7 @@ export class HarnessKit {
       }
       for (const d of list) this.#tools.set(d.name, d); // before the request, so an immediate call finds it
       try {
-        await this.request("tools.register", {
+        await this.protocol.toolsRegister({
           tools: list.map(({ handler: _handler, ...spec }) => spec),
         });
       } catch (e) {
@@ -304,11 +309,11 @@ export class HarnessKit {
       }
     },
     unregister: async (...names: string[]): Promise<void> => {
-      await this.request("tools.unregister", { names });
+      await this.protocol.toolsUnregister({ names });
       for (const n of names) this.#tools.delete(n);
     },
     /** Every tool registered on the server (by any client). */
-    list: async (): Promise<ToolSpec[]> => (await this.request<{ tools: ToolSpec[] }>("tools.list")).tools,
+    list: async (): Promise<ToolSpec[]> => (await this.protocol.toolsList()).tools,
   };
 
   readonly mcp = {
@@ -316,25 +321,25 @@ export class HarnessKit {
      * The kit MCP servers (user and project files; needs `serve --kit-mcp`)
      * and, for `runtimes`, the servers configured in each runtime itself.
      */
-    list: (opts: { cwd?: string; runtimes?: string[] } = {}): Promise<McpListResult> => this.request<McpListResult>("mcp.list", opts),
+    list: (opts: { cwd?: string; runtimes?: string[] } = {}): Promise<McpListResult> => this.protocol.mcpList(opts),
   };
 
   readonly approvals = {
     /** Answers an approval request. */
     respond: async (approvalId: string, decision: Outcome | Decision): Promise<void> => {
       const d = typeof decision === "string" ? { outcome: decision } : decision;
-      await this.request("approval.respond", { approvalId, ...d });
+      await this.protocol.approvalRespond({ approvalId, ...d });
     },
     /** Pending approvals (e.g. to rebuild a UI after reload). */
     list: async (sessionId?: string): Promise<ApprovalRequest[]> =>
-      (await this.request<{ approvals: ApprovalRequest[] }>("approval.list", { sessionId })).approvals,
+      (await this.protocol.approvalList({ sessionId })).approvals,
   };
 
   /** Shuts the server down (closing every session) and closes the transport. */
   async close(): Promise<void> {
     if (!this.#rpc.closed) {
       try {
-        await withTimeout(this.request("shutdown"), 10_000);
+        await withTimeout(this.protocol.shutdown(), 10_000);
       } catch {
         // already gone, or slow: close the transport regardless
       }
@@ -393,12 +398,12 @@ export class Session {
 
   /** Interrupts the active turn, if any. */
   async cancel(): Promise<void> {
-    await this.#kit.request("session.cancel", { sessionId: this.id });
+    await this.#kit.protocol.sessionCancel({ sessionId: this.id });
   }
 
   /** Closes the session and releases its runtime. */
   async close(): Promise<void> {
-    await this.#kit.request("session.close", { sessionId: this.id });
+    await this.#kit.protocol.sessionClose({ sessionId: this.id });
   }
 
   /** Fetches retained events with seq > afterSeq (for replay or gap recovery). */
@@ -455,18 +460,18 @@ export class Turn implements AsyncIterable<HarnessEvent> {
     this.#unsubscribeEvents = kit.onEvent((ev) => this.#ingest(ev));
     this.#unsubscribeClose = kit.onClose((err) => this.#fail(err ?? new Error("connection closed")));
 
-    const onAbort = () => void kit.request("session.cancel", { sessionId }).catch(() => {});
+    const onAbort = () => void kit.protocol.sessionCancel({ sessionId }).catch(() => {});
     if (signal) {
       if (signal.aborted) queueMicrotask(onAbort);
       else signal.addEventListener("abort", onAbort, { once: true });
       void this.done.finally(() => signal.removeEventListener("abort", onAbort)).catch(() => {});
     }
-    kit.request("session.prompt", { sessionId, turnId, input, config, settings }).catch((e) => this.#fail(e));
+    kit.protocol.sessionPrompt({ sessionId, turnId, input, config, settings }).catch((e) => this.#fail(e));
   }
 
   /** Interrupts this turn. */
-  cancel(): Promise<void> {
-    return this.#kit.request("session.cancel", { sessionId: this.sessionId });
+  async cancel(): Promise<void> {
+    await this.#kit.protocol.sessionCancel({ sessionId: this.sessionId });
   }
 
   #ingest(ev: HarnessEvent): void {

@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { createHarnessKit, HarnessKitError, LineDecoder, type HarnessEvent, type HarnessKit } from "../src/index.ts";
+import { createHarnessKit, ErrorCodes, HarnessKitError, LineDecoder, type HarnessEvent, type HarnessKit } from "../src/index.ts";
 import { stdio } from "../src/node.ts";
 
 const coreRoot = resolve(import.meta.dirname, "..", "..", "..", "core");
@@ -109,6 +109,38 @@ test("handshake, discovery and a streamed turn", async () => {
   } finally {
     await kit.close();
   }
+});
+
+test("generated methods use exact protocol results and generated error codes", async (t) => {
+  const kit = await connect();
+  t.after(() => kit.close());
+
+  const discovered = await kit.protocol.runtimeDiscover({ runtimes: ["fake"] });
+  assert.equal(discovered.runtimes[0]?.ready, true);
+  const { session } = await kit.protocol.sessionCreate({
+    settings: { session: { runtime: "fake" }, budget: { maxTurnTokens: 0 } },
+  });
+  const snapshot = await kit.protocol.settingsGet({ target: { sessionId: session.sessionId } });
+  assert.equal(snapshot.values.budget.maxTurnTokens, 0);
+  await assert.rejects(
+    kit.protocol.sessionPrompt({ sessionId: session.sessionId, input: [{ type: "text", text: "blocked" }] }),
+    (error: unknown) => error instanceof HarnessKitError && error.code === ErrorCodes.BudgetExceeded && error.reason === "budget_exceeded",
+  );
+
+  const updated = await kit.protocol.settingsConfigure({
+    target: { sessionId: session.sessionId },
+    patch: { budget: { maxTurnTokens: null }, memory: { pinned: false } },
+    expectedRevision: snapshot.revision,
+  });
+  assert.equal(updated.values.budget.maxTurnTokens, null);
+  assert.equal(updated.values.memory.pinned, false);
+
+  const handle = await kit.sessions.attach(session.sessionId);
+  assert.equal((await handle.prompt("generated client").done).status, "completed");
+  const page = await kit.protocol.sessionEventsPage({ sessionId: session.sessionId });
+  assert.ok(page.events.some(event => event.type === "turn.completed"));
+  const { session: renamed } = await kit.protocol.sessionRename({ sessionId: session.sessionId, title: "Generated client" });
+  assert.equal(renamed.title, "Generated client");
 });
 
 test("approvals pause the turn until the host responds", async () => {

@@ -1,0 +1,5 @@
+# Generated contracts are byte-checked on every platform.
+/protocol/schema.json text eol=lf
+/packages/client-ts/src/protocol.ts text eol=lf
+/packages/client-ts/src/methods.gen.ts text eol=lf
+/packages/client-go/*.gen.go text eol=lf

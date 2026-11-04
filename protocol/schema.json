@@ -1,0 +1,6362 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomanagle/harness-kit/blob/main/protocol/schema.json",
+  "description": "Harness Kit JSON-RPC wire contract. Generated from core Go types; run make generate. x-rpc-methods binds parameter and result schemas; x-event-payloads binds discriminators to payload schemas.",
+  "$defs": {
+    "AcpRuntimeSettings": {
+      "type": "object",
+      "description": "ACPRuntime configures a named external ACP agent. Process wiring applies at\nstartup; model and native session selections use the session settings group.\nOmitted limits use the adapter defaults. Set process.runtimes to select which\nconfigured agents are registered. The process.acp map is replaced as a whole.",
+      "properties": {
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Args",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "args,omitempty"
+        },
+        "cancelTimeoutMs": {
+          "type": "integer",
+          "x-go-name": "CancelTimeoutMs",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "cancelTimeoutMs,omitempty"
+        },
+        "command": {
+          "type": "string",
+          "x-go-name": "Command",
+          "x-go-type": "string",
+          "x-go-json-tag": "command"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Env",
+          "x-go-type": "map[string]string",
+          "x-go-json-tag": "env,omitempty"
+        },
+        "maxImageBytes": {
+          "type": "integer",
+          "x-go-name": "MaxImageBytes",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "maxImageBytes,omitempty"
+        },
+        "maxMessageBytes": {
+          "type": "integer",
+          "x-go-name": "MaxMessageBytes",
+          "x-go-type": "*int",
+          "x-go-json-tag": "maxMessageBytes,omitempty"
+        },
+        "maxRetainedOutputBytes": {
+          "type": "integer",
+          "x-go-name": "MaxRetainedOutputBytes",
+          "x-go-type": "*int",
+          "x-go-json-tag": "maxRetainedOutputBytes,omitempty"
+        },
+        "startTimeoutMs": {
+          "type": "integer",
+          "x-go-name": "StartTimeoutMs",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "startTimeoutMs,omitempty"
+        }
+      },
+      "required": [
+        "command"
+      ]
+    },
+    "ApprovalKind": {
+      "type": "string",
+      "description": "Kind classifies what an approval request is about.",
+      "enum": [
+        "command",
+        "file_change",
+        "network",
+        "other",
+        "permissions",
+        "tool"
+      ],
+      "x-go-type": "string"
+    },
+    "ApprovalListParams": {
+      "type": "object",
+      "description": "ApprovalListParams are the params of \"approval.list\".",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId,omitempty"
+        }
+      }
+    },
+    "ApprovalListResult": {
+      "type": "object",
+      "description": "ApprovalListResult is the result of \"approval.list\".",
+      "properties": {
+        "approvals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApprovalRequest",
+            "x-go-type": "ApprovalRequest"
+          },
+          "x-go-name": "Approvals",
+          "x-go-type": "[]ApprovalRequest",
+          "x-go-json-tag": "approvals"
+        }
+      },
+      "required": [
+        "approvals"
+      ]
+    },
+    "ApprovalRequest": {
+      "type": "object",
+      "description": "Request describes an action awaiting approval.",
+      "properties": {
+        "approvalId": {
+          "type": "string",
+          "x-go-name": "ID",
+          "x-go-type": "string",
+          "x-go-json-tag": "approvalId"
+        },
+        "command": {
+          "type": "string",
+          "x-go-name": "Command",
+          "x-go-type": "string",
+          "x-go-json-tag": "command,omitempty"
+        },
+        "cwd": {
+          "type": "string",
+          "x-go-name": "Cwd",
+          "x-go-type": "string",
+          "x-go-json-tag": "cwd,omitempty"
+        },
+        "input": {
+          "description": "Input is the raw, runtime-specific tool input.",
+          "x-go-name": "Input",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "input,omitempty"
+        },
+        "kind": {
+          "$ref": "#/$defs/ApprovalKind",
+          "x-go-name": "Kind",
+          "x-go-type": "ApprovalKind",
+          "x-go-json-tag": "kind"
+        },
+        "outcomes": {
+          "type": "array",
+          "description": "Outcomes lists the outcomes the runtime can honour. Empty means all.",
+          "items": {
+            "$ref": "#/$defs/Outcome",
+            "x-go-type": "Outcome"
+          },
+          "x-go-name": "Outcomes",
+          "x-go-type": "[]Outcome",
+          "x-go-json-tag": "outcomes,omitempty"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Paths",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "paths,omitempty"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Reason is the agent's explanation, when it gives one.",
+          "x-go-name": "Reason",
+          "x-go-type": "string",
+          "x-go-json-tag": "reason,omitempty"
+        },
+        "runtime": {
+          "type": "string",
+          "x-go-name": "Runtime",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtime,omitempty"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId,omitempty"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title is a one-line, human-readable summary suitable for a prompt.",
+          "x-go-name": "Title",
+          "x-go-type": "string",
+          "x-go-json-tag": "title"
+        },
+        "tool": {
+          "type": "string",
+          "description": "Tool is the runtime's name for the tool, e.g. \"Bash\" or \"commandExecution\".",
+          "x-go-name": "Tool",
+          "x-go-type": "string",
+          "x-go-json-tag": "tool,omitempty"
+        },
+        "turnId": {
+          "type": "string",
+          "x-go-name": "TurnID",
+          "x-go-type": "string",
+          "x-go-json-tag": "turnId,omitempty"
+        }
+      },
+      "required": [
+        "approvalId",
+        "kind",
+        "title"
+      ]
+    },
+    "ApprovalResolvedData": {
+      "type": "object",
+      "description": "ApprovalResolvedData is the payload of approval.resolved.",
+      "properties": {
+        "approvalId": {
+          "type": "string",
+          "x-go-name": "ApprovalID",
+          "x-go-type": "string",
+          "x-go-json-tag": "approvalId"
+        },
+        "decision": {
+          "$ref": "#/$defs/Decision",
+          "x-go-name": "Decision",
+          "x-go-type": "Decision",
+          "x-go-json-tag": "decision"
+        },
+        "request": {
+          "$ref": "#/$defs/ApprovalRequest",
+          "description": "Request is included when the request was decided without being\nannounced (Source == policy), so observers can audit it.",
+          "x-go-name": "Request",
+          "x-go-type": "*ApprovalRequest",
+          "x-go-json-tag": "request,omitempty"
+        },
+        "source": {
+          "$ref": "#/$defs/ApprovalSource",
+          "x-go-name": "Source",
+          "x-go-type": "ApprovalSource",
+          "x-go-json-tag": "source"
+        }
+      },
+      "required": [
+        "approvalId",
+        "decision",
+        "source"
+      ]
+    },
+    "ApprovalRespondParams": {
+      "type": "object",
+      "description": "ApprovalRespondParams are the params of \"approval.respond\".",
+      "properties": {
+        "approvalId": {
+          "type": "string",
+          "x-go-name": "ApprovalID",
+          "x-go-type": "string",
+          "x-go-json-tag": "approvalId"
+        },
+        "message": {
+          "type": "string",
+          "x-go-name": "Message",
+          "x-go-type": "string",
+          "x-go-json-tag": "message,omitempty"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome",
+          "x-go-name": "Outcome",
+          "x-go-type": "Outcome",
+          "x-go-json-tag": "outcome"
+        },
+        "updatedInput": {
+          "x-go-name": "UpdatedInput",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "updatedInput,omitempty"
+        }
+      },
+      "required": [
+        "approvalId",
+        "outcome"
+      ]
+    },
+    "ApprovalSettings": {
+      "type": "object",
+      "properties": {
+        "timeoutMs": {
+          "type": "integer",
+          "x-go-name": "TimeoutMs",
+          "x-go-type": "int64",
+          "x-go-json-tag": "timeoutMs"
+        }
+      },
+      "required": [
+        "timeoutMs"
+      ]
+    },
+    "ApprovalSettingsPatch": {
+      "type": "object",
+      "properties": {
+        "timeoutMs": {
+          "type": "integer",
+          "x-go-name": "TimeoutMs",
+          "x-go-type": "int64",
+          "x-go-json-tag": "timeoutMs"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
+    },
+    "ApprovalSource": {
+      "type": "string",
+      "description": "Source records who produced a decision.",
+      "enum": [
+        "cancelled",
+        "host",
+        "policy",
+        "timeout"
+      ],
+      "x-go-type": "string"
+    },
+    "AuthState": {
+      "type": "string",
+      "description": "AuthState is the authentication state reported by a runtime.",
+      "enum": [
+        "authenticated",
+        "unauthenticated",
+        "unknown"
+      ],
+      "x-go-type": "string"
+    },
+    "AuthStatus": {
+      "type": "object",
+      "description": "AuthStatus describes how a runtime is signed in. It deliberately omits\npersonal data such as email addresses.",
+      "properties": {
+        "method": {
+          "type": "string",
+          "description": "Method is the runtime's own name for the auth method, e.g.\n\"chatgpt\", \"apiKey\", \"claude.ai\", \"api_key\".",
+          "x-go-name": "Method",
+          "x-go-type": "string",
+          "x-go-json-tag": "method,omitempty"
+        },
+        "plan": {
+          "type": "string",
+          "description": "Plan is the subscription plan, when the runtime reports it.",
+          "x-go-name": "Plan",
+          "x-go-type": "string",
+          "x-go-json-tag": "plan,omitempty"
+        },
+        "state": {
+          "$ref": "#/$defs/AuthState",
+          "x-go-name": "State",
+          "x-go-type": "AuthState",
+          "x-go-json-tag": "state"
+        }
+      },
+      "required": [
+        "state"
+      ]
+    },
+    "BudgetExceeded": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "number",
+          "x-go-name": "Limit",
+          "x-go-type": "float64",
+          "x-go-json-tag": "limit"
+        },
+        "metric": {
+          "type": "string",
+          "enum": [
+            "tokens",
+            "costUsd"
+          ],
+          "x-go-name": "Metric",
+          "x-go-type": "string",
+          "x-go-json-tag": "metric"
+        },
+        "observed": {
+          "type": "number",
+          "x-go-name": "Observed",
+          "x-go-type": "float64",
+          "x-go-json-tag": "observed"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "session",
+            "turn"
+          ],
+          "x-go-name": "Scope",
+          "x-go-type": "string",
+          "x-go-json-tag": "scope"
+        }
+      },
+      "required": [
+        "limit",
+        "metric",
+        "observed",
+        "scope"
+      ]
+    },
+    "BudgetLimits": {
+      "type": "object",
+      "description": "Limits are host policy. Nil disables a limit; zero admits no further work.",
+      "properties": {
+        "maxSessionCostUsd": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-go-type": "float64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxSessionCostUSD",
+          "x-go-type": "*float64",
+          "x-go-json-tag": "maxSessionCostUsd"
+        },
+        "maxSessionTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxSessionTokens",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "maxSessionTokens"
+        },
+        "maxTurnCostUsd": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-go-type": "float64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxTurnCostUSD",
+          "x-go-type": "*float64",
+          "x-go-json-tag": "maxTurnCostUsd"
+        },
+        "maxTurnTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxTurnTokens",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "maxTurnTokens"
+        }
+      },
+      "required": [
+        "maxSessionCostUsd",
+        "maxSessionTokens",
+        "maxTurnCostUsd",
+        "maxTurnTokens"
+      ]
+    },
+    "BudgetLimitsPatch": {
+      "type": "object",
+      "description": "Limits are host policy. Nil disables a limit; zero admits no further work.",
+      "properties": {
+        "maxSessionCostUsd": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-go-type": "float64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxSessionCostUSD",
+          "x-go-type": "*float64",
+          "x-go-json-tag": "maxSessionCostUsd"
+        },
+        "maxSessionTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxSessionTokens",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "maxSessionTokens"
+        },
+        "maxTurnCostUsd": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-go-type": "float64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxTurnCostUSD",
+          "x-go-type": "*float64",
+          "x-go-json-tag": "maxTurnCostUsd"
+        },
+        "maxTurnTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxTurnTokens",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "maxTurnTokens"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
+    },
+    "BudgetUsage": {
+      "type": "object",
+      "description": "Usage contains observed totals. Incomplete totals are lower bounds; nil cost\nmeans no cost estimate was supplied. Reported costs are estimates, not bills.",
+      "properties": {
+        "costComplete": {
+          "type": "boolean",
+          "x-go-name": "CostComplete",
+          "x-go-type": "bool",
+          "x-go-json-tag": "costComplete"
+        },
+        "costUsd": {
+          "type": "number",
+          "x-go-name": "CostUSD",
+          "x-go-type": "*float64",
+          "x-go-json-tag": "costUsd,omitempty"
+        },
+        "tokensComplete": {
+          "type": "boolean",
+          "x-go-name": "TokensComplete",
+          "x-go-type": "bool",
+          "x-go-json-tag": "tokensComplete"
+        },
+        "totalTokens": {
+          "type": "integer",
+          "x-go-name": "TotalTokens",
+          "x-go-type": "int64",
+          "x-go-json-tag": "totalTokens"
+        }
+      },
+      "required": [
+        "costComplete",
+        "tokensComplete",
+        "totalTokens"
+      ]
+    },
+    "Capabilities": {
+      "type": "object",
+      "description": "Capabilities advertises optional behaviour.",
+      "properties": {
+        "approvals": {
+          "type": "boolean",
+          "description": "Approvals: can pause and ask the host to approve actions.",
+          "x-go-name": "Approvals",
+          "x-go-type": "bool",
+          "x-go-json-tag": "approvals"
+        },
+        "cancel": {
+          "type": "boolean",
+          "description": "Cancel: an in-progress turn can be interrupted gracefully.",
+          "x-go-name": "Cancel",
+          "x-go-type": "bool",
+          "x-go-json-tag": "cancel"
+        },
+        "configuration": {
+          "type": "object",
+          "description": "Configuration advertises accepted settings and their lifetimes.",
+          "additionalProperties": {
+            "$ref": "#/$defs/ConfigurationSupport",
+            "x-go-type": "ConfigurationSupport"
+          },
+          "x-go-name": "Configuration",
+          "x-go-type": "map[string]ConfigurationSupport",
+          "x-go-json-tag": "configuration,omitempty"
+        },
+        "cost": {
+          "type": "boolean",
+          "description": "Cost: reports an estimated cost.",
+          "x-go-name": "Cost",
+          "x-go-type": "bool",
+          "x-go-json-tag": "cost"
+        },
+        "fork": {
+          "type": "boolean",
+          "x-go-name": "Fork",
+          "x-go-type": "bool",
+          "x-go-json-tag": "fork"
+        },
+        "forkDeferred": {
+          "type": "boolean",
+          "x-go-name": "ForkDeferred",
+          "x-go-type": "bool",
+          "x-go-json-tag": "forkDeferred,omitempty"
+        },
+        "images": {
+          "type": "boolean",
+          "description": "Images: image input parts are accepted by the runtime.",
+          "x-go-name": "Images",
+          "x-go-type": "bool",
+          "x-go-json-tag": "images"
+        },
+        "listSessions": {
+          "type": "boolean",
+          "description": "ListSessions: implements SessionLister (lists the runtime's own\nstored sessions, including ones started outside Harness Kit).",
+          "x-go-name": "ListSessions",
+          "x-go-type": "bool",
+          "x-go-json-tag": "listSessions"
+        },
+        "mcp": {
+          "type": "boolean",
+          "description": "MCP: honours SessionConfig.MCP (per-session MCP servers).",
+          "x-go-name": "MCP",
+          "x-go-type": "bool",
+          "x-go-json-tag": "mcp"
+        },
+        "resume": {
+          "type": "boolean",
+          "description": "Resume: sessions can be resumed by runtime session ID.",
+          "x-go-name": "Resume",
+          "x-go-type": "bool",
+          "x-go-json-tag": "resume"
+        },
+        "streaming": {
+          "type": "boolean",
+          "description": "Streaming: emits message.delta events while the agent writes.",
+          "x-go-name": "Streaming",
+          "x-go-type": "bool",
+          "x-go-json-tag": "streaming"
+        },
+        "usage": {
+          "type": "boolean",
+          "description": "Usage: reports consumed token usage, not just context-window occupancy.",
+          "x-go-name": "Usage",
+          "x-go-type": "bool",
+          "x-go-json-tag": "usage"
+        }
+      },
+      "required": [
+        "approvals",
+        "cancel",
+        "cost",
+        "fork",
+        "images",
+        "listSessions",
+        "mcp",
+        "resume",
+        "streaming",
+        "usage"
+      ]
+    },
+    "ClientInfo": {
+      "type": "object",
+      "description": "ClientInfo identifies the client.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "x-go-name": "Name",
+          "x-go-type": "string",
+          "x-go-json-tag": "name"
+        },
+        "version": {
+          "type": "string",
+          "x-go-name": "Version",
+          "x-go-type": "string",
+          "x-go-json-tag": "version,omitempty"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "ConfigPatch": {
+      "type": "object",
+      "description": "Patch changes only supplied fields. Empty strings explicitly clear portable\nselections; false, zero, null and empty lists remain native option values.\nReset names a field to inherit again: model, effort or options.NAME.\nSession patches inherit creation settings; turn patches inherit current\nsession settings. A field cannot be both set and reset in the same patch.",
+      "properties": {
+        "effort": {
+          "type": "string",
+          "x-go-name": "Effort",
+          "x-go-type": "*string",
+          "x-go-json-tag": "effort,omitempty"
+        },
+        "model": {
+          "type": "string",
+          "x-go-name": "Model",
+          "x-go-type": "*string",
+          "x-go-json-tag": "model,omitempty"
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": {
+            "x-go-type": "json.RawMessage"
+          },
+          "x-go-name": "Options",
+          "x-go-type": "map[string]json.RawMessage",
+          "x-go-json-tag": "options,omitempty"
+        },
+        "reset": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Reset",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "reset,omitempty"
+        }
+      }
+    },
+    "ConfigurationSupport": {
+      "type": "object",
+      "description": "Support describes where a setting can be supplied. Session changes apply to\nfuture turns, even when submitted during a turn. Live requires an explicit\nactive-turn API; a setting without Live never changes a running turn.",
+      "properties": {
+        "live": {
+          "type": "boolean",
+          "x-go-name": "Live",
+          "x-go-type": "bool",
+          "x-go-json-tag": "live"
+        },
+        "session": {
+          "type": "boolean",
+          "x-go-name": "Session",
+          "x-go-type": "bool",
+          "x-go-json-tag": "session"
+        },
+        "startup": {
+          "type": "boolean",
+          "x-go-name": "Startup",
+          "x-go-type": "bool",
+          "x-go-json-tag": "startup"
+        },
+        "turn": {
+          "type": "boolean",
+          "x-go-name": "Turn",
+          "x-go-type": "bool",
+          "x-go-json-tag": "turn"
+        }
+      },
+      "required": [
+        "live",
+        "session",
+        "startup",
+        "turn"
+      ]
+    },
+    "ConfigureSettingsParams": {
+      "type": "object",
+      "properties": {
+        "expectedRevision": {
+          "type": "integer",
+          "x-go-name": "ExpectedRevision",
+          "x-go-type": "*uint64",
+          "x-go-json-tag": "expectedRevision,omitempty"
+        },
+        "patch": {
+          "$ref": "#/$defs/SettingsPatch",
+          "x-go-name": "Patch",
+          "x-go-type": "SettingsPatch",
+          "x-go-json-tag": "patch"
+        },
+        "reset": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Reset",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "reset,omitempty"
+        },
+        "target": {
+          "$ref": "#/$defs/SettingsTarget",
+          "x-go-name": "Target",
+          "x-go-type": "SettingsTarget",
+          "x-go-json-tag": "target,omitempty"
+        }
+      },
+      "required": [
+        "patch"
+      ]
+    },
+    "CreateSessionParams": {
+      "type": "object",
+      "description": "SessionCreateParams are the params of \"session.create\".",
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "x-go-name": "Cwd",
+          "x-go-type": "string",
+          "x-go-json-tag": "cwd,omitempty"
+        },
+        "disableHostTools": {
+          "type": "boolean",
+          "x-go-name": "DisableHostTools",
+          "x-go-type": "bool",
+          "x-go-json-tag": "disableHostTools,omitempty"
+        },
+        "effort": {
+          "type": "string",
+          "x-go-name": "Effort",
+          "x-go-type": "string",
+          "x-go-json-tag": "effort,omitempty"
+        },
+        "hostTools": {
+          "type": "array",
+          "description": "HostTools limits the session to these registered host tools (default\nall); DisableHostTools gives it none, and no Harness Kit bridge.",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "HostTools",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "hostTools,omitempty"
+        },
+        "instructions": {
+          "type": "string",
+          "x-go-name": "Instructions",
+          "x-go-type": "string",
+          "x-go-json-tag": "instructions,omitempty"
+        },
+        "mcp": {
+          "$ref": "#/$defs/McpConfig",
+          "description": "MCP adds MCP servers for this session (portable format; see the mcp\npackage). A sidecar started with --kit-mcp also merges the user and\ntrusted project config files.",
+          "x-go-name": "MCP",
+          "x-go-type": "*McpConfig",
+          "x-go-json-tag": "mcp,omitempty"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Metadata",
+          "x-go-type": "map[string]string",
+          "x-go-json-tag": "metadata,omitempty"
+        },
+        "model": {
+          "type": "string",
+          "x-go-name": "Model",
+          "x-go-type": "string",
+          "x-go-json-tag": "model,omitempty"
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": {},
+          "x-go-name": "Options",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "options,omitempty"
+        },
+        "rawEvents": {
+          "type": "boolean",
+          "x-go-name": "RawEvents",
+          "x-go-type": "bool",
+          "x-go-json-tag": "rawEvents,omitempty"
+        },
+        "resumeId": {
+          "type": "string",
+          "x-go-name": "ResumeID",
+          "x-go-type": "string",
+          "x-go-json-tag": "resumeId,omitempty"
+        },
+        "runtime": {
+          "type": "string",
+          "x-go-name": "Runtime",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtime,omitempty"
+        },
+        "settings": {
+          "$ref": "#/$defs/SettingsPatch",
+          "description": "Settings uses the shared schema. Only the session section is accepted here.",
+          "x-go-name": "Settings",
+          "x-go-type": "SettingsPatch",
+          "x-go-json-tag": "settings,omitempty"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title names the session; empty means the start of the first prompt.",
+          "x-go-name": "Title",
+          "x-go-type": "string",
+          "x-go-json-tag": "title,omitempty"
+        }
+      }
+    },
+    "Decision": {
+      "type": "object",
+      "description": "Decision answers a Request.",
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "Message is passed back to the agent (e.g. why it was denied).",
+          "x-go-name": "Message",
+          "x-go-type": "string",
+          "x-go-json-tag": "message,omitempty"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome",
+          "x-go-name": "Outcome",
+          "x-go-type": "Outcome",
+          "x-go-json-tag": "outcome"
+        },
+        "updatedInput": {
+          "description": "UpdatedInput optionally replaces the tool input, for runtimes that\nsupport editing a request before approving it.",
+          "x-go-name": "UpdatedInput",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "updatedInput,omitempty"
+        }
+      },
+      "required": [
+        "outcome"
+      ]
+    },
+    "Discovery": {
+      "type": "object",
+      "description": "Discovery is the result of probing a runtime.",
+      "properties": {
+        "auth": {
+          "$ref": "#/$defs/AuthStatus",
+          "x-go-name": "Auth",
+          "x-go-type": "AuthStatus",
+          "x-go-json-tag": "auth"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/Capabilities",
+          "x-go-name": "Capabilities",
+          "x-go-type": "Capabilities",
+          "x-go-json-tag": "capabilities"
+        },
+        "installed": {
+          "type": "boolean",
+          "x-go-name": "Installed",
+          "x-go-type": "bool",
+          "x-go-json-tag": "installed"
+        },
+        "notes": {
+          "type": "array",
+          "description": "Notes are non-blocking information, such as usage-policy reminders.",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Notes",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "notes,omitempty"
+        },
+        "path": {
+          "type": "string",
+          "x-go-name": "Path",
+          "x-go-type": "string",
+          "x-go-json-tag": "path,omitempty"
+        },
+        "problems": {
+          "type": "array",
+          "description": "Problems are blocking issues (not installed, unsupported version...).",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Problems",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "problems,omitempty"
+        },
+        "ready": {
+          "type": "boolean",
+          "description": "Ready is true when the runtime is installed, not known to be signed\nout, and has no blocking problems.",
+          "x-go-name": "Ready",
+          "x-go-type": "bool",
+          "x-go-json-tag": "ready"
+        },
+        "runtime": {
+          "type": "string",
+          "x-go-name": "Runtime",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtime"
+        },
+        "version": {
+          "type": "string",
+          "x-go-name": "Version",
+          "x-go-type": "string",
+          "x-go-json-tag": "version,omitempty"
+        }
+      },
+      "required": [
+        "auth",
+        "capabilities",
+        "installed",
+        "ready",
+        "runtime"
+      ]
+    },
+    "Empty": {
+      "type": "object",
+      "description": "Empty is the result of methods that return nothing."
+    },
+    "ErrorInfo": {
+      "type": "object",
+      "description": "ErrorInfo describes a failure.",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Code is a stable, machine-readable identifier (e.g. \"runtime_exited\").",
+          "x-go-name": "Code",
+          "x-go-type": "string",
+          "x-go-json-tag": "code,omitempty"
+        },
+        "message": {
+          "type": "string",
+          "x-go-name": "Message",
+          "x-go-type": "string",
+          "x-go-json-tag": "message"
+        },
+        "retryable": {
+          "type": "boolean",
+          "x-go-name": "Retryable",
+          "x-go-type": "bool",
+          "x-go-json-tag": "retryable,omitempty"
+        }
+      },
+      "required": [
+        "message"
+      ]
+    },
+    "ErrorReason": {
+      "type": "string",
+      "enum": [
+        "approval_not_found",
+        "budget_exceeded",
+        "duplicate_tool",
+        "duplicate_turn",
+        "event_too_large",
+        "fork_source_changed",
+        "invalid_decision",
+        "invalid_params",
+        "new_session_required",
+        "not_initialized",
+        "not_resumable",
+        "policy_violation",
+        "restart_required",
+        "runtime_error",
+        "runtime_not_found",
+        "runtime_unavailable",
+        "session_busy",
+        "session_closed",
+        "session_not_found",
+        "settings_conflict",
+        "unsupported",
+        "unsupported_version"
+      ],
+      "x-go-type": "string"
+    },
+    "EventPage": {
+      "type": "object",
+      "description": "EventPage is a bounded transcript page. NextSeq is the last returned event's\nsequence, or the supplied cursor for an empty page. HasMore means another\nstored event follows; Truncated reports unavailable history, not pagination.",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HarnessEvent",
+            "x-go-type": "HarnessEvent"
+          },
+          "x-go-name": "Events",
+          "x-go-type": "[]HarnessEvent",
+          "x-go-json-tag": "events"
+        },
+        "hasMore": {
+          "type": "boolean",
+          "x-go-name": "HasMore",
+          "x-go-type": "bool",
+          "x-go-json-tag": "hasMore"
+        },
+        "nextSeq": {
+          "type": "integer",
+          "x-go-name": "NextSeq",
+          "x-go-type": "uint64",
+          "x-go-json-tag": "nextSeq"
+        },
+        "truncated": {
+          "type": "boolean",
+          "x-go-name": "Truncated",
+          "x-go-type": "bool",
+          "x-go-json-tag": "truncated"
+        }
+      },
+      "required": [
+        "events",
+        "hasMore",
+        "nextSeq",
+        "truncated"
+      ]
+    },
+    "EventType": {
+      "type": "string",
+      "description": "Type identifies an event.",
+      "enum": [
+        "approval.requested",
+        "approval.resolved",
+        "budget.exceeded",
+        "error",
+        "message.completed",
+        "message.delta",
+        "reasoning.completed",
+        "reasoning.delta",
+        "runtime.raw",
+        "runtime.status",
+        "session.closed",
+        "session.started",
+        "session.updated",
+        "stream.gap",
+        "tool.completed",
+        "tool.output",
+        "tool.started",
+        "turn.completed",
+        "turn.started",
+        "usage",
+        "workspace.diff"
+      ],
+      "x-go-type": "string"
+    },
+    "ForkSessionOptions": {
+      "type": "object",
+      "description": "ForkParams branch the complete conversation. Arbitrary turn cutoffs are not\nportable across runtimes. Settings use the same envelope as session creation.",
+      "properties": {
+        "settings": {
+          "$ref": "#/$defs/SettingsPatch",
+          "x-go-name": "Settings",
+          "x-go-type": "SettingsPatch",
+          "x-go-json-tag": "settings,omitempty"
+        },
+        "title": {
+          "type": "string",
+          "x-go-name": "Title",
+          "x-go-type": "string",
+          "x-go-json-tag": "title,omitempty"
+        }
+      }
+    },
+    "HarnessEvent": {
+      "type": "object",
+      "description": "Event is the envelope for everything a session emits.",
+      "properties": {
+        "data": {
+          "description": "Data holds the typed payload for Type (see the *Data types). After\ndecoding from JSON, known types decode to their payload struct and\nunknown types to json.RawMessage.",
+          "x-go-name": "Data",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "data,omitempty"
+        },
+        "seq": {
+          "type": "integer",
+          "x-go-name": "Seq",
+          "x-go-type": "uint64",
+          "x-go-json-tag": "seq"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        },
+        "time": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Time",
+          "x-go-type": "time.Time",
+          "x-go-json-tag": "time"
+        },
+        "turnId": {
+          "type": "string",
+          "x-go-name": "TurnID",
+          "x-go-type": "string",
+          "x-go-json-tag": "turnId,omitempty"
+        },
+        "type": {
+          "type": "string",
+          "x-go-name": "Type",
+          "x-go-type": "EventType",
+          "x-go-json-tag": "type"
+        }
+      },
+      "required": [
+        "seq",
+        "sessionId",
+        "time",
+        "type"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/ApprovalRequest",
+              "x-go-type": "ApprovalRequest"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "approval.requested"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/ApprovalResolvedData",
+              "x-go-type": "ApprovalResolvedData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "approval.resolved"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/BudgetExceeded",
+              "x-go-type": "BudgetExceeded"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "budget.exceeded"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/ErrorInfo",
+              "x-go-type": "ErrorInfo"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "error"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/MessageCompletedData",
+              "x-go-type": "MessageCompletedData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "message.completed"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/MessageDeltaData",
+              "x-go-type": "MessageDeltaData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "message.delta"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/ReasoningCompletedData",
+              "x-go-type": "ReasoningCompletedData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "reasoning.completed"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/ReasoningDeltaData",
+              "x-go-type": "ReasoningDeltaData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "reasoning.delta"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/RawData",
+              "x-go-type": "RawData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "runtime.raw"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/RuntimeStatusData",
+              "x-go-type": "RuntimeStatusData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "runtime.status"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/SessionClosedData",
+              "x-go-type": "SessionClosedData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "session.closed"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/SessionStartedData",
+              "x-go-type": "SessionStartedData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "session.started"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/SessionUpdatedData",
+              "x-go-type": "SessionUpdatedData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "session.updated"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/StreamGapData",
+              "x-go-type": "StreamGapData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "stream.gap"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/ToolCompletedData",
+              "x-go-type": "ToolCompletedData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "tool.completed"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/ToolOutputData",
+              "x-go-type": "ToolOutputData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "tool.output"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/ToolStartedData",
+              "x-go-type": "ToolStartedData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "tool.started"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/TurnCompletedData",
+              "x-go-type": "TurnCompletedData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "turn.completed"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/TurnStartedData",
+              "x-go-type": "TurnStartedData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "turn.started"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/UsageData",
+              "x-go-type": "UsageData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "usage"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/WorkspaceDiff",
+              "x-go-type": "WorkspaceDiff"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "workspace.diff"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "not": {
+                "enum": [
+                  "approval.requested",
+                  "approval.resolved",
+                  "budget.exceeded",
+                  "error",
+                  "message.completed",
+                  "message.delta",
+                  "reasoning.completed",
+                  "reasoning.delta",
+                  "runtime.raw",
+                  "runtime.status",
+                  "session.closed",
+                  "session.started",
+                  "session.updated",
+                  "stream.gap",
+                  "tool.completed",
+                  "tool.output",
+                  "tool.started",
+                  "turn.completed",
+                  "turn.started",
+                  "usage",
+                  "workspace.diff"
+                ]
+              }
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "HistorySettings": {
+      "type": "object",
+      "properties": {
+        "maxPageBytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxPageBytes",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "maxPageBytes"
+        },
+        "maxPageEvents": {
+          "type": "integer",
+          "x-go-name": "MaxPageEvents",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxPageEvents"
+        }
+      },
+      "required": [
+        "maxPageBytes",
+        "maxPageEvents"
+      ]
+    },
+    "HistorySettingsPatch": {
+      "type": "object",
+      "properties": {
+        "maxPageBytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxPageBytes",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "maxPageBytes"
+        },
+        "maxPageEvents": {
+          "type": "integer",
+          "x-go-name": "MaxPageEvents",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxPageEvents"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
+    },
+    "InitializeParams": {
+      "type": "object",
+      "description": "InitializeParams are the params of \"initialize\".",
+      "properties": {
+        "clientInfo": {
+          "$ref": "#/$defs/ClientInfo",
+          "x-go-name": "ClientInfo",
+          "x-go-type": "ClientInfo",
+          "x-go-json-tag": "clientInfo"
+        },
+        "protocolVersion": {
+          "type": "integer",
+          "x-go-name": "ProtocolVersion",
+          "x-go-type": "int",
+          "x-go-json-tag": "protocolVersion"
+        }
+      },
+      "required": [
+        "clientInfo",
+        "protocolVersion"
+      ]
+    },
+    "InitializeResult": {
+      "type": "object",
+      "description": "InitializeResult is the result of \"initialize\".",
+      "properties": {
+        "capabilities": {
+          "$ref": "#/$defs/ServerCapabilities",
+          "x-go-name": "Capabilities",
+          "x-go-type": "ServerCapabilities",
+          "x-go-json-tag": "capabilities"
+        },
+        "protocolVersion": {
+          "type": "integer",
+          "x-go-name": "ProtocolVersion",
+          "x-go-type": "int",
+          "x-go-json-tag": "protocolVersion"
+        },
+        "serverInfo": {
+          "$ref": "#/$defs/ServerInfo",
+          "x-go-name": "ServerInfo",
+          "x-go-type": "ServerInfo",
+          "x-go-json-tag": "serverInfo"
+        }
+      },
+      "required": [
+        "capabilities",
+        "protocolVersion",
+        "serverInfo"
+      ]
+    },
+    "InputPart": {
+      "type": "object",
+      "description": "InputPart is a text part or a local image reference in a prompt.",
+      "properties": {
+        "path": {
+          "type": "string",
+          "x-go-name": "Path",
+          "x-go-type": "string",
+          "x-go-json-tag": "path,omitempty"
+        },
+        "text": {
+          "type": "string",
+          "x-go-name": "Text",
+          "x-go-type": "string",
+          "x-go-json-tag": "text,omitempty"
+        },
+        "type": {
+          "type": "string",
+          "description": "\"text\" or \"image\"",
+          "enum": [
+            "text",
+            "image"
+          ],
+          "x-go-name": "Type",
+          "x-go-type": "string",
+          "x-go-json-tag": "type"
+        }
+      },
+      "required": [
+        "type"
+      ]
+    },
+    "ListSessionsOptions": {
+      "type": "object",
+      "description": "ListOptions selects stored conversations. Empty filters preserve List's\noriginal all-session behavior. Tags must all match; title matching is a\ncase-insensitive substring. SearchTranscript also searches event payloads.",
+      "properties": {
+        "archived": {
+          "type": "boolean",
+          "x-go-name": "Archived",
+          "x-go-type": "*bool",
+          "x-go-json-tag": "archived,omitempty"
+        },
+        "cwd": {
+          "type": "string",
+          "x-go-name": "Cwd",
+          "x-go-type": "string",
+          "x-go-json-tag": "cwd,omitempty"
+        },
+        "limit": {
+          "type": "integer",
+          "x-go-name": "Limit",
+          "x-go-type": "int",
+          "x-go-json-tag": "limit,omitempty"
+        },
+        "query": {
+          "type": "string",
+          "x-go-name": "Query",
+          "x-go-type": "string",
+          "x-go-json-tag": "query,omitempty"
+        },
+        "runtime": {
+          "type": "string",
+          "x-go-name": "Runtime",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtime,omitempty"
+        },
+        "searchTranscript": {
+          "type": "boolean",
+          "x-go-name": "SearchTranscript",
+          "x-go-type": "bool",
+          "x-go-json-tag": "searchTranscript,omitempty"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Tags",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "tags,omitempty"
+        }
+      }
+    },
+    "LoggingSettings": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "x-go-name": "Level",
+          "x-go-type": "string",
+          "x-go-json-tag": "level"
+        }
+      },
+      "required": [
+        "level"
+      ]
+    },
+    "LoggingSettingsPatch": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "x-go-name": "Level",
+          "x-go-type": "string",
+          "x-go-json-tag": "level"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
+    },
+    "McpApproval": {
+      "type": "string",
+      "description": "Approval says whether a server's tools need the host's approval.",
+      "enum": [
+        "ask",
+        "auto"
+      ],
+      "x-go-type": "string"
+    },
+    "McpConfig": {
+      "type": "object",
+      "description": "Config is a set of MCP servers.",
+      "properties": {
+        "inheritNative": {
+          "type": "boolean",
+          "description": "InheritNative controls whether servers configured in the runtime\nitself also load. Nil means yes.",
+          "x-go-name": "InheritNative",
+          "x-go-type": "*bool",
+          "x-go-json-tag": "inheritNative,omitempty"
+        },
+        "mcpServers": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/McpServer",
+            "x-go-type": "McpServer"
+          },
+          "x-go-name": "Servers",
+          "x-go-type": "map[string]McpServer",
+          "x-go-json-tag": "mcpServers,omitempty"
+        }
+      }
+    },
+    "McpEntry": {
+      "type": "object",
+      "description": "Entry is one server in an Overview.",
+      "properties": {
+        "loaded": {
+          "type": "boolean",
+          "description": "Loaded is false for servers that will not load (untrusted project file).",
+          "x-go-name": "Loaded",
+          "x-go-type": "bool",
+          "x-go-json-tag": "loaded"
+        },
+        "name": {
+          "type": "string",
+          "x-go-name": "Name",
+          "x-go-type": "string",
+          "x-go-json-tag": "name"
+        },
+        "note": {
+          "type": "string",
+          "x-go-name": "Note",
+          "x-go-type": "string",
+          "x-go-json-tag": "note,omitempty"
+        },
+        "server": {
+          "$ref": "#/$defs/McpServer",
+          "x-go-name": "Server",
+          "x-go-type": "McpServer",
+          "x-go-json-tag": "server"
+        },
+        "source": {
+          "type": "string",
+          "description": "\"user\" or \"project\"",
+          "enum": [
+            "user",
+            "project"
+          ],
+          "x-go-name": "Source",
+          "x-go-type": "string",
+          "x-go-json-tag": "source"
+        }
+      },
+      "required": [
+        "loaded",
+        "name",
+        "server",
+        "source"
+      ]
+    },
+    "McpListParams": {
+      "type": "object",
+      "description": "MCPListParams are the params of \"mcp.list\".",
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "description": "Cwd is where to look for a project harness-kit.json (default: the\nserver's working directory).",
+          "x-go-name": "Cwd",
+          "x-go-type": "string",
+          "x-go-json-tag": "cwd,omitempty"
+        },
+        "runtimes": {
+          "type": "array",
+          "description": "Runtimes also lists the servers configured natively in these runtimes,\nwhere supported (Codex).",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Runtimes",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "runtimes,omitempty"
+        }
+      }
+    },
+    "McpListResult": {
+      "type": "object",
+      "description": "MCPListResult is the result of \"mcp.list\".",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enabled reports whether this server merges kit config files into\nsessions (serve --kit-mcp). When false, Servers is empty.",
+          "x-go-name": "Enabled",
+          "x-go-type": "bool",
+          "x-go-json-tag": "enabled"
+        },
+        "inheritNative": {
+          "type": "boolean",
+          "x-go-name": "InheritNative",
+          "x-go-type": "bool",
+          "x-go-json-tag": "inheritNative"
+        },
+        "native": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NativeMcp",
+            "x-go-type": "NativeMcp"
+          },
+          "x-go-name": "Native",
+          "x-go-type": "[]NativeMcp",
+          "x-go-json-tag": "native"
+        },
+        "projectFile": {
+          "type": "string",
+          "x-go-name": "ProjectFile",
+          "x-go-type": "string",
+          "x-go-json-tag": "projectFile,omitempty"
+        },
+        "projectTrusted": {
+          "type": "boolean",
+          "x-go-name": "ProjectTrusted",
+          "x-go-type": "bool",
+          "x-go-json-tag": "projectTrusted"
+        },
+        "servers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/McpEntry",
+            "x-go-type": "McpEntry"
+          },
+          "x-go-name": "Servers",
+          "x-go-type": "[]McpEntry",
+          "x-go-json-tag": "servers"
+        },
+        "userFile": {
+          "type": "string",
+          "x-go-name": "UserFile",
+          "x-go-type": "string",
+          "x-go-json-tag": "userFile,omitempty"
+        }
+      },
+      "required": [
+        "enabled",
+        "inheritNative",
+        "native",
+        "projectTrusted",
+        "servers"
+      ]
+    },
+    "McpServer": {
+      "type": "object",
+      "description": "Server is one MCP server: a local process (stdio) or a remote endpoint\n(streamable HTTP).",
+      "properties": {
+        "approval": {
+          "$ref": "#/$defs/McpApproval",
+          "description": "Approval defaults to ApprovalAuto.",
+          "x-go-name": "Approval",
+          "x-go-type": "McpApproval",
+          "x-go-json-tag": "approval,omitempty"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Args",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "args,omitempty"
+        },
+        "command": {
+          "type": "string",
+          "x-go-name": "Command",
+          "x-go-type": "string",
+          "x-go-json-tag": "command,omitempty"
+        },
+        "cwd": {
+          "type": "string",
+          "x-go-name": "Cwd",
+          "x-go-type": "string",
+          "x-go-json-tag": "cwd,omitempty"
+        },
+        "disabled": {
+          "type": "boolean",
+          "description": "Disabled removes the server, including one defined in a lower layer.",
+          "x-go-name": "Disabled",
+          "x-go-type": "bool",
+          "x-go-json-tag": "disabled,omitempty"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Env",
+          "x-go-type": "map[string]string",
+          "x-go-json-tag": "env,omitempty"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Headers",
+          "x-go-type": "map[string]string",
+          "x-go-json-tag": "headers,omitempty"
+        },
+        "runtimes": {
+          "type": "array",
+          "description": "Runtimes limits the server to these runtimes; empty means all.",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Runtimes",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "runtimes,omitempty"
+        },
+        "source": {
+          "type": "string",
+          "description": "Source is set by Resolve: \"user\", \"project\" or \"session\".",
+          "x-go-name": "Source",
+          "x-go-type": "string",
+          "x-go-json-tag": "source,omitempty"
+        },
+        "startupTimeoutSec": {
+          "type": "number",
+          "x-go-name": "StartupTimeoutSec",
+          "x-go-type": "float64",
+          "x-go-json-tag": "startupTimeoutSec,omitempty"
+        },
+        "toolTimeoutSec": {
+          "type": "number",
+          "x-go-name": "ToolTimeoutSec",
+          "x-go-type": "float64",
+          "x-go-json-tag": "toolTimeoutSec,omitempty"
+        },
+        "tools": {
+          "$ref": "#/$defs/ToolFilter",
+          "description": "Tools filters the server's tools by exact name.",
+          "x-go-name": "Tools",
+          "x-go-type": "ToolFilter",
+          "x-go-json-tag": "tools,omitzero"
+        },
+        "type": {
+          "type": "string",
+          "description": "Type is \"stdio\" (default) or \"http\" (\"streamable-http\" is accepted).",
+          "enum": [
+            "stdio",
+            "http",
+            "streamable-http"
+          ],
+          "x-go-name": "Type",
+          "x-go-type": "string",
+          "x-go-json-tag": "type,omitempty"
+        },
+        "url": {
+          "type": "string",
+          "x-go-name": "URL",
+          "x-go-type": "string",
+          "x-go-json-tag": "url,omitempty"
+        }
+      }
+    },
+    "MemorySettings": {
+      "type": "object",
+      "properties": {
+        "eventLogSize": {
+          "type": "integer",
+          "x-go-name": "EventLogSize",
+          "x-go-type": "int",
+          "x-go-json-tag": "eventLogSize"
+        },
+        "evictAfterIdleMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "EvictAfterIdleMs",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "evictAfterIdleMs"
+        },
+        "maxCacheBytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxCacheBytes",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "maxCacheBytes"
+        },
+        "maxCachedSessions": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxCachedSessions",
+          "x-go-type": "*int",
+          "x-go-json-tag": "maxCachedSessions"
+        },
+        "maxClosedSessions": {
+          "type": "integer",
+          "x-go-name": "MaxClosedSessions",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxClosedSessions"
+        },
+        "maxSessionCacheBytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxSessionCacheBytes",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "maxSessionCacheBytes"
+        },
+        "pinned": {
+          "type": "boolean",
+          "description": "Pinned is session-scoped: automatic eviction and suspension skip it.",
+          "x-go-name": "Pinned",
+          "x-go-type": "bool",
+          "x-go-json-tag": "pinned"
+        },
+        "resumeOnPrompt": {
+          "type": "boolean",
+          "x-go-name": "ResumeOnPrompt",
+          "x-go-type": "bool",
+          "x-go-json-tag": "resumeOnPrompt"
+        },
+        "suspendAfterIdleMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "SuspendAfterIdleMs",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "suspendAfterIdleMs"
+        }
+      },
+      "required": [
+        "eventLogSize",
+        "evictAfterIdleMs",
+        "maxCacheBytes",
+        "maxCachedSessions",
+        "maxClosedSessions",
+        "maxSessionCacheBytes",
+        "pinned",
+        "resumeOnPrompt",
+        "suspendAfterIdleMs"
+      ]
+    },
+    "MemorySettingsPatch": {
+      "type": "object",
+      "properties": {
+        "eventLogSize": {
+          "type": "integer",
+          "x-go-name": "EventLogSize",
+          "x-go-type": "int",
+          "x-go-json-tag": "eventLogSize"
+        },
+        "evictAfterIdleMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "EvictAfterIdleMs",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "evictAfterIdleMs"
+        },
+        "maxCacheBytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxCacheBytes",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "maxCacheBytes"
+        },
+        "maxCachedSessions": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxCachedSessions",
+          "x-go-type": "*int",
+          "x-go-json-tag": "maxCachedSessions"
+        },
+        "maxClosedSessions": {
+          "type": "integer",
+          "x-go-name": "MaxClosedSessions",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxClosedSessions"
+        },
+        "maxSessionCacheBytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxSessionCacheBytes",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "maxSessionCacheBytes"
+        },
+        "pinned": {
+          "type": "boolean",
+          "description": "Pinned is session-scoped: automatic eviction and suspension skip it.",
+          "x-go-name": "Pinned",
+          "x-go-type": "bool",
+          "x-go-json-tag": "pinned"
+        },
+        "resumeOnPrompt": {
+          "type": "boolean",
+          "x-go-name": "ResumeOnPrompt",
+          "x-go-type": "bool",
+          "x-go-json-tag": "resumeOnPrompt"
+        },
+        "suspendAfterIdleMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "SuspendAfterIdleMs",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "suspendAfterIdleMs"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
+    },
+    "MessageCompletedData": {
+      "type": "object",
+      "description": "MessageCompletedData is a complete agent message.",
+      "properties": {
+        "itemId": {
+          "type": "string",
+          "x-go-name": "ItemID",
+          "x-go-type": "string",
+          "x-go-json-tag": "itemId"
+        },
+        "parentCallId": {
+          "type": "string",
+          "x-go-name": "ParentCallID",
+          "x-go-type": "string",
+          "x-go-json-tag": "parentCallId,omitempty"
+        },
+        "role": {
+          "type": "string",
+          "description": "\"assistant\"",
+          "x-go-name": "Role",
+          "x-go-type": "string",
+          "x-go-json-tag": "role"
+        },
+        "text": {
+          "type": "string",
+          "x-go-name": "Text",
+          "x-go-type": "string",
+          "x-go-json-tag": "text"
+        }
+      },
+      "required": [
+        "itemId",
+        "role",
+        "text"
+      ]
+    },
+    "MessageDeltaData": {
+      "type": "object",
+      "description": "MessageDeltaData is an incremental chunk of an agent message.",
+      "properties": {
+        "itemId": {
+          "type": "string",
+          "x-go-name": "ItemID",
+          "x-go-type": "string",
+          "x-go-json-tag": "itemId"
+        },
+        "parentCallId": {
+          "type": "string",
+          "description": "ParentCallID links messages from subagents to the tool call that\nspawned them.",
+          "x-go-name": "ParentCallID",
+          "x-go-type": "string",
+          "x-go-json-tag": "parentCallId,omitempty"
+        },
+        "text": {
+          "type": "string",
+          "x-go-name": "Text",
+          "x-go-type": "string",
+          "x-go-json-tag": "text"
+        }
+      },
+      "required": [
+        "itemId",
+        "text"
+      ]
+    },
+    "NativeMcp": {
+      "type": "object",
+      "description": "NativeMCP lists one runtime's own MCP servers.",
+      "properties": {
+        "error": {
+          "type": "string",
+          "x-go-name": "Error",
+          "x-go-type": "string",
+          "x-go-json-tag": "error,omitempty"
+        },
+        "runtime": {
+          "type": "string",
+          "x-go-name": "Runtime",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtime"
+        },
+        "servers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Servers",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "servers"
+        },
+        "supported": {
+          "type": "boolean",
+          "x-go-name": "Supported",
+          "x-go-type": "bool",
+          "x-go-json-tag": "supported"
+        }
+      },
+      "required": [
+        "runtime",
+        "servers",
+        "supported"
+      ]
+    },
+    "Outcome": {
+      "type": "string",
+      "description": "Outcome is the host's answer to a request.",
+      "enum": [
+        "abort",
+        "allow",
+        "allow_session",
+        "deny"
+      ],
+      "x-go-type": "string"
+    },
+    "ProcessSettings": {
+      "type": "object",
+      "properties": {
+        "acp": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/AcpRuntimeSettings",
+            "x-go-type": "AcpRuntimeSettings"
+          },
+          "x-go-name": "ACP",
+          "x-go-type": "map[string]AcpRuntimeSettings",
+          "x-go-json-tag": "acp,omitempty"
+        },
+        "allowUnsafe": {
+          "type": "boolean",
+          "x-go-name": "AllowUnsafe",
+          "x-go-type": "bool",
+          "x-go-json-tag": "allowUnsafe"
+        },
+        "claudePath": {
+          "type": "string",
+          "x-go-name": "ClaudePath",
+          "x-go-type": "string",
+          "x-go-json-tag": "claudePath"
+        },
+        "codexPath": {
+          "type": "string",
+          "x-go-name": "CodexPath",
+          "x-go-type": "string",
+          "x-go-json-tag": "codexPath"
+        },
+        "fakeDelayMs": {
+          "type": "integer",
+          "x-go-name": "FakeDelayMs",
+          "x-go-type": "int64",
+          "x-go-json-tag": "fakeDelayMs"
+        },
+        "gitPath": {
+          "type": "string",
+          "x-go-name": "GitPath",
+          "x-go-type": "string",
+          "x-go-json-tag": "gitPath"
+        },
+        "kitMcp": {
+          "type": "boolean",
+          "x-go-name": "KitMCP",
+          "x-go-type": "bool",
+          "x-go-json-tag": "kitMcp"
+        },
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Runtimes",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "runtimes"
+        },
+        "shutdownTimeoutMs": {
+          "type": "integer",
+          "x-go-name": "ShutdownTimeoutMs",
+          "x-go-type": "int64",
+          "x-go-json-tag": "shutdownTimeoutMs"
+        },
+        "store": {
+          "type": "string",
+          "x-go-name": "Store",
+          "x-go-type": "string",
+          "x-go-json-tag": "store"
+        }
+      },
+      "required": [
+        "allowUnsafe",
+        "claudePath",
+        "codexPath",
+        "fakeDelayMs",
+        "gitPath",
+        "kitMcp",
+        "runtimes",
+        "shutdownTimeoutMs",
+        "store"
+      ]
+    },
+    "ProcessSettingsPatch": {
+      "type": "object",
+      "properties": {
+        "acp": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/AcpRuntimeSettings",
+            "x-go-type": "AcpRuntimeSettings"
+          },
+          "x-go-name": "ACP",
+          "x-go-type": "map[string]AcpRuntimeSettings",
+          "x-go-json-tag": "acp,omitempty"
+        },
+        "allowUnsafe": {
+          "type": "boolean",
+          "x-go-name": "AllowUnsafe",
+          "x-go-type": "bool",
+          "x-go-json-tag": "allowUnsafe"
+        },
+        "claudePath": {
+          "type": "string",
+          "x-go-name": "ClaudePath",
+          "x-go-type": "string",
+          "x-go-json-tag": "claudePath"
+        },
+        "codexPath": {
+          "type": "string",
+          "x-go-name": "CodexPath",
+          "x-go-type": "string",
+          "x-go-json-tag": "codexPath"
+        },
+        "fakeDelayMs": {
+          "type": "integer",
+          "x-go-name": "FakeDelayMs",
+          "x-go-type": "int64",
+          "x-go-json-tag": "fakeDelayMs"
+        },
+        "gitPath": {
+          "type": "string",
+          "x-go-name": "GitPath",
+          "x-go-type": "string",
+          "x-go-json-tag": "gitPath"
+        },
+        "kitMcp": {
+          "type": "boolean",
+          "x-go-name": "KitMCP",
+          "x-go-type": "bool",
+          "x-go-json-tag": "kitMcp"
+        },
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Runtimes",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "runtimes"
+        },
+        "shutdownTimeoutMs": {
+          "type": "integer",
+          "x-go-name": "ShutdownTimeoutMs",
+          "x-go-type": "int64",
+          "x-go-json-tag": "shutdownTimeoutMs"
+        },
+        "store": {
+          "type": "string",
+          "x-go-name": "Store",
+          "x-go-type": "string",
+          "x-go-json-tag": "store"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
+    },
+    "RawData": {
+      "type": "object",
+      "description": "RawData wraps an unmapped native runtime message.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "x-go-name": "Kind",
+          "x-go-type": "string",
+          "x-go-json-tag": "kind"
+        },
+        "payload": {
+          "x-go-name": "Payload",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "payload"
+        },
+        "runtime": {
+          "type": "string",
+          "x-go-name": "Runtime",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtime"
+        }
+      },
+      "required": [
+        "kind",
+        "payload",
+        "runtime"
+      ]
+    },
+    "ReasoningCompletedData": {
+      "type": "object",
+      "description": "ReasoningCompletedData is a complete reasoning block.",
+      "properties": {
+        "itemId": {
+          "type": "string",
+          "x-go-name": "ItemID",
+          "x-go-type": "string",
+          "x-go-json-tag": "itemId"
+        },
+        "text": {
+          "type": "string",
+          "x-go-name": "Text",
+          "x-go-type": "string",
+          "x-go-json-tag": "text"
+        }
+      },
+      "required": [
+        "itemId",
+        "text"
+      ]
+    },
+    "ReasoningDeltaData": {
+      "type": "object",
+      "description": "ReasoningDeltaData is an incremental chunk of reasoning text or summary.",
+      "properties": {
+        "itemId": {
+          "type": "string",
+          "x-go-name": "ItemID",
+          "x-go-type": "string",
+          "x-go-json-tag": "itemId"
+        },
+        "text": {
+          "type": "string",
+          "x-go-name": "Text",
+          "x-go-type": "string",
+          "x-go-json-tag": "text"
+        }
+      },
+      "required": [
+        "itemId",
+        "text"
+      ]
+    },
+    "ResourceStats": {
+      "type": "object",
+      "description": "ResourceStats reports retained encoded event payloads, not process RSS.\nBusy/pinned sessions and failed durable writes may defer resource reclamation.",
+      "properties": {
+        "cachedBytes": {
+          "type": "integer",
+          "x-go-name": "CachedBytes",
+          "x-go-type": "int64",
+          "x-go-json-tag": "cachedBytes"
+        },
+        "cachedEvents": {
+          "type": "integer",
+          "x-go-name": "CachedEvents",
+          "x-go-type": "int",
+          "x-go-json-tag": "cachedEvents"
+        },
+        "cachedSessions": {
+          "type": "integer",
+          "x-go-name": "CachedSessions",
+          "x-go-type": "int",
+          "x-go-json-tag": "cachedSessions"
+        },
+        "deferred": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Deferred",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "deferred,omitempty"
+        },
+        "residentSessions": {
+          "type": "integer",
+          "x-go-name": "ResidentSessions",
+          "x-go-type": "int",
+          "x-go-json-tag": "residentSessions"
+        },
+        "unsavedEvents": {
+          "type": "integer",
+          "x-go-name": "UnsavedEvents",
+          "x-go-type": "int",
+          "x-go-json-tag": "unsavedEvents"
+        }
+      },
+      "required": [
+        "cachedBytes",
+        "cachedEvents",
+        "cachedSessions",
+        "residentSessions",
+        "unsavedEvents"
+      ]
+    },
+    "RuntimeDiscoverParams": {
+      "type": "object",
+      "description": "RuntimeDiscoverParams are the params of \"runtime.discover\".",
+      "properties": {
+        "runtimes": {
+          "type": "array",
+          "description": "Runtimes limits discovery to these names; empty means all.",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Runtimes",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "runtimes,omitempty"
+        }
+      }
+    },
+    "RuntimeDiscoverResult": {
+      "type": "object",
+      "description": "RuntimeDiscoverResult is the result of \"runtime.discover\".",
+      "properties": {
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Discovery",
+            "x-go-type": "Discovery"
+          },
+          "x-go-name": "Runtimes",
+          "x-go-type": "[]Discovery",
+          "x-go-json-tag": "runtimes"
+        }
+      },
+      "required": [
+        "runtimes"
+      ]
+    },
+    "RuntimeInfo": {
+      "type": "object",
+      "description": "Info is static runtime metadata.",
+      "properties": {
+        "capabilities": {
+          "$ref": "#/$defs/Capabilities",
+          "x-go-name": "Capabilities",
+          "x-go-type": "Capabilities",
+          "x-go-json-tag": "capabilities"
+        },
+        "description": {
+          "type": "string",
+          "x-go-name": "Description",
+          "x-go-type": "string",
+          "x-go-json-tag": "description,omitempty"
+        },
+        "displayName": {
+          "type": "string",
+          "x-go-name": "DisplayName",
+          "x-go-type": "string",
+          "x-go-json-tag": "displayName"
+        },
+        "name": {
+          "type": "string",
+          "x-go-name": "Name",
+          "x-go-type": "string",
+          "x-go-json-tag": "name"
+        }
+      },
+      "required": [
+        "capabilities",
+        "displayName",
+        "name"
+      ]
+    },
+    "RuntimeListResult": {
+      "type": "object",
+      "description": "RuntimeListResult is the result of \"runtime.list\".",
+      "properties": {
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RuntimeInfo",
+            "x-go-type": "RuntimeInfo"
+          },
+          "x-go-name": "Runtimes",
+          "x-go-type": "[]RuntimeInfo",
+          "x-go-json-tag": "runtimes"
+        }
+      },
+      "required": [
+        "runtimes"
+      ]
+    },
+    "RuntimeSession": {
+      "type": "object",
+      "description": "RuntimeSession is a session stored by a runtime.",
+      "properties": {
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "CreatedAt",
+          "x-go-type": "time.Time",
+          "x-go-json-tag": "createdAt"
+        },
+        "cwd": {
+          "type": "string",
+          "x-go-name": "Cwd",
+          "x-go-type": "string",
+          "x-go-json-tag": "cwd,omitempty"
+        },
+        "id": {
+          "type": "string",
+          "description": "ID is usable as SessionConfig.ResumeID.",
+          "x-go-name": "ID",
+          "x-go-type": "string",
+          "x-go-json-tag": "id"
+        },
+        "model": {
+          "type": "string",
+          "x-go-name": "Model",
+          "x-go-type": "string",
+          "x-go-json-tag": "model,omitempty"
+        },
+        "source": {
+          "type": "string",
+          "x-go-name": "Source",
+          "x-go-type": "string",
+          "x-go-json-tag": "source,omitempty"
+        },
+        "title": {
+          "type": "string",
+          "x-go-name": "Title",
+          "x-go-type": "string",
+          "x-go-json-tag": "title,omitempty"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "UpdatedAt",
+          "x-go-type": "time.Time",
+          "x-go-json-tag": "updatedAt"
+        }
+      },
+      "required": [
+        "createdAt",
+        "id",
+        "updatedAt"
+      ]
+    },
+    "RuntimeSessionsParams": {
+      "type": "object",
+      "description": "RuntimeSessionsParams are the params of \"runtime.sessions\".",
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "x-go-name": "Cwd",
+          "x-go-type": "string",
+          "x-go-json-tag": "cwd,omitempty"
+        },
+        "limit": {
+          "type": "integer",
+          "x-go-name": "Limit",
+          "x-go-type": "int",
+          "x-go-json-tag": "limit,omitempty"
+        },
+        "runtime": {
+          "type": "string",
+          "x-go-name": "Runtime",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtime"
+        }
+      },
+      "required": [
+        "runtime"
+      ]
+    },
+    "RuntimeSessionsResult": {
+      "type": "object",
+      "description": "RuntimeSessionsResult is the result of \"runtime.sessions\".",
+      "properties": {
+        "sessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RuntimeSession",
+            "x-go-type": "RuntimeSession"
+          },
+          "x-go-name": "Sessions",
+          "x-go-type": "[]RuntimeSession",
+          "x-go-json-tag": "sessions"
+        }
+      },
+      "required": [
+        "sessions"
+      ]
+    },
+    "RuntimeStatusData": {
+      "type": "object",
+      "description": "RuntimeStatusData reports runtime-level conditions (retries, rate limits,\nwarnings) that do not end the turn.",
+      "properties": {
+        "detail": {
+          "x-go-name": "Detail",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "detail,omitempty"
+        },
+        "message": {
+          "type": "string",
+          "x-go-name": "Message",
+          "x-go-type": "string",
+          "x-go-json-tag": "message,omitempty"
+        },
+        "status": {
+          "type": "string",
+          "x-go-name": "Status",
+          "x-go-type": "string",
+          "x-go-json-tag": "status"
+        }
+      },
+      "required": [
+        "status"
+      ]
+    },
+    "ServerCapabilities": {
+      "type": "object",
+      "description": "ServerCapabilities describe what the server offers.",
+      "properties": {
+        "allowUnsafe": {
+          "type": "boolean",
+          "description": "AllowUnsafe reports whether the sidecar accepts session options that\ndisable runtime sandboxes or approvals.",
+          "x-go-name": "AllowUnsafe",
+          "x-go-type": "bool",
+          "x-go-json-tag": "allowUnsafe"
+        },
+        "eventLogSize": {
+          "type": "integer",
+          "description": "EventLogSize is the per-session replay window.",
+          "x-go-name": "EventLogSize",
+          "x-go-type": "int",
+          "x-go-json-tag": "eventLogSize"
+        },
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RuntimeInfo",
+            "x-go-type": "RuntimeInfo"
+          },
+          "x-go-name": "Runtimes",
+          "x-go-type": "[]RuntimeInfo",
+          "x-go-json-tag": "runtimes"
+        },
+        "settings": {
+          "type": "boolean",
+          "description": "Settings advertises the unified live settings API.",
+          "x-go-name": "Settings",
+          "x-go-type": "bool",
+          "x-go-json-tag": "settings"
+        },
+        "tools": {
+          "type": "boolean",
+          "description": "Tools reports whether clients can register host tools.",
+          "x-go-name": "Tools",
+          "x-go-type": "bool",
+          "x-go-json-tag": "tools"
+        },
+        "workspace": {
+          "type": "boolean",
+          "x-go-name": "Workspace",
+          "x-go-type": "bool",
+          "x-go-json-tag": "workspace"
+        }
+      },
+      "required": [
+        "allowUnsafe",
+        "eventLogSize",
+        "runtimes",
+        "settings",
+        "tools",
+        "workspace"
+      ]
+    },
+    "ServerInfo": {
+      "type": "object",
+      "description": "ServerInfo identifies the server.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "x-go-name": "Name",
+          "x-go-type": "string",
+          "x-go-json-tag": "name"
+        },
+        "version": {
+          "type": "string",
+          "x-go-name": "Version",
+          "x-go-type": "string",
+          "x-go-json-tag": "version"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "SessionArchiveParams": {
+      "type": "object",
+      "properties": {
+        "archived": {
+          "type": "boolean",
+          "x-go-name": "Archived",
+          "x-go-type": "bool",
+          "x-go-json-tag": "archived"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        }
+      },
+      "required": [
+        "archived",
+        "sessionId"
+      ]
+    },
+    "SessionClosedData": {
+      "type": "object",
+      "description": "SessionClosedData is the payload of session.closed.",
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/ErrorInfo",
+          "x-go-name": "Error",
+          "x-go-type": "*ErrorInfo",
+          "x-go-json-tag": "error,omitempty"
+        },
+        "reason": {
+          "type": "string",
+          "description": "\"closed\", \"failed\", \"shutdown\"",
+          "x-go-name": "Reason",
+          "x-go-type": "string",
+          "x-go-json-tag": "reason,omitempty"
+        }
+      }
+    },
+    "SessionConfig": {
+      "type": "object",
+      "description": "SessionConfig configures a runtime session.",
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "description": "Cwd is the working directory the agent operates in.",
+          "x-go-name": "Cwd",
+          "x-go-type": "string",
+          "x-go-json-tag": "cwd,omitempty"
+        },
+        "disableHostTools": {
+          "type": "boolean",
+          "description": "DisableHostTools gives the session no host tools, and no Harness Kit\nMCP bridge at all (which also disables Claude Code approvals).",
+          "x-go-name": "DisableHostTools",
+          "x-go-type": "bool",
+          "x-go-json-tag": "disableHostTools,omitempty"
+        },
+        "effort": {
+          "type": "string",
+          "description": "Effort selects reasoning effort in the runtime's own vocabulary.",
+          "x-go-name": "Effort",
+          "x-go-type": "string",
+          "x-go-json-tag": "effort,omitempty"
+        },
+        "hostTools": {
+          "type": "array",
+          "description": "HostTools selects which of the host's registered tools (see package\ntools) this session may use; nil means all of them.",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "HostTools",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "hostTools,omitempty"
+        },
+        "instructions": {
+          "type": "string",
+          "description": "Instructions are appended to the runtime's own system/developer\ninstructions where supported.",
+          "x-go-name": "Instructions",
+          "x-go-type": "string",
+          "x-go-json-tag": "instructions,omitempty"
+        },
+        "mcp": {
+          "$ref": "#/$defs/McpConfig",
+          "description": "MCP lists MCP servers to add for this session, in Harness Kit's\nportable format. ${VAR} references stay unexpanded here; adapters\nresolve them when they start the runtime, so secrets are never\nstored. Requires Capabilities.MCP.",
+          "x-go-name": "MCP",
+          "x-go-type": "*McpConfig",
+          "x-go-json-tag": "mcp,omitempty"
+        },
+        "model": {
+          "type": "string",
+          "description": "Model selects a model, in the runtime's own naming. Empty uses the\nruntime's configured default.",
+          "x-go-name": "Model",
+          "x-go-type": "string",
+          "x-go-json-tag": "model,omitempty"
+        },
+        "options": {
+          "type": "object",
+          "description": "Options holds runtime-specific options: either the adapter's own\noptions struct, or JSON (json.RawMessage, []byte, map) that decodes\ninto it. See DecodeOptions.",
+          "additionalProperties": {},
+          "x-go-name": "Options",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "options,omitempty"
+        },
+        "rawEvents": {
+          "type": "boolean",
+          "description": "RawEvents asks the adapter to emit runtime.raw events for native\nmessages it does not map.",
+          "x-go-name": "RawEvents",
+          "x-go-type": "bool",
+          "x-go-json-tag": "rawEvents,omitempty"
+        },
+        "resumeId": {
+          "type": "string",
+          "description": "ResumeID is a runtime-native session ID to resume (a Codex thread\nID, a Claude Code session ID).",
+          "x-go-name": "ResumeID",
+          "x-go-type": "string",
+          "x-go-json-tag": "resumeId,omitempty"
+        }
+      }
+    },
+    "SessionConfigureParams": {
+      "type": "object",
+      "description": "SessionConfigureParams update defaults for subsequent turns. Config is\nrequired; an empty object is a no-op. Omitted fields are unchanged.",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/ConfigPatch",
+          "x-go-name": "Config",
+          "x-go-type": "*ConfigPatch",
+          "x-go-json-tag": "config"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        }
+      },
+      "required": [
+        "config",
+        "sessionId"
+      ]
+    },
+    "SessionDiffParams": {
+      "type": "object",
+      "description": "SessionDiffParams reads a saved, bounded before/after turn diff.",
+      "properties": {
+        "maxBytes": {
+          "type": "integer",
+          "x-go-name": "MaxBytes",
+          "x-go-type": "int64",
+          "x-go-json-tag": "maxBytes,omitempty"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        },
+        "turnId": {
+          "type": "string",
+          "x-go-name": "TurnID",
+          "x-go-type": "string",
+          "x-go-json-tag": "turnId"
+        }
+      },
+      "required": [
+        "sessionId",
+        "turnId"
+      ]
+    },
+    "SessionEventsParams": {
+      "type": "object",
+      "description": "SessionEventsParams are the params of \"session.events\".",
+      "properties": {
+        "afterSeq": {
+          "type": "integer",
+          "x-go-name": "AfterSeq",
+          "x-go-type": "uint64",
+          "x-go-json-tag": "afterSeq,omitempty"
+        },
+        "limit": {
+          "type": "integer",
+          "x-go-name": "Limit",
+          "x-go-type": "int",
+          "x-go-json-tag": "limit,omitempty"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        }
+      },
+      "required": [
+        "sessionId"
+      ]
+    },
+    "SessionForkParams": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        },
+        "settings": {
+          "$ref": "#/$defs/SettingsPatch",
+          "x-go-name": "Settings",
+          "x-go-type": "SettingsPatch",
+          "x-go-json-tag": "settings,omitempty"
+        },
+        "title": {
+          "type": "string",
+          "x-go-name": "Title",
+          "x-go-type": "string",
+          "x-go-json-tag": "title,omitempty"
+        }
+      },
+      "required": [
+        "sessionId"
+      ]
+    },
+    "SessionIDParams": {
+      "type": "object",
+      "description": "SessionIDParams identify a session.",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        }
+      },
+      "required": [
+        "sessionId"
+      ]
+    },
+    "SessionInfo": {
+      "type": "object",
+      "description": "Info describes a session.",
+      "properties": {
+        "activeTurnId": {
+          "type": "string",
+          "x-go-name": "ActiveTurnID",
+          "x-go-type": "string",
+          "x-go-json-tag": "activeTurnId,omitempty"
+        },
+        "archived": {
+          "type": "boolean",
+          "description": "Archived hides a conversation only when a caller requests that filter.\nIt is independent of runtime lifecycle and never cancels work.",
+          "x-go-name": "Archived",
+          "x-go-type": "bool",
+          "x-go-json-tag": "archived,omitempty"
+        },
+        "budget": {
+          "$ref": "#/$defs/BudgetLimits",
+          "x-go-name": "Budget",
+          "x-go-type": "BudgetLimits",
+          "x-go-json-tag": "budget"
+        },
+        "config": {
+          "$ref": "#/$defs/TurnConfig",
+          "description": "Config is the current selection inherited by subsequent turns.",
+          "x-go-name": "Config",
+          "x-go-type": "*TurnConfig",
+          "x-go-json-tag": "config,omitempty"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "CreatedAt",
+          "x-go-type": "time.Time",
+          "x-go-json-tag": "createdAt"
+        },
+        "cwd": {
+          "type": "string",
+          "x-go-name": "Cwd",
+          "x-go-type": "string",
+          "x-go-json-tag": "cwd,omitempty"
+        },
+        "error": {
+          "$ref": "#/$defs/ErrorInfo",
+          "x-go-name": "Error",
+          "x-go-type": "*ErrorInfo",
+          "x-go-json-tag": "error,omitempty"
+        },
+        "forkPending": {
+          "type": "boolean",
+          "x-go-name": "ForkPending",
+          "x-go-type": "bool",
+          "x-go-json-tag": "forkPending,omitempty"
+        },
+        "forkedAtSeq": {
+          "type": "integer",
+          "x-go-name": "ForkedAtSeq",
+          "x-go-type": "uint64",
+          "x-go-json-tag": "forkedAtSeq,omitempty"
+        },
+        "forkedFrom": {
+          "type": "string",
+          "x-go-name": "ForkedFrom",
+          "x-go-type": "string",
+          "x-go-json-tag": "forkedFrom,omitempty"
+        },
+        "inheritedTurns": {
+          "type": "integer",
+          "x-go-name": "InheritedTurns",
+          "x-go-type": "int",
+          "x-go-json-tag": "inheritedTurns,omitempty"
+        },
+        "lastSeq": {
+          "type": "integer",
+          "x-go-name": "LastSeq",
+          "x-go-type": "uint64",
+          "x-go-json-tag": "lastSeq"
+        },
+        "lastStatus": {
+          "$ref": "#/$defs/TurnStatus",
+          "description": "LastStatus is the status of the most recent finished turn.",
+          "x-go-name": "LastStatus",
+          "x-go-type": "TurnStatus",
+          "x-go-json-tag": "lastStatus,omitempty"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Metadata",
+          "x-go-type": "map[string]string",
+          "x-go-json-tag": "metadata,omitempty"
+        },
+        "model": {
+          "type": "string",
+          "x-go-name": "Model",
+          "x-go-type": "string",
+          "x-go-json-tag": "model,omitempty"
+        },
+        "pinned": {
+          "type": "boolean",
+          "description": "Pinned prevents automatic cache eviction and runtime suspension.",
+          "x-go-name": "Pinned",
+          "x-go-type": "bool",
+          "x-go-json-tag": "pinned,omitempty"
+        },
+        "runtime": {
+          "type": "string",
+          "x-go-name": "Runtime",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtime"
+        },
+        "runtimeSessionId": {
+          "type": "string",
+          "x-go-name": "RuntimeSessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtimeSessionId,omitempty"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "ID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        },
+        "settingsRevision": {
+          "type": "integer",
+          "description": "SettingsRevision changes only when session selections or pinning change.",
+          "x-go-name": "SettingsRevision",
+          "x-go-type": "uint64",
+          "x-go-json-tag": "settingsRevision"
+        },
+        "state": {
+          "$ref": "#/$defs/SessionState",
+          "x-go-name": "State",
+          "x-go-type": "SessionState",
+          "x-go-json-tag": "state"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title is a one-line name: the start of the first prompt, unless it\nwas set at creation or with Manager.Rename.",
+          "x-go-name": "Title",
+          "x-go-type": "string",
+          "x-go-json-tag": "title,omitempty"
+        },
+        "turns": {
+          "type": "integer",
+          "description": "Turns counts the prompts sent in this session.",
+          "x-go-name": "Turns",
+          "x-go-type": "int",
+          "x-go-json-tag": "turns"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "UpdatedAt",
+          "x-go-type": "time.Time",
+          "x-go-json-tag": "updatedAt"
+        },
+        "usage": {
+          "$ref": "#/$defs/BudgetUsage",
+          "x-go-name": "Usage",
+          "x-go-type": "BudgetUsage",
+          "x-go-json-tag": "usage"
+        },
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceBinding",
+          "x-go-name": "Workspace",
+          "x-go-type": "*WorkspaceBinding",
+          "x-go-json-tag": "workspace,omitempty"
+        },
+        "workspaceSettings": {
+          "$ref": "#/$defs/WorkspaceSettings",
+          "x-go-name": "WorkspaceSettings",
+          "x-go-type": "WorkspaceSettings",
+          "x-go-json-tag": "workspaceSettings"
+        }
+      },
+      "required": [
+        "budget",
+        "createdAt",
+        "lastSeq",
+        "runtime",
+        "sessionId",
+        "settingsRevision",
+        "state",
+        "turns",
+        "updatedAt",
+        "usage",
+        "workspaceSettings"
+      ]
+    },
+    "SessionListResult": {
+      "type": "object",
+      "description": "SessionListResult is the result of \"session.list\".",
+      "properties": {
+        "sessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionInfo",
+            "x-go-type": "SessionInfo"
+          },
+          "x-go-name": "Sessions",
+          "x-go-type": "[]SessionInfo",
+          "x-go-json-tag": "sessions"
+        }
+      },
+      "required": [
+        "sessions"
+      ]
+    },
+    "SessionPinParams": {
+      "type": "object",
+      "description": "SessionPinParams protect an idle session from automatic resource eviction.",
+      "properties": {
+        "pinned": {
+          "type": "boolean",
+          "x-go-name": "Pinned",
+          "x-go-type": "bool",
+          "x-go-json-tag": "pinned"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        }
+      },
+      "required": [
+        "pinned",
+        "sessionId"
+      ]
+    },
+    "SessionPromptParams": {
+      "type": "object",
+      "description": "SessionPromptParams are the params of \"session.prompt\".",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/ConfigPatch",
+          "x-go-name": "Config",
+          "x-go-type": "*ConfigPatch",
+          "x-go-json-tag": "config,omitempty"
+        },
+        "input": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InputPart",
+            "x-go-type": "InputPart"
+          },
+          "x-go-name": "Input",
+          "x-go-type": "[]InputPart",
+          "x-go-json-tag": "input"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        },
+        "settings": {
+          "$ref": "#/$defs/SettingsPatch",
+          "x-go-name": "Settings",
+          "x-go-type": "SettingsPatch",
+          "x-go-json-tag": "settings,omitempty"
+        },
+        "turnId": {
+          "type": "string",
+          "description": "TurnID is optional; clients should generate it (e.g. a UUID) so they\ncan correlate events that arrive before the response.",
+          "x-go-name": "TurnID",
+          "x-go-type": "string",
+          "x-go-json-tag": "turnId,omitempty"
+        }
+      },
+      "required": [
+        "input",
+        "sessionId"
+      ]
+    },
+    "SessionPromptResult": {
+      "type": "object",
+      "description": "SessionPromptResult is the result of \"session.prompt\". The turn runs\nasynchronously; follow it through \"event\" notifications.",
+      "properties": {
+        "turnId": {
+          "type": "string",
+          "x-go-name": "TurnID",
+          "x-go-type": "string",
+          "x-go-json-tag": "turnId"
+        }
+      },
+      "required": [
+        "turnId"
+      ]
+    },
+    "SessionRenameParams": {
+      "type": "object",
+      "description": "SessionRenameParams are the params of \"session.rename\". The result is a\nSessionResult.",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        },
+        "title": {
+          "type": "string",
+          "x-go-name": "Title",
+          "x-go-type": "string",
+          "x-go-json-tag": "title"
+        }
+      },
+      "required": [
+        "sessionId",
+        "title"
+      ]
+    },
+    "SessionResult": {
+      "type": "object",
+      "description": "SessionResult wraps a session.Info.",
+      "properties": {
+        "session": {
+          "$ref": "#/$defs/SessionInfo",
+          "x-go-name": "Session",
+          "x-go-type": "SessionInfo",
+          "x-go-json-tag": "session"
+        }
+      },
+      "required": [
+        "session"
+      ]
+    },
+    "SessionSettings": {
+      "type": "object",
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "description": "Cwd is the working directory the agent operates in.",
+          "x-go-name": "Cwd",
+          "x-go-type": "string",
+          "x-go-json-tag": "cwd,omitempty"
+        },
+        "disableHostTools": {
+          "type": "boolean",
+          "description": "DisableHostTools gives the session no host tools, and no Harness Kit\nMCP bridge at all (which also disables Claude Code approvals).",
+          "x-go-name": "DisableHostTools",
+          "x-go-type": "bool",
+          "x-go-json-tag": "disableHostTools,omitempty"
+        },
+        "effort": {
+          "type": "string",
+          "description": "Effort selects reasoning effort in the runtime's own vocabulary.",
+          "x-go-name": "Effort",
+          "x-go-type": "string",
+          "x-go-json-tag": "effort,omitempty"
+        },
+        "hostTools": {
+          "type": "array",
+          "description": "HostTools selects which of the host's registered tools (see package\ntools) this session may use; nil means all of them.",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "HostTools",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "hostTools,omitempty"
+        },
+        "instructions": {
+          "type": "string",
+          "description": "Instructions are appended to the runtime's own system/developer\ninstructions where supported.",
+          "x-go-name": "Instructions",
+          "x-go-type": "string",
+          "x-go-json-tag": "instructions,omitempty"
+        },
+        "mcp": {
+          "$ref": "#/$defs/McpConfig",
+          "description": "MCP lists MCP servers to add for this session, in Harness Kit's\nportable format. ${VAR} references stay unexpanded here; adapters\nresolve them when they start the runtime, so secrets are never\nstored. Requires Capabilities.MCP.",
+          "x-go-name": "MCP",
+          "x-go-type": "*McpConfig",
+          "x-go-json-tag": "mcp,omitempty"
+        },
+        "model": {
+          "type": "string",
+          "description": "Model selects a model, in the runtime's own naming. Empty uses the\nruntime's configured default.",
+          "x-go-name": "Model",
+          "x-go-type": "string",
+          "x-go-json-tag": "model,omitempty"
+        },
+        "options": {
+          "type": "object",
+          "description": "Options holds runtime-specific options: either the adapter's own\noptions struct, or JSON (json.RawMessage, []byte, map) that decodes\ninto it. See DecodeOptions.",
+          "additionalProperties": {},
+          "x-go-name": "Options",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "options,omitempty"
+        },
+        "rawEvents": {
+          "type": "boolean",
+          "description": "RawEvents asks the adapter to emit runtime.raw events for native\nmessages it does not map.",
+          "x-go-name": "RawEvents",
+          "x-go-type": "bool",
+          "x-go-json-tag": "rawEvents,omitempty"
+        },
+        "resumeId": {
+          "type": "string",
+          "description": "ResumeID is a runtime-native session ID to resume (a Codex thread\nID, a Claude Code session ID).",
+          "x-go-name": "ResumeID",
+          "x-go-type": "string",
+          "x-go-json-tag": "resumeId,omitempty"
+        },
+        "runtime": {
+          "type": "string",
+          "x-go-name": "Runtime",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtime,omitempty"
+        }
+      }
+    },
+    "SessionSettingsPatch": {
+      "type": "object",
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "description": "Cwd is the working directory the agent operates in.",
+          "x-go-name": "Cwd",
+          "x-go-type": "string",
+          "x-go-json-tag": "cwd,omitempty"
+        },
+        "disableHostTools": {
+          "type": "boolean",
+          "description": "DisableHostTools gives the session no host tools, and no Harness Kit\nMCP bridge at all (which also disables Claude Code approvals).",
+          "x-go-name": "DisableHostTools",
+          "x-go-type": "bool",
+          "x-go-json-tag": "disableHostTools,omitempty"
+        },
+        "effort": {
+          "type": "string",
+          "description": "Effort selects reasoning effort in the runtime's own vocabulary.",
+          "x-go-name": "Effort",
+          "x-go-type": "string",
+          "x-go-json-tag": "effort,omitempty"
+        },
+        "hostTools": {
+          "anyOf": [
+            {
+              "type": "array",
+              "description": "HostTools selects which of the host's registered tools (see package\ntools) this session may use; nil means all of them.",
+              "items": {
+                "type": "string",
+                "x-go-type": "string"
+              },
+              "x-go-name": "HostTools",
+              "x-go-type": "[]string",
+              "x-go-json-tag": "hostTools,omitempty"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "HostTools",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "hostTools,omitempty"
+        },
+        "instructions": {
+          "type": "string",
+          "description": "Instructions are appended to the runtime's own system/developer\ninstructions where supported.",
+          "x-go-name": "Instructions",
+          "x-go-type": "string",
+          "x-go-json-tag": "instructions,omitempty"
+        },
+        "mcp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/McpConfig",
+              "description": "MCP lists MCP servers to add for this session, in Harness Kit's\nportable format. ${VAR} references stay unexpanded here; adapters\nresolve them when they start the runtime, so secrets are never\nstored. Requires Capabilities.MCP.",
+              "x-go-name": "MCP",
+              "x-go-type": "*McpConfig",
+              "x-go-json-tag": "mcp,omitempty"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MCP",
+          "x-go-type": "*McpConfig",
+          "x-go-json-tag": "mcp,omitempty"
+        },
+        "model": {
+          "type": "string",
+          "description": "Model selects a model, in the runtime's own naming. Empty uses the\nruntime's configured default.",
+          "x-go-name": "Model",
+          "x-go-type": "string",
+          "x-go-json-tag": "model,omitempty"
+        },
+        "options": {
+          "type": "object",
+          "description": "Options holds runtime-specific options: either the adapter's own\noptions struct, or JSON (json.RawMessage, []byte, map) that decodes\ninto it. See DecodeOptions.",
+          "additionalProperties": {},
+          "x-go-name": "Options",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "options,omitempty"
+        },
+        "rawEvents": {
+          "type": "boolean",
+          "description": "RawEvents asks the adapter to emit runtime.raw events for native\nmessages it does not map.",
+          "x-go-name": "RawEvents",
+          "x-go-type": "bool",
+          "x-go-json-tag": "rawEvents,omitempty"
+        },
+        "resumeId": {
+          "type": "string",
+          "description": "ResumeID is a runtime-native session ID to resume (a Codex thread\nID, a Claude Code session ID).",
+          "x-go-name": "ResumeID",
+          "x-go-type": "string",
+          "x-go-json-tag": "resumeId,omitempty"
+        },
+        "runtime": {
+          "type": "string",
+          "x-go-name": "Runtime",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtime,omitempty"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
+    },
+    "SessionStartedData": {
+      "type": "object",
+      "description": "SessionStartedData is the payload of session.started.",
+      "properties": {
+        "model": {
+          "type": "string",
+          "x-go-name": "Model",
+          "x-go-type": "string",
+          "x-go-json-tag": "model,omitempty"
+        },
+        "resumed": {
+          "type": "boolean",
+          "x-go-name": "Resumed",
+          "x-go-type": "bool",
+          "x-go-json-tag": "resumed,omitempty"
+        },
+        "runtime": {
+          "type": "string",
+          "x-go-name": "Runtime",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtime"
+        },
+        "runtimeSessionId": {
+          "type": "string",
+          "x-go-name": "RuntimeSessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtimeSessionId,omitempty"
+        }
+      },
+      "required": [
+        "runtime"
+      ]
+    },
+    "SessionState": {
+      "type": "string",
+      "description": "State is a session's lifecycle state.\n\n\tstarting -\u003e idle \u003c-\u003e running\n\tidle|running -\u003e closing -\u003e closed\n\tstarting|idle|running -\u003e failed   (the runtime died)",
+      "enum": [
+        "closed",
+        "closing",
+        "failed",
+        "idle",
+        "running",
+        "starting",
+        "suspended",
+        "suspending"
+      ],
+      "x-go-type": "string"
+    },
+    "SessionTagsParams": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Tags",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "tags"
+        }
+      },
+      "required": [
+        "sessionId",
+        "tags"
+      ]
+    },
+    "SessionUpdatedData": {
+      "type": "object",
+      "description": "SessionUpdatedData is a snapshot of the mutable session fields. Optional\nfields that are absent have been cleared, rather than left unchanged.\nState uses the session lifecycle names (idle, running, closing, ...).",
+      "properties": {
+        "activeTurnId": {
+          "type": "string",
+          "x-go-name": "ActiveTurnID",
+          "x-go-type": "string",
+          "x-go-json-tag": "activeTurnId,omitempty"
+        },
+        "archived": {
+          "type": "boolean",
+          "x-go-name": "Archived",
+          "x-go-type": "bool",
+          "x-go-json-tag": "archived,omitempty"
+        },
+        "budget": {
+          "$ref": "#/$defs/BudgetLimits",
+          "x-go-name": "Budget",
+          "x-go-type": "*BudgetLimits",
+          "x-go-json-tag": "budget,omitempty"
+        },
+        "config": {
+          "$ref": "#/$defs/TurnConfig",
+          "description": "Config contains current session defaults, never a one-turn override.",
+          "x-go-name": "Config",
+          "x-go-type": "*TurnConfig",
+          "x-go-json-tag": "config,omitempty"
+        },
+        "error": {
+          "$ref": "#/$defs/ErrorInfo",
+          "x-go-name": "Error",
+          "x-go-type": "*ErrorInfo",
+          "x-go-json-tag": "error,omitempty"
+        },
+        "forkPending": {
+          "type": "boolean",
+          "x-go-name": "ForkPending",
+          "x-go-type": "bool",
+          "x-go-json-tag": "forkPending,omitempty"
+        },
+        "lastStatus": {
+          "$ref": "#/$defs/TurnStatus",
+          "x-go-name": "LastStatus",
+          "x-go-type": "TurnStatus",
+          "x-go-json-tag": "lastStatus,omitempty"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Metadata",
+          "x-go-type": "map[string]string",
+          "x-go-json-tag": "metadata,omitempty"
+        },
+        "pinned": {
+          "type": "boolean",
+          "x-go-name": "Pinned",
+          "x-go-type": "bool",
+          "x-go-json-tag": "pinned,omitempty"
+        },
+        "runtimeSessionId": {
+          "type": "string",
+          "x-go-name": "RuntimeSessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtimeSessionId,omitempty"
+        },
+        "settingsRevision": {
+          "type": "integer",
+          "description": "SettingsRevision changes only when session settings or pinning change.",
+          "x-go-name": "SettingsRevision",
+          "x-go-type": "uint64",
+          "x-go-json-tag": "settingsRevision,omitempty"
+        },
+        "state": {
+          "$ref": "#/$defs/SessionState",
+          "x-go-name": "State",
+          "x-go-type": "string",
+          "x-go-json-tag": "state"
+        },
+        "title": {
+          "type": "string",
+          "x-go-name": "Title",
+          "x-go-type": "string",
+          "x-go-json-tag": "title"
+        },
+        "turns": {
+          "type": "integer",
+          "x-go-name": "Turns",
+          "x-go-type": "int",
+          "x-go-json-tag": "turns"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "UpdatedAt",
+          "x-go-type": "time.Time",
+          "x-go-json-tag": "updatedAt"
+        },
+        "usage": {
+          "$ref": "#/$defs/BudgetUsage",
+          "x-go-name": "Usage",
+          "x-go-type": "*BudgetUsage",
+          "x-go-json-tag": "usage,omitempty"
+        }
+      },
+      "required": [
+        "state",
+        "title",
+        "turns",
+        "updatedAt"
+      ]
+    },
+    "SettingsField": {
+      "type": "object",
+      "description": "Field describes a field for settings interfaces. When describes the global\nlifetime; scoped snapshots can refine it using adapter capabilities.",
+      "properties": {
+        "minimum": {
+          "type": "integer",
+          "x-go-name": "Minimum",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "minimum,omitempty"
+        },
+        "nullable": {
+          "type": "boolean",
+          "x-go-name": "Nullable",
+          "x-go-type": "bool",
+          "x-go-json-tag": "nullable,omitempty"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Scopes",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "scopes"
+        },
+        "type": {
+          "type": "string",
+          "x-go-name": "Type",
+          "x-go-type": "string",
+          "x-go-json-tag": "type"
+        },
+        "unit": {
+          "type": "string",
+          "x-go-name": "Unit",
+          "x-go-type": "string",
+          "x-go-json-tag": "unit,omitempty"
+        },
+        "when": {
+          "type": "string",
+          "x-go-name": "When",
+          "x-go-type": "string",
+          "x-go-json-tag": "when"
+        },
+        "writable": {
+          "type": "boolean",
+          "x-go-name": "Writable",
+          "x-go-type": "bool",
+          "x-go-json-tag": "writable"
+        }
+      },
+      "required": [
+        "scopes",
+        "type",
+        "when",
+        "writable"
+      ]
+    },
+    "SettingsGetParams": {
+      "type": "object",
+      "description": "SettingsGetParams select host settings or a session's settings.",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/SettingsTarget",
+          "x-go-name": "Target",
+          "x-go-type": "SettingsTarget",
+          "x-go-json-tag": "target,omitempty"
+        }
+      }
+    },
+    "SettingsPatch": {
+      "type": "object",
+      "description": "Omitted fields remain unchanged. Null disables nullable limits; false and zero are explicit values.",
+      "properties": {
+        "approvals": {
+          "$ref": "#/$defs/ApprovalSettingsPatch"
+        },
+        "budget": {
+          "$ref": "#/$defs/BudgetLimitsPatch"
+        },
+        "history": {
+          "$ref": "#/$defs/HistorySettingsPatch"
+        },
+        "logging": {
+          "$ref": "#/$defs/LoggingSettingsPatch"
+        },
+        "memory": {
+          "$ref": "#/$defs/MemorySettingsPatch"
+        },
+        "process": {
+          "$ref": "#/$defs/ProcessSettingsPatch"
+        },
+        "session": {
+          "$ref": "#/$defs/SessionSettingsPatch"
+        },
+        "streams": {
+          "$ref": "#/$defs/StreamSettingsPatch"
+        },
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceSettingsPatch"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
+    },
+    "SettingsSnapshot": {
+      "type": "object",
+      "properties": {
+        "deferred": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Deferred",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "deferred,omitempty"
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/SettingsField",
+            "x-go-type": "SettingsField"
+          },
+          "x-go-name": "Fields",
+          "x-go-type": "map[string]SettingsField",
+          "x-go-json-tag": "fields"
+        },
+        "resync": {
+          "type": "boolean",
+          "description": "Resync means a slow observer missed one or more notifications, possibly\nfor another target. Refresh displayed targets with settings.get.",
+          "x-go-name": "Resync",
+          "x-go-type": "bool",
+          "x-go-json-tag": "resync,omitempty"
+        },
+        "revision": {
+          "type": "integer",
+          "x-go-name": "Revision",
+          "x-go-type": "uint64",
+          "x-go-json-tag": "revision"
+        },
+        "target": {
+          "$ref": "#/$defs/SettingsTarget",
+          "x-go-name": "Target",
+          "x-go-type": "SettingsTarget",
+          "x-go-json-tag": "target,omitempty"
+        },
+        "values": {
+          "$ref": "#/$defs/SettingsValues",
+          "x-go-name": "Values",
+          "x-go-type": "SettingsValues",
+          "x-go-json-tag": "values"
+        }
+      },
+      "required": [
+        "fields",
+        "revision",
+        "values"
+      ]
+    },
+    "SettingsTarget": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId,omitempty"
+        }
+      }
+    },
+    "SettingsValues": {
+      "type": "object",
+      "description": "Values is the single settings document. Process describes host wiring and\nshutdown policy; Session supplies defaults for new sessions. Scoped snapshots replace\nSession with the selected session's settings. Optional limits use nil for no\nlimit; a zero cache budget retains no cached events. These are data budgets,\nnot limits on process RSS or memory owned by child processes.",
+      "properties": {
+        "approvals": {
+          "$ref": "#/$defs/ApprovalSettings",
+          "x-go-name": "Approvals",
+          "x-go-type": "ApprovalSettings",
+          "x-go-json-tag": "approvals"
+        },
+        "budget": {
+          "$ref": "#/$defs/BudgetLimits",
+          "x-go-name": "Budget",
+          "x-go-type": "BudgetLimits",
+          "x-go-json-tag": "budget"
+        },
+        "history": {
+          "$ref": "#/$defs/HistorySettings",
+          "x-go-name": "History",
+          "x-go-type": "HistorySettings",
+          "x-go-json-tag": "history"
+        },
+        "logging": {
+          "$ref": "#/$defs/LoggingSettings",
+          "x-go-name": "Logging",
+          "x-go-type": "LoggingSettings",
+          "x-go-json-tag": "logging"
+        },
+        "memory": {
+          "$ref": "#/$defs/MemorySettings",
+          "x-go-name": "Memory",
+          "x-go-type": "MemorySettings",
+          "x-go-json-tag": "memory"
+        },
+        "process": {
+          "$ref": "#/$defs/ProcessSettings",
+          "x-go-name": "Process",
+          "x-go-type": "ProcessSettings",
+          "x-go-json-tag": "process"
+        },
+        "session": {
+          "$ref": "#/$defs/SessionSettings",
+          "x-go-name": "Session",
+          "x-go-type": "SessionSettings",
+          "x-go-json-tag": "session"
+        },
+        "streams": {
+          "$ref": "#/$defs/StreamSettings",
+          "x-go-name": "Streams",
+          "x-go-type": "StreamSettings",
+          "x-go-json-tag": "streams"
+        },
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceSettings",
+          "x-go-name": "Workspace",
+          "x-go-type": "WorkspaceSettings",
+          "x-go-json-tag": "workspace"
+        }
+      },
+      "required": [
+        "approvals",
+        "budget",
+        "history",
+        "logging",
+        "memory",
+        "process",
+        "session",
+        "streams",
+        "workspace"
+      ]
+    },
+    "StreamGapData": {
+      "type": "object",
+      "description": "StreamGapData is the payload of stream.gap.",
+      "properties": {
+        "fromSeq": {
+          "type": "integer",
+          "x-go-name": "FromSeq",
+          "x-go-type": "uint64",
+          "x-go-json-tag": "fromSeq"
+        },
+        "toSeq": {
+          "type": "integer",
+          "x-go-name": "ToSeq",
+          "x-go-type": "uint64",
+          "x-go-json-tag": "toSeq"
+        }
+      },
+      "required": [
+        "fromSeq",
+        "toSeq"
+      ]
+    },
+    "StreamSettings": {
+      "type": "object",
+      "properties": {
+        "maxQueueBytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxQueueBytes",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "maxQueueBytes"
+        },
+        "maxQueueEvents": {
+          "type": "integer",
+          "x-go-name": "MaxQueueEvents",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxQueueEvents"
+        }
+      },
+      "required": [
+        "maxQueueBytes",
+        "maxQueueEvents"
+      ]
+    },
+    "StreamSettingsPatch": {
+      "type": "object",
+      "properties": {
+        "maxQueueBytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "MaxQueueBytes",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "maxQueueBytes"
+        },
+        "maxQueueEvents": {
+          "type": "integer",
+          "x-go-name": "MaxQueueEvents",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxQueueEvents"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
+    },
+    "ToolCallParams": {
+      "type": "object",
+      "description": "ToolCallParams are the params of the \"tool.call\" request.",
+      "properties": {
+        "arguments": {
+          "x-go-name": "Arguments",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "arguments"
+        },
+        "name": {
+          "type": "string",
+          "x-go-name": "Name",
+          "x-go-type": "string",
+          "x-go-json-tag": "name"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        },
+        "turnId": {
+          "type": "string",
+          "x-go-name": "TurnID",
+          "x-go-type": "string",
+          "x-go-json-tag": "turnId,omitempty"
+        }
+      },
+      "required": [
+        "arguments",
+        "name",
+        "sessionId"
+      ]
+    },
+    "ToolCompletedData": {
+      "type": "object",
+      "description": "ToolCompletedData is the payload of tool.completed.",
+      "properties": {
+        "callId": {
+          "type": "string",
+          "x-go-name": "CallID",
+          "x-go-type": "string",
+          "x-go-json-tag": "callId"
+        },
+        "error": {
+          "type": "string",
+          "x-go-name": "Error",
+          "x-go-type": "string",
+          "x-go-json-tag": "error,omitempty"
+        },
+        "exitCode": {
+          "type": "integer",
+          "x-go-name": "ExitCode",
+          "x-go-type": "*int",
+          "x-go-json-tag": "exitCode,omitempty"
+        },
+        "name": {
+          "type": "string",
+          "x-go-name": "Name",
+          "x-go-type": "string",
+          "x-go-json-tag": "name,omitempty"
+        },
+        "output": {
+          "type": "string",
+          "x-go-name": "Output",
+          "x-go-type": "string",
+          "x-go-json-tag": "output,omitempty"
+        },
+        "status": {
+          "$ref": "#/$defs/ToolStatus",
+          "x-go-name": "Status",
+          "x-go-type": "ToolStatus",
+          "x-go-json-tag": "status"
+        }
+      },
+      "required": [
+        "callId",
+        "status"
+      ]
+    },
+    "ToolContent": {
+      "type": "object",
+      "description": "Content is one piece of tool output.",
+      "properties": {
+        "text": {
+          "type": "string",
+          "x-go-name": "Text",
+          "x-go-type": "string",
+          "x-go-json-tag": "text"
+        },
+        "type": {
+          "type": "string",
+          "description": "\"text\"",
+          "enum": [
+            "text"
+          ],
+          "x-go-name": "Type",
+          "x-go-type": "string",
+          "x-go-json-tag": "type"
+        }
+      },
+      "required": [
+        "text",
+        "type"
+      ]
+    },
+    "ToolFilter": {
+      "type": "object",
+      "description": "ToolFilter limits which tools of a server may be used.",
+      "properties": {
+        "allow": {
+          "type": "array",
+          "description": "Allow, if non-empty, is the complete list of usable tools.",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Allow",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "allow,omitempty"
+        },
+        "deny": {
+          "type": "array",
+          "description": "Deny lists tools that may never be used.",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Deny",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "deny,omitempty"
+        }
+      }
+    },
+    "ToolKind": {
+      "type": "string",
+      "description": "ToolKind classifies tool calls.",
+      "enum": [
+        "command",
+        "file_change",
+        "file_read",
+        "mcp",
+        "other",
+        "search",
+        "subagent",
+        "web_search"
+      ],
+      "x-go-type": "string"
+    },
+    "ToolOutputData": {
+      "type": "object",
+      "description": "ToolOutputData is incremental tool output (e.g. command stdout).",
+      "properties": {
+        "callId": {
+          "type": "string",
+          "x-go-name": "CallID",
+          "x-go-type": "string",
+          "x-go-json-tag": "callId"
+        },
+        "output": {
+          "type": "string",
+          "x-go-name": "Output",
+          "x-go-type": "string",
+          "x-go-json-tag": "output"
+        }
+      },
+      "required": [
+        "callId",
+        "output"
+      ]
+    },
+    "ToolResult": {
+      "type": "object",
+      "description": "Result is a tool's output, in MCP's CallToolResult shape.",
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolContent",
+            "x-go-type": "ToolContent"
+          },
+          "x-go-name": "Content",
+          "x-go-type": "[]ToolContent",
+          "x-go-json-tag": "content"
+        },
+        "isError": {
+          "type": "boolean",
+          "x-go-name": "IsError",
+          "x-go-type": "bool",
+          "x-go-json-tag": "isError,omitempty"
+        },
+        "structuredContent": {
+          "x-go-name": "Structured",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "structuredContent,omitempty"
+        }
+      },
+      "required": [
+        "content"
+      ]
+    },
+    "ToolSpec": {
+      "type": "object",
+      "description": "ToolSpec describes a client-registered tool.",
+      "properties": {
+        "approval": {
+          "$ref": "#/$defs/McpApproval",
+          "description": "Approval \"ask\" requests the host's approval before each call.",
+          "x-go-name": "Approval",
+          "x-go-type": "McpApproval",
+          "x-go-json-tag": "approval,omitempty"
+        },
+        "description": {
+          "type": "string",
+          "x-go-name": "Description",
+          "x-go-type": "string",
+          "x-go-json-tag": "description,omitempty"
+        },
+        "inputSchema": {
+          "type": "object",
+          "description": "InputSchema is a JSON Schema for the arguments object (default\n{\"type\":\"object\"}). Arguments are validated before tool.call.",
+          "additionalProperties": {},
+          "x-go-name": "InputSchema",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "inputSchema,omitempty"
+        },
+        "name": {
+          "type": "string",
+          "x-go-name": "Name",
+          "x-go-type": "string",
+          "x-go-json-tag": "name"
+        },
+        "readOnly": {
+          "type": "boolean",
+          "x-go-name": "ReadOnly",
+          "x-go-type": "bool",
+          "x-go-json-tag": "readOnly,omitempty"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "x-go-name": "TimeoutMs",
+          "x-go-type": "int",
+          "x-go-json-tag": "timeoutMs,omitempty"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "ToolStartedData": {
+      "type": "object",
+      "description": "ToolStartedData is the payload of tool.started.",
+      "properties": {
+        "callId": {
+          "type": "string",
+          "x-go-name": "CallID",
+          "x-go-type": "string",
+          "x-go-json-tag": "callId"
+        },
+        "input": {
+          "x-go-name": "Input",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "input,omitempty"
+        },
+        "kind": {
+          "$ref": "#/$defs/ToolKind",
+          "x-go-name": "Kind",
+          "x-go-type": "ToolKind",
+          "x-go-json-tag": "kind"
+        },
+        "name": {
+          "type": "string",
+          "x-go-name": "Name",
+          "x-go-type": "string",
+          "x-go-json-tag": "name"
+        },
+        "parentCallId": {
+          "type": "string",
+          "x-go-name": "ParentCallID",
+          "x-go-type": "string",
+          "x-go-json-tag": "parentCallId,omitempty"
+        },
+        "title": {
+          "type": "string",
+          "x-go-name": "Title",
+          "x-go-type": "string",
+          "x-go-json-tag": "title,omitempty"
+        }
+      },
+      "required": [
+        "callId",
+        "kind",
+        "name"
+      ]
+    },
+    "ToolStatus": {
+      "type": "string",
+      "description": "ToolStatus is the final status of a tool call.",
+      "enum": [
+        "completed",
+        "declined",
+        "failed"
+      ],
+      "x-go-type": "string"
+    },
+    "ToolsListResult": {
+      "type": "object",
+      "description": "ToolsListResult is the result of \"tools.list\".",
+      "properties": {
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolSpec",
+            "x-go-type": "ToolSpec"
+          },
+          "x-go-name": "Tools",
+          "x-go-type": "[]ToolSpec",
+          "x-go-json-tag": "tools"
+        }
+      },
+      "required": [
+        "tools"
+      ]
+    },
+    "ToolsRegisterParams": {
+      "type": "object",
+      "description": "ToolsRegisterParams are the params of \"tools.register\".",
+      "properties": {
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolSpec",
+            "x-go-type": "ToolSpec"
+          },
+          "x-go-name": "Tools",
+          "x-go-type": "[]ToolSpec",
+          "x-go-json-tag": "tools"
+        }
+      },
+      "required": [
+        "tools"
+      ]
+    },
+    "ToolsUnregisterParams": {
+      "type": "object",
+      "description": "ToolsUnregisterParams are the params of \"tools.unregister\".",
+      "properties": {
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Names",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "names"
+        }
+      },
+      "required": [
+        "names"
+      ]
+    },
+    "TurnCompletedData": {
+      "type": "object",
+      "description": "TurnCompletedData is the payload of turn.completed. Exactly one\nturn.completed is emitted for every turn.started.",
+      "properties": {
+        "budget": {
+          "$ref": "#/$defs/BudgetExceeded",
+          "x-go-name": "Budget",
+          "x-go-type": "*BudgetExceeded",
+          "x-go-json-tag": "budget,omitempty"
+        },
+        "error": {
+          "$ref": "#/$defs/ErrorInfo",
+          "x-go-name": "Error",
+          "x-go-type": "*ErrorInfo",
+          "x-go-json-tag": "error,omitempty"
+        },
+        "runtimeTurnId": {
+          "type": "string",
+          "x-go-name": "RuntimeTurnID",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtimeTurnId,omitempty"
+        },
+        "status": {
+          "$ref": "#/$defs/TurnStatus",
+          "x-go-name": "Status",
+          "x-go-type": "TurnStatus",
+          "x-go-json-tag": "status"
+        },
+        "usage": {
+          "$ref": "#/$defs/UsageData",
+          "x-go-name": "Usage",
+          "x-go-type": "*UsageData",
+          "x-go-json-tag": "usage,omitempty"
+        }
+      },
+      "required": [
+        "status"
+      ]
+    },
+    "TurnConfig": {
+      "type": "object",
+      "description": "Settings is a complete selection for a turn. Empty Model/Effort delegate\nselection to the runtime. Options use the adapter's native names. Values are\nreplaced as a whole: there is no implicit recursive merge of native options.",
+      "properties": {
+        "effort": {
+          "type": "string",
+          "x-go-name": "Effort",
+          "x-go-type": "string",
+          "x-go-json-tag": "effort,omitempty"
+        },
+        "model": {
+          "type": "string",
+          "x-go-name": "Model",
+          "x-go-type": "string",
+          "x-go-json-tag": "model,omitempty"
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": {
+            "x-go-type": "json.RawMessage"
+          },
+          "x-go-name": "Options",
+          "x-go-type": "map[string]json.RawMessage",
+          "x-go-json-tag": "options,omitempty"
+        }
+      }
+    },
+    "TurnStartedData": {
+      "type": "object",
+      "description": "TurnStartedData is the payload of turn.started.",
+      "properties": {
+        "budget": {
+          "$ref": "#/$defs/BudgetLimits",
+          "x-go-name": "Budget",
+          "x-go-type": "*BudgetLimits",
+          "x-go-json-tag": "budget,omitempty"
+        },
+        "config": {
+          "$ref": "#/$defs/TurnConfig",
+          "description": "Config is the accepted effective turn selection after native resolution.",
+          "x-go-name": "Config",
+          "x-go-type": "*TurnConfig",
+          "x-go-json-tag": "config,omitempty"
+        },
+        "input": {
+          "type": "array",
+          "description": "Input preserves content order and local image references for replay.\nImage bytes are not copied into the transcript.",
+          "items": {
+            "$ref": "#/$defs/InputPart",
+            "x-go-type": "InputPart"
+          },
+          "x-go-name": "Input",
+          "x-go-type": "[]InputPart",
+          "x-go-json-tag": "input,omitempty"
+        },
+        "text": {
+          "type": "string",
+          "description": "Text is the concatenated text of the prompt input.",
+          "x-go-name": "Text",
+          "x-go-type": "string",
+          "x-go-json-tag": "text,omitempty"
+        },
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceSettings",
+          "x-go-name": "Workspace",
+          "x-go-type": "*WorkspaceSettings",
+          "x-go-json-tag": "workspace,omitempty"
+        }
+      }
+    },
+    "TurnStatus": {
+      "type": "string",
+      "description": "TurnStatus is the final status of a turn.",
+      "enum": [
+        "cancelled",
+        "completed",
+        "failed"
+      ],
+      "x-go-type": "string"
+    },
+    "UsageData": {
+      "type": "object",
+      "description": "UsageData reports token usage and, where the runtime provides it, cost.",
+      "properties": {
+        "cacheWriteTokens": {
+          "type": "integer",
+          "x-go-name": "CacheWriteTokens",
+          "x-go-type": "int64",
+          "x-go-json-tag": "cacheWriteTokens,omitempty"
+        },
+        "cachedInputTokens": {
+          "type": "integer",
+          "x-go-name": "CachedInputTokens",
+          "x-go-type": "int64",
+          "x-go-json-tag": "cachedInputTokens,omitempty"
+        },
+        "contextWindow": {
+          "type": "integer",
+          "x-go-name": "ContextWindow",
+          "x-go-type": "int64",
+          "x-go-json-tag": "contextWindow,omitempty"
+        },
+        "costUsd": {
+          "type": "number",
+          "description": "CostUSD is the runtime's own estimate, not a bill.",
+          "x-go-name": "CostUSD",
+          "x-go-type": "*float64",
+          "x-go-json-tag": "costUsd,omitempty"
+        },
+        "inputTokens": {
+          "type": "integer",
+          "x-go-name": "InputTokens",
+          "x-go-type": "int64",
+          "x-go-json-tag": "inputTokens,omitempty"
+        },
+        "mode": {
+          "type": "string",
+          "description": "Mode is \"snapshot\" (default) or \"delta\". Snapshots are cumulative within\nScope and repeated snapshots are not additional usage. Deltas are increments.",
+          "enum": [
+            "snapshot",
+            "delta"
+          ],
+          "x-go-name": "Mode",
+          "x-go-type": "string",
+          "x-go-json-tag": "mode,omitempty"
+        },
+        "outputTokens": {
+          "type": "integer",
+          "x-go-name": "OutputTokens",
+          "x-go-type": "int64",
+          "x-go-json-tag": "outputTokens,omitempty"
+        },
+        "reasoningTokens": {
+          "type": "integer",
+          "x-go-name": "ReasoningTokens",
+          "x-go-type": "int64",
+          "x-go-json-tag": "reasoningTokens,omitempty"
+        },
+        "scope": {
+          "type": "string",
+          "description": "Scope is \"turn\" (this turn only) or \"session\" (cumulative).",
+          "enum": [
+            "turn",
+            "session"
+          ],
+          "x-go-name": "Scope",
+          "x-go-type": "string",
+          "x-go-json-tag": "scope"
+        },
+        "tokensKnown": {
+          "type": "boolean",
+          "description": "TokensKnown distinguishes a reported zero from unknown token accounting.\nContextWindow is never a token-usage measurement.",
+          "x-go-name": "TokensKnown",
+          "x-go-type": "bool",
+          "x-go-json-tag": "tokensKnown,omitempty"
+        },
+        "totalTokens": {
+          "type": "integer",
+          "description": "TotalTokens is the normalized consumed-token total, including cache reads\nand writes where they are separate. Cached/reasoning counts may be subsets\nof input/output; consumers must not add those fields to TotalTokens.",
+          "x-go-name": "TotalTokens",
+          "x-go-type": "int64",
+          "x-go-json-tag": "totalTokens,omitempty"
+        }
+      },
+      "required": [
+        "scope"
+      ]
+    },
+    "WorkspaceBinding": {
+      "type": "object",
+      "description": "Binding is durable identity data. Owned means the backend created a dedicated\nworktree for SessionID; it is not permission to delete dirty files.",
+      "properties": {
+        "baseCommit": {
+          "type": "string",
+          "x-go-name": "BaseCommit",
+          "x-go-type": "string",
+          "x-go-json-tag": "baseCommit,omitempty"
+        },
+        "commonDir": {
+          "type": "string",
+          "x-go-name": "CommonDir",
+          "x-go-type": "string",
+          "x-go-json-tag": "commonDir"
+        },
+        "gitDir": {
+          "type": "string",
+          "x-go-name": "GitDir",
+          "x-go-type": "string",
+          "x-go-json-tag": "gitDir"
+        },
+        "kind": {
+          "type": "string",
+          "x-go-name": "Kind",
+          "x-go-type": "string",
+          "x-go-json-tag": "kind"
+        },
+        "owned": {
+          "type": "boolean",
+          "x-go-name": "Owned",
+          "x-go-type": "bool",
+          "x-go-json-tag": "owned"
+        },
+        "path": {
+          "type": "string",
+          "x-go-name": "Path",
+          "x-go-type": "string",
+          "x-go-json-tag": "path"
+        },
+        "repo": {
+          "type": "string",
+          "x-go-name": "Repo",
+          "x-go-type": "string",
+          "x-go-json-tag": "repo"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        }
+      },
+      "required": [
+        "commonDir",
+        "gitDir",
+        "kind",
+        "owned",
+        "path",
+        "repo",
+        "sessionId"
+      ]
+    },
+    "WorkspaceDiff": {
+      "type": "object",
+      "description": "Diff compares content at turn boundaries. WorkingTree includes nonignored\nuntracked files; Index separately shows changes to staged content.",
+      "properties": {
+        "after": {
+          "$ref": "#/$defs/WorkspaceSnapshot",
+          "x-go-name": "After",
+          "x-go-type": "*WorkspaceSnapshot",
+          "x-go-json-tag": "after,omitempty"
+        },
+        "before": {
+          "$ref": "#/$defs/WorkspaceSnapshot",
+          "x-go-name": "Before",
+          "x-go-type": "*WorkspaceSnapshot",
+          "x-go-json-tag": "before,omitempty"
+        },
+        "binding": {
+          "$ref": "#/$defs/WorkspaceBinding",
+          "x-go-name": "Binding",
+          "x-go-type": "WorkspaceBinding",
+          "x-go-json-tag": "binding"
+        },
+        "complete": {
+          "type": "boolean",
+          "x-go-name": "Complete",
+          "x-go-type": "bool",
+          "x-go-json-tag": "complete"
+        },
+        "encodingLossy": {
+          "type": "boolean",
+          "x-go-name": "EncodingLossy",
+          "x-go-type": "bool",
+          "x-go-json-tag": "encodingLossy,omitempty"
+        },
+        "error": {
+          "type": "string",
+          "x-go-name": "Error",
+          "x-go-type": "string",
+          "x-go-json-tag": "error,omitempty"
+        },
+        "index": {
+          "type": "string",
+          "x-go-name": "Index",
+          "x-go-type": "string",
+          "x-go-json-tag": "index"
+        },
+        "maxDiffBytes": {
+          "type": "integer",
+          "x-go-name": "MaxDiffBytes",
+          "x-go-type": "int64",
+          "x-go-json-tag": "maxDiffBytes"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        },
+        "truncated": {
+          "type": "boolean",
+          "x-go-name": "Truncated",
+          "x-go-type": "bool",
+          "x-go-json-tag": "truncated"
+        },
+        "turnId": {
+          "type": "string",
+          "x-go-name": "TurnID",
+          "x-go-type": "string",
+          "x-go-json-tag": "turnId"
+        },
+        "workingTree": {
+          "type": "string",
+          "x-go-name": "WorkingTree",
+          "x-go-type": "string",
+          "x-go-json-tag": "workingTree"
+        }
+      },
+      "required": [
+        "binding",
+        "complete",
+        "index",
+        "maxDiffBytes",
+        "sessionId",
+        "truncated",
+        "turnId",
+        "workingTree"
+      ]
+    },
+    "WorkspaceSettings": {
+      "type": "object",
+      "description": "Settings is the workspace group in the kit's single settings document.\nLocation fields apply to new sessions; capture policy applies to future turns.",
+      "properties": {
+        "base": {
+          "type": "string",
+          "x-go-name": "Base",
+          "x-go-type": "string",
+          "x-go-json-tag": "base"
+        },
+        "captureDiff": {
+          "type": "boolean",
+          "x-go-name": "CaptureDiff",
+          "x-go-type": "bool",
+          "x-go-json-tag": "captureDiff"
+        },
+        "maxDiffBytes": {
+          "type": "integer",
+          "x-go-name": "MaxDiffBytes",
+          "x-go-type": "int64",
+          "x-go-json-tag": "maxDiffBytes"
+        },
+        "maxFiles": {
+          "type": "integer",
+          "x-go-name": "MaxFiles",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxFiles"
+        },
+        "maxSnapshotBytes": {
+          "type": "integer",
+          "x-go-name": "MaxSnapshotBytes",
+          "x-go-type": "int64",
+          "x-go-json-tag": "maxSnapshotBytes"
+        },
+        "mode": {
+          "type": "string",
+          "description": "\"existing\" (default) or \"worktree\"",
+          "enum": [
+            "existing",
+            "worktree"
+          ],
+          "x-go-name": "Mode",
+          "x-go-type": "string",
+          "x-go-json-tag": "mode"
+        },
+        "path": {
+          "type": "string",
+          "x-go-name": "Path",
+          "x-go-type": "string",
+          "x-go-json-tag": "path"
+        },
+        "repo": {
+          "type": "string",
+          "x-go-name": "Repo",
+          "x-go-type": "string",
+          "x-go-json-tag": "repo"
+        },
+        "root": {
+          "type": "string",
+          "x-go-name": "Root",
+          "x-go-type": "string",
+          "x-go-json-tag": "root"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "x-go-name": "TimeoutMs",
+          "x-go-type": "int64",
+          "x-go-json-tag": "timeoutMs"
+        }
+      },
+      "required": [
+        "base",
+        "captureDiff",
+        "maxDiffBytes",
+        "maxFiles",
+        "maxSnapshotBytes",
+        "mode",
+        "path",
+        "repo",
+        "root",
+        "timeoutMs"
+      ]
+    },
+    "WorkspaceSettingsPatch": {
+      "type": "object",
+      "description": "Settings is the workspace group in the kit's single settings document.\nLocation fields apply to new sessions; capture policy applies to future turns.",
+      "properties": {
+        "base": {
+          "type": "string",
+          "x-go-name": "Base",
+          "x-go-type": "string",
+          "x-go-json-tag": "base"
+        },
+        "captureDiff": {
+          "type": "boolean",
+          "x-go-name": "CaptureDiff",
+          "x-go-type": "bool",
+          "x-go-json-tag": "captureDiff"
+        },
+        "maxDiffBytes": {
+          "type": "integer",
+          "x-go-name": "MaxDiffBytes",
+          "x-go-type": "int64",
+          "x-go-json-tag": "maxDiffBytes"
+        },
+        "maxFiles": {
+          "type": "integer",
+          "x-go-name": "MaxFiles",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxFiles"
+        },
+        "maxSnapshotBytes": {
+          "type": "integer",
+          "x-go-name": "MaxSnapshotBytes",
+          "x-go-type": "int64",
+          "x-go-json-tag": "maxSnapshotBytes"
+        },
+        "mode": {
+          "type": "string",
+          "description": "\"existing\" (default) or \"worktree\"",
+          "enum": [
+            "existing",
+            "worktree"
+          ],
+          "x-go-name": "Mode",
+          "x-go-type": "string",
+          "x-go-json-tag": "mode"
+        },
+        "path": {
+          "type": "string",
+          "x-go-name": "Path",
+          "x-go-type": "string",
+          "x-go-json-tag": "path"
+        },
+        "repo": {
+          "type": "string",
+          "x-go-name": "Repo",
+          "x-go-type": "string",
+          "x-go-json-tag": "repo"
+        },
+        "root": {
+          "type": "string",
+          "x-go-name": "Root",
+          "x-go-type": "string",
+          "x-go-json-tag": "root"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "x-go-name": "TimeoutMs",
+          "x-go-type": "int64",
+          "x-go-json-tag": "timeoutMs"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
+    },
+    "WorkspaceSnapshot": {
+      "type": "object",
+      "description": "Snapshot references durable content objects in the repository. Capture does\nnot change the user's index, HEAD or worktree contents.",
+      "properties": {
+        "bytes": {
+          "type": "integer",
+          "x-go-name": "Bytes",
+          "x-go-type": "int64",
+          "x-go-json-tag": "bytes"
+        },
+        "capturedAt": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "CapturedAt",
+          "x-go-type": "time.Time",
+          "x-go-json-tag": "capturedAt"
+        },
+        "files": {
+          "type": "integer",
+          "x-go-name": "Files",
+          "x-go-type": "int",
+          "x-go-json-tag": "files"
+        },
+        "head": {
+          "type": "string",
+          "x-go-name": "Head",
+          "x-go-type": "string",
+          "x-go-json-tag": "head,omitempty"
+        },
+        "index": {
+          "type": "string",
+          "x-go-name": "Index",
+          "x-go-type": "string",
+          "x-go-json-tag": "index"
+        },
+        "tree": {
+          "type": "string",
+          "x-go-name": "Tree",
+          "x-go-type": "string",
+          "x-go-json-tag": "tree"
+        }
+      },
+      "required": [
+        "bytes",
+        "capturedAt",
+        "files",
+        "index",
+        "tree"
+      ]
+    }
+  },
+  "x-protocol-version": 1,
+  "x-constants": {
+    "CodeApprovalNotFound": -32007,
+    "CodeBudgetExceeded": -32019,
+    "CodeEventTooLarge": -32017,
+    "CodeForkSourceChanged": -32018,
+    "CodeInternalError": -32603,
+    "CodeInvalidDecision": -32010,
+    "CodeInvalidParams": -32602,
+    "CodeInvalidRequest": -32600,
+    "CodeMethodNotFound": -32601,
+    "CodeNewSessionRequired": -32016,
+    "CodeNotResumable": -32013,
+    "CodeParseError": -32700,
+    "CodePolicyViolation": -32009,
+    "CodeRequestCancelled": -32800,
+    "CodeRestartRequired": -32015,
+    "CodeRuntimeError": -32011,
+    "CodeRuntimeNotFound": -32003,
+    "CodeRuntimeUnavailable": -32004,
+    "CodeServerNotInitialized": -32002,
+    "CodeSessionBusy": -32005,
+    "CodeSessionClosed": -32006,
+    "CodeSessionNotFound": -32001,
+    "CodeSettingsConflict": -32014,
+    "CodeUnsupported": -32012,
+    "CodeUnsupportedVersion": -32008,
+    "MethodApprovalList": "approval.list",
+    "MethodApprovalRespond": "approval.respond",
+    "MethodInitialize": "initialize",
+    "MethodMCPList": "mcp.list",
+    "MethodRuntimeDiscover": "runtime.discover",
+    "MethodRuntimeList": "runtime.list",
+    "MethodRuntimeSessions": "runtime.sessions",
+    "MethodSessionArchive": "session.archive",
+    "MethodSessionCancel": "session.cancel",
+    "MethodSessionClose": "session.close",
+    "MethodSessionConfigure": "session.configure",
+    "MethodSessionCreate": "session.create",
+    "MethodSessionDelete": "session.delete",
+    "MethodSessionDiff": "session.diff",
+    "MethodSessionEvents": "session.events",
+    "MethodSessionEventsPage": "session.eventsPage",
+    "MethodSessionEvict": "session.evict",
+    "MethodSessionFork": "session.fork",
+    "MethodSessionGet": "session.get",
+    "MethodSessionList": "session.list",
+    "MethodSessionPin": "session.pin",
+    "MethodSessionPrompt": "session.prompt",
+    "MethodSessionRename": "session.rename",
+    "MethodSessionRestore": "session.restore",
+    "MethodSessionSuspend": "session.suspend",
+    "MethodSessionTags": "session.tags",
+    "MethodSettingsConfigure": "settings.configure",
+    "MethodSettingsGet": "settings.get",
+    "MethodSettingsStats": "settings.stats",
+    "MethodShutdown": "shutdown",
+    "MethodToolsList": "tools.list",
+    "MethodToolsRegister": "tools.register",
+    "MethodToolsUnregister": "tools.unregister",
+    "MethodWorkspaceRemove": "workspace.remove",
+    "NotificationCancelRequest": "$/cancelRequest",
+    "NotificationEvent": "event",
+    "NotificationSettingsUpdated": "settings.updated",
+    "ReasonApprovalNotFound": "approval_not_found",
+    "ReasonBudgetExceeded": "budget_exceeded",
+    "ReasonDuplicateTool": "duplicate_tool",
+    "ReasonDuplicateTurn": "duplicate_turn",
+    "ReasonEventTooLarge": "event_too_large",
+    "ReasonForkSourceChanged": "fork_source_changed",
+    "ReasonInvalidDecision": "invalid_decision",
+    "ReasonInvalidParams": "invalid_params",
+    "ReasonNewSessionRequired": "new_session_required",
+    "ReasonNotInitialized": "not_initialized",
+    "ReasonNotResumable": "not_resumable",
+    "ReasonPolicyViolation": "policy_violation",
+    "ReasonRestartRequired": "restart_required",
+    "ReasonRuntimeError": "runtime_error",
+    "ReasonRuntimeNotFound": "runtime_not_found",
+    "ReasonRuntimeUnavailable": "runtime_unavailable",
+    "ReasonSessionBusy": "session_busy",
+    "ReasonSessionClosed": "session_closed",
+    "ReasonSessionNotFound": "session_not_found",
+    "ReasonSettingsConflict": "settings_conflict",
+    "ReasonUnsupported": "unsupported",
+    "ReasonUnsupportedVersion": "unsupported_version",
+    "RequestToolCall": "tool.call"
+  },
+  "x-rpc-methods": {
+    "approval.list": {
+      "x-go-name": "ApprovalList",
+      "params": {
+        "$ref": "#/$defs/ApprovalListParams",
+        "x-go-type": "ApprovalListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ApprovalListResult",
+        "x-go-type": "ApprovalListResult"
+      }
+    },
+    "approval.respond": {
+      "x-go-name": "ApprovalRespond",
+      "params": {
+        "$ref": "#/$defs/ApprovalRespondParams",
+        "x-go-type": "ApprovalRespondParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "initialize": {
+      "x-go-name": "Initialize",
+      "params": {
+        "$ref": "#/$defs/InitializeParams",
+        "x-go-type": "InitializeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/InitializeResult",
+        "x-go-type": "InitializeResult"
+      }
+    },
+    "mcp.list": {
+      "x-go-name": "McpList",
+      "params": {
+        "$ref": "#/$defs/McpListParams",
+        "x-go-type": "McpListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/McpListResult",
+        "x-go-type": "McpListResult"
+      }
+    },
+    "runtime.discover": {
+      "x-go-name": "RuntimeDiscover",
+      "params": {
+        "$ref": "#/$defs/RuntimeDiscoverParams",
+        "x-go-type": "RuntimeDiscoverParams"
+      },
+      "result": {
+        "$ref": "#/$defs/RuntimeDiscoverResult",
+        "x-go-type": "RuntimeDiscoverResult"
+      }
+    },
+    "runtime.list": {
+      "x-go-name": "RuntimeList",
+      "result": {
+        "$ref": "#/$defs/RuntimeListResult",
+        "x-go-type": "RuntimeListResult"
+      }
+    },
+    "runtime.sessions": {
+      "x-go-name": "RuntimeSessions",
+      "params": {
+        "$ref": "#/$defs/RuntimeSessionsParams",
+        "x-go-type": "RuntimeSessionsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/RuntimeSessionsResult",
+        "x-go-type": "RuntimeSessionsResult"
+      }
+    },
+    "session.archive": {
+      "x-go-name": "SessionArchive",
+      "params": {
+        "$ref": "#/$defs/SessionArchiveParams",
+        "x-go-type": "SessionArchiveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SessionResult",
+        "x-go-type": "SessionResult"
+      }
+    },
+    "session.cancel": {
+      "x-go-name": "SessionCancel",
+      "params": {
+        "$ref": "#/$defs/SessionIDParams",
+        "x-go-type": "SessionIDParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "session.close": {
+      "x-go-name": "SessionClose",
+      "params": {
+        "$ref": "#/$defs/SessionIDParams",
+        "x-go-type": "SessionIDParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "session.configure": {
+      "x-go-name": "SessionConfigure",
+      "params": {
+        "$ref": "#/$defs/SessionConfigureParams",
+        "x-go-type": "SessionConfigureParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SessionResult",
+        "x-go-type": "SessionResult"
+      }
+    },
+    "session.create": {
+      "x-go-name": "SessionCreate",
+      "params": {
+        "$ref": "#/$defs/CreateSessionParams",
+        "x-go-type": "CreateSessionParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SessionResult",
+        "x-go-type": "SessionResult"
+      }
+    },
+    "session.delete": {
+      "x-go-name": "SessionDelete",
+      "params": {
+        "$ref": "#/$defs/SessionIDParams",
+        "x-go-type": "SessionIDParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "session.diff": {
+      "x-go-name": "SessionDiff",
+      "params": {
+        "$ref": "#/$defs/SessionDiffParams",
+        "x-go-type": "SessionDiffParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceDiff",
+        "x-go-type": "WorkspaceDiff"
+      }
+    },
+    "session.events": {
+      "x-go-name": "SessionEvents",
+      "params": {
+        "$ref": "#/$defs/SessionEventsParams",
+        "x-go-type": "SessionEventsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EventPage",
+        "x-go-type": "EventPage"
+      }
+    },
+    "session.eventsPage": {
+      "x-go-name": "SessionEventsPage",
+      "params": {
+        "$ref": "#/$defs/SessionEventsParams",
+        "x-go-type": "SessionEventsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EventPage",
+        "x-go-type": "EventPage"
+      }
+    },
+    "session.evict": {
+      "x-go-name": "SessionEvict",
+      "params": {
+        "$ref": "#/$defs/SessionIDParams",
+        "x-go-type": "SessionIDParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "session.fork": {
+      "x-go-name": "SessionFork",
+      "params": {
+        "$ref": "#/$defs/SessionForkParams",
+        "x-go-type": "SessionForkParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SessionResult",
+        "x-go-type": "SessionResult"
+      }
+    },
+    "session.get": {
+      "x-go-name": "SessionGet",
+      "params": {
+        "$ref": "#/$defs/SessionIDParams",
+        "x-go-type": "SessionIDParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SessionResult",
+        "x-go-type": "SessionResult"
+      }
+    },
+    "session.list": {
+      "x-go-name": "SessionList",
+      "params": {
+        "$ref": "#/$defs/ListSessionsOptions",
+        "x-go-type": "ListSessionsOptions"
+      },
+      "result": {
+        "$ref": "#/$defs/SessionListResult",
+        "x-go-type": "SessionListResult"
+      }
+    },
+    "session.pin": {
+      "x-go-name": "SessionPin",
+      "params": {
+        "$ref": "#/$defs/SessionPinParams",
+        "x-go-type": "SessionPinParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SessionResult",
+        "x-go-type": "SessionResult"
+      }
+    },
+    "session.prompt": {
+      "x-go-name": "SessionPrompt",
+      "params": {
+        "$ref": "#/$defs/SessionPromptParams",
+        "x-go-type": "SessionPromptParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SessionPromptResult",
+        "x-go-type": "SessionPromptResult"
+      }
+    },
+    "session.rename": {
+      "x-go-name": "SessionRename",
+      "params": {
+        "$ref": "#/$defs/SessionRenameParams",
+        "x-go-type": "SessionRenameParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SessionResult",
+        "x-go-type": "SessionResult"
+      }
+    },
+    "session.restore": {
+      "x-go-name": "SessionRestore",
+      "params": {
+        "$ref": "#/$defs/SessionIDParams",
+        "x-go-type": "SessionIDParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SessionResult",
+        "x-go-type": "SessionResult"
+      }
+    },
+    "session.suspend": {
+      "x-go-name": "SessionSuspend",
+      "params": {
+        "$ref": "#/$defs/SessionIDParams",
+        "x-go-type": "SessionIDParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "session.tags": {
+      "x-go-name": "SessionTags",
+      "params": {
+        "$ref": "#/$defs/SessionTagsParams",
+        "x-go-type": "SessionTagsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SessionResult",
+        "x-go-type": "SessionResult"
+      }
+    },
+    "settings.configure": {
+      "x-go-name": "SettingsConfigure",
+      "params": {
+        "$ref": "#/$defs/ConfigureSettingsParams",
+        "x-go-type": "ConfigureSettingsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SettingsSnapshot",
+        "x-go-type": "SettingsSnapshot"
+      }
+    },
+    "settings.get": {
+      "x-go-name": "SettingsGet",
+      "params": {
+        "$ref": "#/$defs/SettingsGetParams",
+        "x-go-type": "SettingsGetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SettingsSnapshot",
+        "x-go-type": "SettingsSnapshot"
+      }
+    },
+    "settings.stats": {
+      "x-go-name": "SettingsStats",
+      "result": {
+        "$ref": "#/$defs/ResourceStats",
+        "x-go-type": "ResourceStats"
+      }
+    },
+    "shutdown": {
+      "x-go-name": "Shutdown",
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "tools.list": {
+      "x-go-name": "ToolsList",
+      "result": {
+        "$ref": "#/$defs/ToolsListResult",
+        "x-go-type": "ToolsListResult"
+      }
+    },
+    "tools.register": {
+      "x-go-name": "ToolsRegister",
+      "params": {
+        "$ref": "#/$defs/ToolsRegisterParams",
+        "x-go-type": "ToolsRegisterParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "tools.unregister": {
+      "x-go-name": "ToolsUnregister",
+      "params": {
+        "$ref": "#/$defs/ToolsUnregisterParams",
+        "x-go-type": "ToolsUnregisterParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "workspace.remove": {
+      "x-go-name": "WorkspaceRemove",
+      "params": {
+        "$ref": "#/$defs/SessionIDParams",
+        "x-go-type": "SessionIDParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    }
+  },
+  "x-server-requests": {
+    "tool.call": {
+      "x-go-name": "ToolCall",
+      "params": {
+        "$ref": "#/$defs/ToolCallParams",
+        "x-go-type": "ToolCallParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ToolResult",
+        "x-go-type": "ToolResult"
+      }
+    }
+  },
+  "x-notifications": {
+    "$/cancelRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "event": {
+      "$ref": "#/$defs/HarnessEvent",
+      "x-go-type": "HarnessEvent"
+    },
+    "settings.updated": {
+      "$ref": "#/$defs/SettingsSnapshot",
+      "x-go-type": "SettingsSnapshot"
+    }
+  },
+  "x-event-payloads": {
+    "approval.requested": {
+      "$ref": "#/$defs/ApprovalRequest",
+      "x-go-type": "ApprovalRequest"
+    },
+    "approval.resolved": {
+      "$ref": "#/$defs/ApprovalResolvedData",
+      "x-go-type": "ApprovalResolvedData"
+    },
+    "budget.exceeded": {
+      "$ref": "#/$defs/BudgetExceeded",
+      "x-go-type": "BudgetExceeded"
+    },
+    "error": {
+      "$ref": "#/$defs/ErrorInfo",
+      "x-go-type": "ErrorInfo"
+    },
+    "message.completed": {
+      "$ref": "#/$defs/MessageCompletedData",
+      "x-go-type": "MessageCompletedData"
+    },
+    "message.delta": {
+      "$ref": "#/$defs/MessageDeltaData",
+      "x-go-type": "MessageDeltaData"
+    },
+    "reasoning.completed": {
+      "$ref": "#/$defs/ReasoningCompletedData",
+      "x-go-type": "ReasoningCompletedData"
+    },
+    "reasoning.delta": {
+      "$ref": "#/$defs/ReasoningDeltaData",
+      "x-go-type": "ReasoningDeltaData"
+    },
+    "runtime.raw": {
+      "$ref": "#/$defs/RawData",
+      "x-go-type": "RawData"
+    },
+    "runtime.status": {
+      "$ref": "#/$defs/RuntimeStatusData",
+      "x-go-type": "RuntimeStatusData"
+    },
+    "session.closed": {
+      "$ref": "#/$defs/SessionClosedData",
+      "x-go-type": "SessionClosedData"
+    },
+    "session.started": {
+      "$ref": "#/$defs/SessionStartedData",
+      "x-go-type": "SessionStartedData"
+    },
+    "session.updated": {
+      "$ref": "#/$defs/SessionUpdatedData",
+      "x-go-type": "SessionUpdatedData"
+    },
+    "stream.gap": {
+      "$ref": "#/$defs/StreamGapData",
+      "x-go-type": "StreamGapData"
+    },
+    "tool.completed": {
+      "$ref": "#/$defs/ToolCompletedData",
+      "x-go-type": "ToolCompletedData"
+    },
+    "tool.output": {
+      "$ref": "#/$defs/ToolOutputData",
+      "x-go-type": "ToolOutputData"
+    },
+    "tool.started": {
+      "$ref": "#/$defs/ToolStartedData",
+      "x-go-type": "ToolStartedData"
+    },
+    "turn.completed": {
+      "$ref": "#/$defs/TurnCompletedData",
+      "x-go-type": "TurnCompletedData"
+    },
+    "turn.started": {
+      "$ref": "#/$defs/TurnStartedData",
+      "x-go-type": "TurnStartedData"
+    },
+    "usage": {
+      "$ref": "#/$defs/UsageData",
+      "x-go-type": "UsageData"
+    },
+    "workspace.diff": {
+      "$ref": "#/$defs/WorkspaceDiff",
+      "x-go-type": "WorkspaceDiff"
+    }
+  }
+}

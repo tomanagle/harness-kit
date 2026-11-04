@@ -1,6 +1,6 @@
 // Minimal JSON-RPC 2.0 connection over a line-oriented Transport.
 
-import type { ErrorReason } from "./protocol.ts";
+import { ErrorCodes, type ErrorReason } from "./protocol.ts";
 
 /**
  * A bidirectional message channel to a Harness Kit server. Each message is
@@ -180,7 +180,7 @@ export class JsonRpcConnection {
   #handleRequest(id: number | string, method: string, params: unknown): void {
     const handler = this.#requestHandler;
     if (!handler) {
-      this.#send({ jsonrpc: "2.0", id, error: { code: -32601, message: "method not found: " + method } });
+      this.#send({ jsonrpc: "2.0", id, error: { code: ErrorCodes.MethodNotFound, message: "method not found: " + method } });
       return;
     }
     const ac = new AbortController();
@@ -191,7 +191,7 @@ export class JsonRpcConnection {
         (result) => this.#send({ jsonrpc: "2.0", id, result: result ?? null }),
         (e: unknown) => {
           const err = e as { code?: number; message?: string };
-          this.#send({ jsonrpc: "2.0", id, error: { code: typeof err?.code === "number" ? err.code : -32603, message: err?.message ?? String(e) } });
+          this.#send({ jsonrpc: "2.0", id, error: { code: typeof err?.code === "number" ? err.code : ErrorCodes.InternalError, message: err?.message ?? String(e) } });
         },
       )
       .finally(() => this.#inbound.delete(id));

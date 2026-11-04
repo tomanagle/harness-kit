@@ -57,6 +57,22 @@ try {
 `Transport` for browsers and other hosts; `@tomanagle/harness-kit/node` supplies a stdio
 transport for Node and Electron's main process.
 
+Wire types, error constants and the low-level `ProtocolClient` are generated from
+the shared protocol schema. The application helpers above use those generated
+methods; streaming, tool handlers and transport lifetimes remain in the client
+runtime. For the exact request and response shapes, use `kit.protocol`:
+
+```ts
+const { session } = await kit.protocol.sessionCreate({ runtime: "codex" });
+const page = await kit.protocol.sessionEventsPage({ sessionId: session.sessionId });
+```
+
+The raw `kit.request()` method remains available for protocol extensions. In a
+repository checkout, regenerate the schema and clients with `make generate`;
+`make check-generated` verifies that committed output is current. The standalone
+[Go client](https://github.com/tomanagle/harness-kit/tree/main/packages/client-go)
+uses the same generated contract.
+
 Settings describe their application timing, including live changes, next-turn
 changes, and process wiring that requires a restart. See the
 [configuration guide](https://github.com/tomanagle/harness-kit/blob/main/core/docs/configuration.md),

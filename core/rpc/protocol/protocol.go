@@ -1,9 +1,12 @@
 // Package protocol defines the Harness Kit sidecar protocol: JSON-RPC 2.0
 // messages, one per line, over the sidecar's stdin/stdout. It is shared by
-// the Go server and Go client; the TypeScript client mirrors it.
+// the Go server and legacy Go client. The standalone Go and TypeScript client
+// wire contracts are generated from these types and the referenced domain types.
 //
 // See docs/protocol.md for the normative description.
 package protocol
+
+//go:generate go run ../../cmd/protocolgen
 
 import (
 	"encoding/json"
@@ -211,7 +214,7 @@ type RuntimeSessionsResult struct {
 type SessionCreateParams struct {
 	// Settings uses the shared schema. Only the session section is accepted here.
 	Settings     settings.Patch    `json:"settings,omitempty"`
-	Runtime      string            `json:"runtime"`
+	Runtime      string            `json:"runtime,omitempty"`
 	Cwd          string            `json:"cwd,omitempty"`
 	Model        string            `json:"model,omitempty"`
 	Effort       string            `json:"effort,omitempty"`

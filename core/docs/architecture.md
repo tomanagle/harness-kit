@@ -181,7 +181,7 @@ dependencies.
 | `process` | Native-only: binary lookup incl. GUI-app install dirs, process groups, SIGINT then kill, `Tail` |
 | `rpc/protocol` | Wire types, method names, error codes, protocol version |
 | `rpc/server` | Serves a `session.Manager` over any `io.Reader`/`io.Writer` |
-| `rpc/client` | Go client (e.g. a Wails backend talking to a sidecar) |
+| `rpc/client` | Compatibility Go client using core-domain types |
 | `runtimes/codex`, `runtimes/claude`, `runtimes/acp`, `runtimes/fake` | Adapters |
 | `model`, `contextwindow` | Portable raw inference contract and caller-owned context management |
 | `budget` | Observed token/cost accounting with durable checkpoints and explicit limits |
@@ -189,6 +189,17 @@ dependencies.
 | `providers/openai`, `providers/anthropic` | Separate modules using official provider SDKs |
 | `cmd/harness-kit` | The sidecar binary |
 | `../packages/client-ts` (repository-root clients) | `@tomanagle/harness-kit` (browser-safe) and `@tomanagle/harness-kit/node` (stdio transport) |
+| `../packages/client-go` | Standalone Go sidecar client; generated wire types and methods, standard-library transport |
+| `cmd/protocolgen`, `../protocol` | Extract the server contract into JSON Schema and generate both client contracts; CI rejects stale output |
+
+The standalone clients use the same schema for requests, results, events,
+settings and error constants. The generator reads the Go server's wire/domain
+types and method registry, writes `protocol/schema.json`, then renders both
+clients from it. This avoids maintaining a second TypeScript model by hand.
+Generated files are committed so consumers do not need the generator or a core
+checkout. The `rpc/client` package is retained for compatibility with existing
+Go applications; new clients can import the independent module under
+`packages/client-go`. See [protocol generation](../../protocol/README.md).
 
 ### 2.2 Public interfaces
 
@@ -284,9 +295,10 @@ message per line, with a configurable maximum line size.
 
 **Drop and replay instead of blocking backpressure.** A slow client never
 stalls a runtime, and memory stays bounded. Loss is always signalled
-(`stream.gap`) and recoverable (`session.events`); both clients recover it
-automatically. The cost is extra client complexity, which the provided
-clients absorb.
+(`stream.gap`) and recoverable through bounded history pages. The TypeScript
+client's high-level `Turn` handles replay automatically. Go callback consumers
+handle the marker and request pages explicitly with `SessionEventsPage`; the
+client exposes the protocol without imposing an event-processing loop.
 
 **Runtime-specific options instead of a lowest common denominator.**
 Codex sandboxes and Claude Code permission modes are not the same concept.

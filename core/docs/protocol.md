@@ -2,9 +2,18 @@
 
 The `harness-kit` binary speaks JSON-RPC 2.0 over its stdin and stdout.
 Electron, Wails, CLIs and services all use this same protocol; no HTTP
-server and no network port is involved. Go types:
-[`rpc/protocol`](../rpc/protocol/protocol.go). TypeScript types:
-[`packages/client-ts/src/protocol.ts`](../../packages/client-ts/src/protocol.ts).
+server and no network port is involved. The server's Go wire definitions in
+[`rpc/protocol`](../rpc/protocol/protocol.go) and their referenced domain types
+produce a shared [JSON Schema](../../protocol/schema.json). That schema generates
+the wire types and RPC methods in both [`packages/client-ts`](../../packages/client-ts)
+and [`packages/client-go`](../../packages/client-go). Transport handling and
+application helpers remain handwritten.
+
+Run `make generate` from the repository root after changing the protocol, then
+commit the schema and generated clients together. `make check-generated` and CI
+reject stale output. See the [generation guide](../../protocol/README.md) for
+the source files and workflow. This document describes protocol behavior such as
+ordering, cancellation and replay, which a data schema cannot express alone.
 
 ## Framing
 
@@ -548,8 +557,12 @@ client connection has a bounded event queue (`--event-buffer`, default
    resumes with `seq > b`.
 3. The client fetches `a..b` with `session.events({afterSeq: a - 1})`.
 
-Both provided clients do this automatically for turn streams. A
-`stream.gap` event is never stored, so it never appears in `session.events`.
+The TypeScript client's high-level `Turn` does this automatically. Go clients
+using event callbacks handle the marker explicitly: request bounded pages with
+`SessionEventsPage`, advance `afterSeq` to `nextSeq` while `hasMore` is true, and
+deduplicate by session ID and sequence. A truncated page means some history is
+unavailable. A `stream.gap` event is never stored, so it never appears in
+`session.events`.
 
 ## Errors
 

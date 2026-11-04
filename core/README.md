@@ -4,7 +4,7 @@ Headless, composable primitives for building your own AI agent harness applicati
 
 The standalone SDK spans `core/` for Go packages, local runtime adapters,
 CLI/sidecar, and root [`packages/`](../packages) for clients such as
-[TypeScript](../packages/client-ts). Runnable apps live in root
+[TypeScript](../packages/client-ts) and [Go](../packages/client-go). Runnable apps live in root
 [`examples/`](../examples). You can build and distribute applications
 with it independently of the [planned coordination server](../server/README.md),
 which has no implementation yet. See the [monorepo overview](../README.md).
@@ -40,7 +40,7 @@ Go apps ──────────────── import the packages dir
 
 ## Status
 
-The core, sidecar, TypeScript client and runtime adapters are tested together.
+The core, sidecar, TypeScript and Go clients, and runtime adapters are tested together.
 The kit includes persisted conversations, session updates, branching, archive,
 search, tags and live settings. Separate SDK modules support direct inference
 and caller-owned context management. Optional worktrees and turn diffs isolate
@@ -107,6 +107,20 @@ approvals is [examples/cli](../examples/cli/main.go):
 ```sh
 go -C ../examples/cli run . -runtime codex "Explain this codebase"
 ```
+
+### Go: connect to the sidecar
+
+Use [`packages/client-go`](../packages/client-go/README.md) when a Go application
+needs a separate `harness-kit` process. Its module is
+`github.com/tomanagle/harness-kit/packages/client-go` (package `harnesskit`), with
+no dependency on the core module or third-party libraries. It supports attaching
+to streams or spawning a sidecar, typed RPC methods, events, settings updates,
+tool callbacks and cancellation. See its README for a complete example and
+local-checkout installation instructions while the module is untagged.
+
+Both client packages generate their wire types and methods from the shared
+[protocol schema](../protocol/README.md). The existing `core/rpc/client` remains
+available for applications already using its core-domain types.
 
 ### Command line
 
@@ -329,6 +343,9 @@ through `session.updated`.
 
 ```sh
 make test        # default offline test suite
+make generate    # refresh protocol schema and TypeScript/Go client contracts
+make check-generated # fail if generated files are stale (also checked in CI)
+make test-clients # TypeScript and standalone Go client tests
 make lint        # gofmt + go vet
 make wasm-check  # the core must build for WebAssembly and never spawn processes
 make cross       # build the sidecar for macOS, Linux and Windows
@@ -360,7 +377,7 @@ core/
   session/          session manager and store
   process/          native process host (lookup, process trees)
   internal/jsonrpc/ NDJSON JSON-RPC 2.0 connection
-  rpc/              protocol types, server, Go client
+  rpc/              protocol types, server, compatibility Go client
   runtimes/         codex, claude, acp, fake adapters
   model/            dependency-free streaming inference contract
   contextwindow/    caller-owned history, limits, compaction and snapshots
@@ -368,10 +385,13 @@ core/
   workspace/        portable workspace contract and native Git backend
   providers/        optional OpenAI and Anthropic SDK modules
   cmd/harness-kit/  the local sidecar binary
+  cmd/protocolgen/  schema and client generator
   docs/             SDK documentation
   bin/              local build output
 packages/
   client-ts/        @tomanagle/harness-kit
+  client-go/        standalone Go sidecar client
+protocol/           generated schema and generation guide
 examples/           cli, model, node, electron, wails and shared dashboard
 server/             planned coordination server; placeholder only
 .github/workflows/  repository CI and release workflows

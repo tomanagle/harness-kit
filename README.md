@@ -7,7 +7,7 @@ This repository has two product components:
 
 | Component | Source directories | Status |
 | --- | --- | --- |
-| SDK for building harness applications | [`core/`](core/README.md) contains the Go packages, local runtimes and CLI/sidecar; [`packages/`](packages) contains clients, including the TypeScript package | Usable independently today |
+| SDK for building harness applications | [`core/`](core/README.md) contains the Go packages, local runtimes and CLI/sidecar; [`packages/`](packages) contains TypeScript and Go clients | Usable independently today |
 | Server for coordinating sessions across devices | [`server/`](server/README.md) | Planned placeholder; no implementation yet |
 
 Runnable applications live in root [`examples/`](examples), alongside `core/` and
@@ -33,6 +33,12 @@ directory, for example `cd core && go test ./...`. See the
 [configuration](core/docs/configuration.md) for startup and runtime settings.
 `make example <name>` runs the example applications; `make test-examples` tests
 their separate Go modules.
+
+The [TypeScript client](packages/client-ts/README.md) and standalone
+[Go client](packages/client-go/README.md) have generated wire types and methods
+from one [protocol schema](protocol/README.md). Run `make generate` after a
+protocol change; `make check-generated` checks that committed output is current.
+Their transports and application-level helpers remain handwritten.
 
 Current Go source uses `github.com/tomanagle/harness-kit/core`; its new module paths
 have not been tagged yet. Build from a checkout until a `core/v…` release exists.

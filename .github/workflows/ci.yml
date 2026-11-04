@@ -1,20 +1,30 @@
 name: ci
 on: [push, pull_request]
 jobs:
+  generated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: stable, cache: false }
+      - working-directory: core
+        run: go run ./cmd/protocolgen -check
   go:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        module: [core, packages/client-go]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: core
+        working-directory: ${{ matrix.module }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: stable, cache: false }
       - run: go vet ./...
       - run: go test -race ./...
+      - run: go build ./...
   portability:
     runs-on: ubuntu-latest
     defaults:

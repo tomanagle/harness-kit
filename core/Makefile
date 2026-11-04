@@ -3,7 +3,7 @@ GO      ?= go
 BIN     := bin/harness-kit
 VERSION ?= $(patsubst core/%,%,$(shell git describe --tags --match 'core/v[0-9]*' --always --dirty 2>/dev/null || echo dev))
 
-.PHONY: all build install run test test-go test-ts test-providers test-examples test-live lint wasm-check cross client-ts clean
+.PHONY: all build install run generate check-generated test test-go test-ts test-client-go test-clients test-providers test-examples test-live lint wasm-check cross client-ts clean
 
 # Where `make install` puts the binary (must be on your PATH).
 INSTALL_DIR ?= $(HOME)/.local/bin
@@ -23,7 +23,14 @@ install: build
 run: build
 	@./$(BIN) $(ARGS)
 
-test: test-go test-ts test-providers test-examples
+# Regenerate the schema and both clients from the server's wire definitions.
+generate:
+	$(GO) run ./cmd/protocolgen
+
+check-generated:
+	$(GO) run ./cmd/protocolgen -check
+
+test: check-generated test-go test-clients test-providers test-examples
 
 test-go:
 	$(GO) test -race ./...
@@ -41,12 +48,17 @@ test-examples:
 test-ts:
 	cd ../packages/client-ts && npm install --no-audit --no-fund && npm run typecheck && npm test
 
+test-client-go:
+	cd ../packages/client-go && $(GO) vet ./... && $(GO) test -race ./... && $(GO) build ./...
+
+test-clients: test-ts test-client-go
+
 # Runs against the real Codex and Claude Code CLIs. Uses a little of your quota.
 test-live:
 	HARNESS_KIT_LIVE=1 $(GO) test -count=1 -run TestLive -v ./runtimes/...
 
 lint:
-	@test -z "$$(gofmt -l . ../examples)" || (gofmt -l . ../examples && echo "run gofmt -w ." && exit 1)
+	@test -z "$$(gofmt -l . ../examples ../packages/client-go)" || (gofmt -l . ../examples ../packages/client-go && echo "run gofmt -w on the listed files" && exit 1)
 	$(GO) vet ./...
 
 # The transport-neutral core must build for WebAssembly and must never
