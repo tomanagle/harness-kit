@@ -273,6 +273,9 @@ func (m *Manager) RemoveWorkspace(ctx context.Context, id string) error {
 	if info.Workspace == nil || !info.Workspace.Owned {
 		return workspace.ErrNotOwned
 	}
+	if m.gitBusy(*info.Workspace, false) {
+		return ErrBusy
+	}
 	if m.opts.Workspace == nil {
 		return agent.ErrUnsupported
 	}

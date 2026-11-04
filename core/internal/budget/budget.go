@@ -1,62 +1,13 @@
-// Package budget accounts for observed runtime usage. Limits are best-effort
-// stopping thresholds, not provider-enforced caps on inference or charges.
+// Package budget implements private observed-usage accounting. Public policy
+// and event contracts live in config and event.
 package budget
 
 import (
 	"math"
+
+	"github.com/tomanagle/harness-kit/core/config"
+	"github.com/tomanagle/harness-kit/core/event"
 )
-
-// Limits are host policy. Nil disables a limit; zero admits no further work.
-type Limits struct {
-	MaxSessionTokens  *int64   `json:"maxSessionTokens"`
-	MaxSessionCostUSD *float64 `json:"maxSessionCostUsd"`
-	MaxTurnTokens     *int64   `json:"maxTurnTokens"`
-	MaxTurnCostUSD    *float64 `json:"maxTurnCostUsd"`
-}
-
-func (l Limits) Clone() Limits {
-	if l.MaxSessionTokens != nil {
-		v := *l.MaxSessionTokens
-		l.MaxSessionTokens = &v
-	}
-	if l.MaxSessionCostUSD != nil {
-		v := *l.MaxSessionCostUSD
-		l.MaxSessionCostUSD = &v
-	}
-	if l.MaxTurnTokens != nil {
-		v := *l.MaxTurnTokens
-		l.MaxTurnTokens = &v
-	}
-	if l.MaxTurnCostUSD != nil {
-		v := *l.MaxTurnCostUSD
-		l.MaxTurnCostUSD = &v
-	}
-	return l
-}
-
-// Usage contains observed totals. Incomplete totals are lower bounds; nil cost
-// means no cost estimate was supplied. Reported costs are estimates, not bills.
-type Usage struct {
-	TotalTokens    int64    `json:"totalTokens"`
-	CostUSD        *float64 `json:"costUsd,omitempty"`
-	TokensComplete bool     `json:"tokensComplete"`
-	CostComplete   bool     `json:"costComplete"`
-}
-
-func (u Usage) Clone() Usage {
-	if u.CostUSD != nil {
-		v := *u.CostUSD
-		u.CostUSD = &v
-	}
-	return u
-}
-
-type Exceeded struct {
-	Scope    string  `json:"scope"`
-	Metric   string  `json:"metric"`
-	Limit    float64 `json:"limit"`
-	Observed float64 `json:"observed"`
-}
 
 // Observation is either an absolute snapshot (default) or an incremental delta.
 // Session snapshots cover the entire native conversation; turn snapshots cover
@@ -178,8 +129,8 @@ func (l *Ledger) Interrupt() {
 	l.Tokens.Incomplete = true
 	l.Cost.Incomplete = true
 }
-func (l Ledger) Usage() Usage {
-	u := Usage{TotalTokens: tokens(l.Tokens.Total), TokensComplete: !l.Tokens.Incomplete, CostComplete: !l.Cost.Incomplete}
+func (l Ledger) Usage() event.BudgetUsage {
+	u := event.BudgetUsage{TotalTokens: tokens(l.Tokens.Total), TokensComplete: !l.Tokens.Incomplete, CostComplete: !l.Cost.Incomplete}
 	if l.Cost.Known {
 		v := l.Cost.Total
 		u.CostUSD = &v
@@ -196,7 +147,7 @@ func (m Metric) turnUsage() float64 { return math.Max(m.Turn, math.Max(0, m.Nati
 
 // Check compares usage with limits. Admission uses zero turn usage and still
 // rejects an explicit zero, even if a runtime cannot report that metric.
-func (l Ledger) Check(p Limits, admission bool) *Exceeded {
+func (l Ledger) Check(p config.BudgetLimits, admission bool) *event.BudgetExceededData {
 	turnTokens, turnCost := l.Tokens.turnUsage(), l.Cost.turnUsage()
 	if admission {
 		turnTokens, turnCost = 0, 0
@@ -213,7 +164,7 @@ func (l Ledger) Check(p Limits, admission bool) *Exceeded {
 	}
 	for _, c := range checks {
 		if c.limit != nil && c.used >= *c.limit {
-			return &Exceeded{Scope: c.scope, Metric: c.metric, Limit: *c.limit, Observed: c.used}
+			return &event.BudgetExceededData{Scope: c.scope, Metric: c.metric, Limit: *c.limit, Observed: c.used}
 		}
 	}
 	return nil

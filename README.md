@@ -40,6 +40,12 @@ from one [protocol schema](protocol/README.md). Run `make generate` after a
 protocol change; `make check-generated` checks that committed output is current.
 Their transports and application-level helpers remain handwritten.
 
+Optional [Git APIs](core/docs/git.md) provide status, diffs, branches, staging,
+commits and remote operations with runtime-configurable policy. The desktop
+examples show how a harness can compose these into its own source-control UI.
+See [package boundaries](core/docs/packages.md) for the public Go building blocks
+and the implementation kept under `core/internal/`.
+
 Current Go source uses `github.com/tomanagle/harness-kit/core`; its new module paths
 have not been tagged yet. Build from a checkout until a `core/v…` release exists.
 Existing root-module `v0.2.0` tags and the published npm package

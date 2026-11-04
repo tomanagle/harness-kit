@@ -63,12 +63,12 @@ lint:
 
 # The transport-neutral core must build for WebAssembly and must never
 # import process-spawning code.
-CORE := ./config ./budget ./workspace ./settings ./event ./permission ./mcp ./tools ./model ./contextwindow ./agent ./session ./runtimes/fake ./rpc/protocol ./rpc/server
+CORE := ./config ./internal/budget ./workspace ./settings ./event ./permission ./mcp ./tools ./model ./model/contextwindow ./agent ./session ./runtimes/fake ./rpc/protocol ./rpc/server
 wasm-check:
 	GOOS=wasip1 GOARCH=wasm $(GO) build $(CORE)
 	GOOS=js GOARCH=wasm $(GO) build $(CORE)
 	@for p in $(CORE); do \
-	  if $(GO) list -deps $$p | grep -qE '^(os/exec|github.com/tomanagle/harness-kit/core/process)$$'; then \
+	  if $(GO) list -deps $$p | grep -qE '^(os/exec|github.com/tomanagle/harness-kit/core/internal/process)$$'; then \
 	    echo "$$p must not depend on os/exec or process"; exit 1; fi; done
 	@echo "core is WASM-portable"
 

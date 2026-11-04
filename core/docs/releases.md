@@ -61,7 +61,10 @@ The standalone Go client has no core-module dependency. Until its first tag,
 use a local replacement for
 `github.com/tomanagle/harness-kit/packages/client-go` pointing to this checkout's
 `packages/client-go` directory; see its [README](../../packages/client-go/README.md).
-The existing `core/rpc/client` package remains available for compatibility.
+The CLI's former `core/rpc/client` implementation is now private at
+`core/internal/rpcclient`; application code uses the standalone generated client.
+See [package boundaries](packages.md) for the source-level migration of budget,
+context-window and process helpers in the unreleased core module.
 
 Before either client release, run `make generate`, commit the updated schema and
 generated clients, and run `make check-generated test-clients`. Consumers use the

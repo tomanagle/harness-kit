@@ -20,7 +20,7 @@ export function makeApi(kit, opts = {}) {
         kit.tools.list(),
         kit.mcp.list({ cwd: opts.cwd, runtimes: opts.nativeMcpRuntimes ?? ["codex"] }).catch((e) => ({ error: String(e?.message ?? e) })),
       ]);
-      return { runtimes, tools, mcp };
+      return { runtimes, tools, mcp, git: Boolean(kit.server?.capabilities?.git) };
     },
     listSessions: () => kit.sessions.list(),
     async createSession(runtime) {
@@ -28,6 +28,17 @@ export function makeApi(kit, opts = {}) {
       return s.info;
     },
     renameSession: (id, title) => kit.sessions.rename(String(id), String(title)),
+    gitStatus: (id) => kit.git.status(String(id)),
+    gitDiff: (id, options = {}) => kit.git.diff(String(id), options),
+    gitBranches: (id) => kit.git.branches(String(id)),
+    gitLog: (id, options = {}) => kit.git.log(String(id), options),
+    gitStage: (id, paths) => kit.git.stage(String(id), paths),
+    gitUnstage: (id, paths) => kit.git.unstage(String(id), paths),
+    gitCommit: (id, message) => kit.git.commit(String(id), String(message)),
+    gitCheckout: (id, options) => kit.git.checkout(String(id), options),
+    gitFetch: (id, options = {}) => kit.git.fetch(String(id), options),
+    gitPull: (id, options = {}) => kit.git.pull(String(id), options),
+    gitPush: (id, options = {}) => kit.git.push(String(id), options),
     async openSession(id) {
       return kit.sessions.get(String(id));
     },

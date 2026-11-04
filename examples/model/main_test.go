@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/tomanagle/harness-kit/core/config"
-	"github.com/tomanagle/harness-kit/core/contextwindow"
 	"github.com/tomanagle/harness-kit/core/mcp"
 	"github.com/tomanagle/harness-kit/core/model"
+	"github.com/tomanagle/harness-kit/core/model/contextwindow"
 	"github.com/tomanagle/harness-kit/core/tools"
 )
 

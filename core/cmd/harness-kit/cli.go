@@ -17,10 +17,9 @@ import (
 	"time"
 
 	"github.com/tomanagle/harness-kit/core/agent"
-	"github.com/tomanagle/harness-kit/core/budget"
 	"github.com/tomanagle/harness-kit/core/event"
+	"github.com/tomanagle/harness-kit/core/internal/rpcclient"
 	"github.com/tomanagle/harness-kit/core/permission"
-	"github.com/tomanagle/harness-kit/core/rpc/client"
 	"github.com/tomanagle/harness-kit/core/rpc/protocol"
 	"github.com/tomanagle/harness-kit/core/session"
 	"github.com/tomanagle/harness-kit/core/settings"
@@ -655,16 +654,16 @@ func (c *console) next(cancel <-chan struct{}) (string, bool) {
 
 // turnResult is the --output json object.
 type turnResult struct {
-	Budget           *budget.Exceeded `json:"budget,omitempty"`
-	SessionID        string           `json:"sessionId"`
-	Runtime          string           `json:"runtime"`
-	RuntimeSessionID string           `json:"runtimeSessionId,omitempty"`
-	TurnID           string           `json:"turnId"`
-	Status           event.TurnStatus `json:"status"`
-	Text             string           `json:"text"`
-	Usage            *event.UsageData `json:"usage,omitempty"`
-	Error            *event.ErrorInfo `json:"error,omitempty"`
-	DurationMs       int64            `json:"durationMs"`
+	Budget           *event.BudgetExceededData `json:"budget,omitempty"`
+	SessionID        string                    `json:"sessionId"`
+	Runtime          string                    `json:"runtime"`
+	RuntimeSessionID string                    `json:"runtimeSessionId,omitempty"`
+	TurnID           string                    `json:"turnId"`
+	Status           event.TurnStatus          `json:"status"`
+	Text             string                    `json:"text"`
+	Usage            *event.UsageData          `json:"usage,omitempty"`
+	Error            *event.ErrorInfo          `json:"error,omitempty"`
+	DurationMs       int64                     `json:"durationMs"`
 }
 
 // replyText assembles the agent's reply from message events, in order,

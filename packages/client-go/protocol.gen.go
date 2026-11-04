@@ -15,6 +15,8 @@ const (
 	CodeBudgetExceeded          = -32019
 	CodeEventTooLarge           = -32017
 	CodeForkSourceChanged       = -32018
+	CodeGitConflict             = -32021
+	CodeGitError                = -32020
 	CodeInternalError           = -32603
 	CodeInvalidDecision         = -32010
 	CodeInvalidParams           = -32602
@@ -38,6 +40,17 @@ const (
 	CodeUnsupportedVersion      = -32008
 	MethodApprovalList          = "approval.list"
 	MethodApprovalRespond       = "approval.respond"
+	MethodGitBranches           = "git.branches"
+	MethodGitCheckout           = "git.checkout"
+	MethodGitCommit             = "git.commit"
+	MethodGitDiff               = "git.diff"
+	MethodGitFetch              = "git.fetch"
+	MethodGitLog                = "git.log"
+	MethodGitPull               = "git.pull"
+	MethodGitPush               = "git.push"
+	MethodGitStage              = "git.stage"
+	MethodGitStatus             = "git.status"
+	MethodGitUnstage            = "git.unstage"
 	MethodInitialize            = "initialize"
 	MethodMCPList               = "mcp.list"
 	MethodRuntimeDiscover       = "runtime.discover"
@@ -79,6 +92,8 @@ const (
 	ReasonDuplicateTurn         = "duplicate_turn"
 	ReasonEventTooLarge         = "event_too_large"
 	ReasonForkSourceChanged     = "fork_source_changed"
+	ReasonGitConflict           = "git_conflict"
+	ReasonGitError              = "git_error"
 	ReasonInvalidDecision       = "invalid_decision"
 	ReasonInvalidParams         = "invalid_params"
 	ReasonNewSessionRequired    = "new_session_required"
@@ -211,6 +226,7 @@ type AuthStatus struct {
 	State AuthState `json:"state"`
 }
 
+// BudgetExceededData identifies the observed threshold that stopped further work.
 type BudgetExceeded struct {
 	Limit    float64 `json:"limit"`
 	Metric   string  `json:"metric"`
@@ -218,7 +234,7 @@ type BudgetExceeded struct {
 	Scope    string  `json:"scope"`
 }
 
-// Limits are host policy. Nil disables a limit; zero admits no further work.
+// BudgetLimits are host policy. Nil disables a limit; zero admits no further work.
 type BudgetLimits struct {
 	MaxSessionCostUSD *float64 `json:"maxSessionCostUsd"`
 	MaxSessionTokens  *int64   `json:"maxSessionTokens"`
@@ -226,10 +242,10 @@ type BudgetLimits struct {
 	MaxTurnTokens     *int64   `json:"maxTurnTokens"`
 }
 
-// Limits are host policy. Nil disables a limit; zero admits no further work.
+// BudgetLimits are host policy. Nil disables a limit; zero admits no further work.
 type BudgetLimitsPatch map[string]json.RawMessage
 
-// Usage contains observed totals. Incomplete totals are lower bounds; nil cost
+// BudgetUsage contains observed totals. Incomplete totals are lower bounds; nil cost
 // means no cost estimate was supplied. Reported costs are estimates, not bills.
 type BudgetUsage struct {
 	CostComplete   bool     `json:"costComplete"`
@@ -373,6 +389,8 @@ const (
 	ErrorReasonDuplicateTurn      ErrorReason = "duplicate_turn"
 	ErrorReasonEventTooLarge      ErrorReason = "event_too_large"
 	ErrorReasonForkSourceChanged  ErrorReason = "fork_source_changed"
+	ErrorReasonGitConflict        ErrorReason = "git_conflict"
+	ErrorReasonGitError           ErrorReason = "git_error"
 	ErrorReasonInvalidDecision    ErrorReason = "invalid_decision"
 	ErrorReasonInvalidParams      ErrorReason = "invalid_params"
 	ErrorReasonNewSessionRequired ErrorReason = "new_session_required"
@@ -433,6 +451,171 @@ const (
 type ForkSessionOptions struct {
 	Settings SettingsPatch `json:"settings,omitempty"`
 	Title    string        `json:"title,omitempty"`
+}
+
+type GitBranch struct {
+	Commit   string `json:"commit"`
+	Current  bool   `json:"current"`
+	Name     string `json:"name"`
+	Remote   bool   `json:"remote"`
+	Upstream string `json:"upstream,omitempty"`
+	Worktree string `json:"worktree,omitempty"`
+}
+
+type GitBranchesResult struct {
+	Branches  []GitBranch `json:"branches"`
+	Truncated bool        `json:"truncated"`
+}
+
+type GitCheckoutOptions struct {
+	Base   string `json:"base,omitempty"`
+	Branch string `json:"branch"`
+	Create bool   `json:"create,omitempty"`
+}
+
+type GitCheckoutParams struct {
+	Base      string `json:"base,omitempty"`
+	Branch    string `json:"branch"`
+	Create    bool   `json:"create,omitempty"`
+	SessionID string `json:"sessionId"`
+}
+
+type GitCommitInfo struct {
+	AuthorEmail string   `json:"authorEmail"`
+	AuthorName  string   `json:"authorName"`
+	ID          string   `json:"id"`
+	Parents     []string `json:"parents"`
+	Subject     string   `json:"subject"`
+	Time        string   `json:"time"`
+}
+
+type GitCommitOptions struct {
+	Message string `json:"message"`
+}
+
+type GitCommitParams struct {
+	Message   string `json:"message"`
+	SessionID string `json:"sessionId"`
+}
+
+type GitCommitResult struct {
+	Commit string `json:"commit"`
+}
+
+type GitDiff struct {
+	EncodingLossy bool   `json:"encodingLossy,omitempty"`
+	Patch         string `json:"patch"`
+	Truncated     bool   `json:"truncated"`
+}
+
+type GitDiffOptions struct {
+	MaxBytes int64  `json:"maxBytes,omitempty"`
+	Path     string `json:"path,omitempty"`
+	Staged   bool   `json:"staged,omitempty"`
+}
+
+// Git methods accept a session ID. The host resolves its saved repository; a
+// client cannot substitute an arbitrary filesystem root in a request.
+type GitDiffParams struct {
+	MaxBytes  int64  `json:"maxBytes,omitempty"`
+	Path      string `json:"path,omitempty"`
+	SessionID string `json:"sessionId"`
+	Staged    bool   `json:"staged,omitempty"`
+}
+
+// FileStatus uses Git's porcelain status letters. Paths are repository-relative
+// literal paths, not pathspec patterns. OriginalPath is present for renames.
+type GitFileStatus struct {
+	Conflicted   bool   `json:"conflicted,omitempty"`
+	Index        string `json:"index"`
+	OriginalPath string `json:"originalPath,omitempty"`
+	Path         string `json:"path"`
+	Untracked    bool   `json:"untracked,omitempty"`
+	Worktree     string `json:"worktree"`
+}
+
+type GitLogOptions struct {
+	Limit int    `json:"limit,omitempty"`
+	Ref   string `json:"ref,omitempty"`
+}
+
+type GitLogParams struct {
+	Limit     int    `json:"limit,omitempty"`
+	Ref       string `json:"ref,omitempty"`
+	SessionID string `json:"sessionId"`
+}
+
+type GitLogResult struct {
+	Commits   []GitCommitInfo `json:"commits"`
+	Truncated bool            `json:"truncated"`
+}
+
+type GitPathsOptions struct {
+	Paths []string `json:"paths"`
+}
+
+type GitPathsParams struct {
+	Paths     []string `json:"paths"`
+	SessionID string   `json:"sessionId"`
+}
+
+type GitRemote struct {
+	FetchURL string `json:"fetchUrl,omitempty"`
+	Name     string `json:"name"`
+	PushURL  string `json:"pushUrl,omitempty"`
+}
+
+// RemoteParams chooses a configured remote by name. Empty fields use Git's
+// configured upstream. Push never forces and Pull only fast-forwards.
+type GitRemoteOptions struct {
+	Branch      string `json:"branch,omitempty"`
+	Remote      string `json:"remote,omitempty"`
+	SetUpstream bool   `json:"setUpstream,omitempty"`
+}
+
+type GitRemoteParams struct {
+	Branch      string `json:"branch,omitempty"`
+	Remote      string `json:"remote,omitempty"`
+	SessionID   string `json:"sessionId"`
+	SetUpstream bool   `json:"setUpstream,omitempty"`
+}
+
+type GitRemoteResult struct {
+	Output    string `json:"output"`
+	Truncated bool   `json:"truncated"`
+}
+
+// GitSettings is the git group of the shared settings document. Each operation
+// captures the current host policy. These settings never choose a UI workflow.
+type GitSettings struct {
+	AllowDuringTurn bool `json:"allowDuringTurn"`
+	AllowRemote     bool `json:"allowRemote"`
+	// Hooks and Signing are "inherit" or "disabled"; signing also accepts "enabled".
+	Hooks          string `json:"hooks"`
+	MaxFiles       int    `json:"maxFiles"`
+	MaxLogEntries  int    `json:"maxLogEntries"`
+	MaxOutputBytes int64  `json:"maxOutputBytes"`
+	ReadOnly       bool   `json:"readOnly"`
+	Signing        string `json:"signing"`
+	TimeoutMs      int64  `json:"timeoutMs"`
+}
+
+// GitSettings is the git group of the shared settings document. Each operation
+// captures the current host policy. These settings never choose a UI workflow.
+type GitSettingsPatch map[string]json.RawMessage
+
+type GitStatus struct {
+	Ahead     int             `json:"ahead"`
+	Behind    int             `json:"behind"`
+	Branch    string          `json:"branch,omitempty"`
+	Detached  bool            `json:"detached"`
+	Files     []GitFileStatus `json:"files"`
+	Head      string          `json:"head,omitempty"`
+	Remotes   []GitRemote     `json:"remotes"`
+	Root      string          `json:"root"`
+	Truncated bool            `json:"truncated"`
+	Unborn    bool            `json:"unborn"`
+	Upstream  string          `json:"upstream,omitempty"`
 }
 
 // Event is the envelope for everything a session emits.
@@ -729,6 +912,7 @@ type ServerCapabilities struct {
 	AllowUnsafe bool `json:"allowUnsafe"`
 	// EventLogSize is the per-session replay window.
 	EventLogSize int           `json:"eventLogSize"`
+	Git          bool          `json:"git"`
 	Runtimes     []RuntimeInfo `json:"runtimes"`
 	// Settings advertises the unified live settings API.
 	Settings bool `json:"settings"`
@@ -1037,6 +1221,7 @@ type SettingsTarget struct {
 type SettingsValues struct {
 	Approvals ApprovalSettings  `json:"approvals"`
 	Budget    BudgetLimits      `json:"budget"`
+	Git       GitSettings       `json:"git"`
 	History   HistorySettings   `json:"history"`
 	Logging   LoggingSettings   `json:"logging"`
 	Memory    MemorySettings    `json:"memory"`
@@ -1234,14 +1419,16 @@ type UsageData struct {
 // Binding is durable identity data. Owned means the backend created a dedicated
 // worktree for SessionID; it is not permission to delete dirty files.
 type WorkspaceBinding struct {
-	BaseCommit string `json:"baseCommit,omitempty"`
-	CommonDir  string `json:"commonDir"`
-	GitDir     string `json:"gitDir"`
-	Kind       string `json:"kind"`
-	Owned      bool   `json:"owned"`
-	Path       string `json:"path"`
-	Repo       string `json:"repo"`
-	SessionID  string `json:"sessionId"`
+	BaseCommit        string `json:"baseCommit,omitempty"`
+	CommonDir         string `json:"commonDir"`
+	CommonDirIdentity string `json:"commonDirIdentity,omitempty"`
+	GitDir            string `json:"gitDir"`
+	GitDirIdentity    string `json:"gitDirIdentity,omitempty"`
+	Kind              string `json:"kind"`
+	Owned             bool   `json:"owned"`
+	Path              string `json:"path"`
+	Repo              string `json:"repo"`
+	SessionID         string `json:"sessionId"`
 }
 
 // Diff compares content at turn boundaries. WorkingTree includes nonignored

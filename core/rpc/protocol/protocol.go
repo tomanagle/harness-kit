@@ -27,6 +27,17 @@ const Version = 1
 
 // Method names.
 const (
+	MethodGitStatus         = "git.status"
+	MethodGitDiff           = "git.diff"
+	MethodGitBranches       = "git.branches"
+	MethodGitLog            = "git.log"
+	MethodGitStage          = "git.stage"
+	MethodGitUnstage        = "git.unstage"
+	MethodGitCommit         = "git.commit"
+	MethodGitCheckout       = "git.checkout"
+	MethodGitFetch          = "git.fetch"
+	MethodGitPull           = "git.pull"
+	MethodGitPush           = "git.push"
 	MethodInitialize        = "initialize"
 	MethodShutdown          = "shutdown"
 	MethodSettingsGet       = "settings.get"
@@ -101,6 +112,8 @@ const (
 	CodeEventTooLarge      = -32017
 	CodeForkSourceChanged  = -32018
 	CodeBudgetExceeded     = -32019
+	CodeGitError           = -32020
+	CodeGitConflict        = -32021
 )
 
 // Reason strings for ErrorData.Reason.
@@ -127,6 +140,8 @@ const (
 	ReasonEventTooLarge      = "event_too_large"
 	ReasonForkSourceChanged  = "fork_source_changed"
 	ReasonBudgetExceeded     = "budget_exceeded"
+	ReasonGitError           = "git_error"
+	ReasonGitConflict        = "git_conflict"
 )
 
 // ErrorData is the "data" member of Harness Kit errors.
@@ -155,6 +170,7 @@ type ServerInfo struct {
 
 // ServerCapabilities describe what the server offers.
 type ServerCapabilities struct {
+	Git       bool         `json:"git"`
 	Workspace bool         `json:"workspace"`
 	Runtimes  []agent.Info `json:"runtimes"`
 	// AllowUnsafe reports whether the sidecar accepts session options that

@@ -8,8 +8,9 @@ import (
 	"math"
 
 	"github.com/tomanagle/harness-kit/core/agent"
-	"github.com/tomanagle/harness-kit/core/budget"
+	"github.com/tomanagle/harness-kit/core/config"
 	"github.com/tomanagle/harness-kit/core/event"
+	"github.com/tomanagle/harness-kit/core/internal/budget"
 	"github.com/tomanagle/harness-kit/core/settings"
 )
 
@@ -17,10 +18,10 @@ var ErrBudgetExceeded = errors.New("session: observed usage budget exhausted")
 
 type turnBudget struct {
 	tokensSet, costSet bool
-	limits             budget.Limits
+	limits             config.BudgetLimits
 }
 
-func (t turnBudget) effective(base budget.Limits) budget.Limits {
+func (t turnBudget) effective(base config.BudgetLimits) config.BudgetLimits {
 	if t.tokensSet {
 		base.MaxTurnTokens = t.limits.MaxTurnTokens
 	}
@@ -30,7 +31,7 @@ func (t turnBudget) effective(base budget.Limits) budget.Limits {
 	return base
 }
 
-func (ms *managed) prepareBudget(p settings.Patch) (turnBudget, budget.Limits, error) {
+func (ms *managed) prepareBudget(p settings.Patch) (turnBudget, config.BudgetLimits, error) {
 	ms.mu.Lock()
 	policy := ms.info.Budget.Clone()
 	ledger := ms.accounting
@@ -129,12 +130,12 @@ func (ms *managed) checkBudgetLocked() {
 
 // BudgetUsage returns a durable session's observed accounting without starting
 // a runtime. The same values are included in Info and session.updated.
-func (m *Manager) BudgetUsage(ctx context.Context, id string) (budget.Usage, error) {
+func (m *Manager) BudgetUsage(ctx context.Context, id string) (event.BudgetUsage, error) {
 	info, err := m.Get(ctx, id)
 	return info.Usage.Clone(), err
 }
 
-func validateBudgetPolicy(rt agent.Runtime, p budget.Limits) error {
+func validateBudgetPolicy(rt agent.Runtime, p config.BudgetLimits) error {
 	caps := rt.Info().Capabilities
 	if !caps.Usage && ((p.MaxSessionTokens != nil && *p.MaxSessionTokens > 0) || (p.MaxTurnTokens != nil && *p.MaxTurnTokens > 0)) {
 		return fmt.Errorf("%w: %s does not report consumed token usage for budget enforcement", agent.ErrUnsupported, rt.Info().Name)

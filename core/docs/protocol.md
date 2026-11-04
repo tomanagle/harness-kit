@@ -536,7 +536,7 @@ written before configuration snapshots were introduced may omit `config`.
   the same `approvalId`, before the turn completes.
 - There is no ordering between different sessions.
 - `session.prompt`, `session.cancel`, `session.close`, `session.restore`,
-  `session.rename`, `session.configure` and `session.delete` requests for the
+  `session.rename`, `session.configure`, `session.delete` and `git.*` requests for the
   same session take effect in the order the client sent them. Other
   requests run concurrently, so a slow `runtime.discover` never delays an
   `approval.respond`. A `session.configure` sent before `session.prompt`
@@ -580,15 +580,17 @@ it rather than on the message.
 | -32001 | `session_not_found` | |
 | -32003 | `runtime_not_found` | not registered with this sidecar |
 | -32004 | `runtime_unavailable` | not installed |
-| -32005 | `session_busy` | a turn is running |
+| -32005 | `session_busy` | a turn or conflicting Git operation is running |
 | -32006 | `session_closed` | |
 | -32007 | `approval_not_found` | unknown or already resolved |
 | -32008 | `unsupported_version` | see `data.supportedVersions` |
-| -32009 | `policy_violation` | unsafe options without `--allow-unsafe` |
+| -32009 | `policy_violation` | unsafe options without `--allow-unsafe`, or writes/remotes disabled by Git policy |
 | -32010 | `invalid_decision` | outcome not supported by the request |
 | -32011 | `runtime_error` | the runtime failed (start, bad options, …) |
 | -32012 | `unsupported` | runtime does not support the operation, setting lifetime, or native-default selection |
 | -32013 | `not_resumable` | the stored session never started, so there is nothing to resume |
+| -32020 | `git_error` | native Git operation failed |
+| -32021 | `git_conflict` | operation conflicts with repository state |
 
 ## Example session
 
@@ -679,3 +681,32 @@ workspace.remove accepts {sessionId}. It requires a closed/suspended runtime,
 verified ownership and a clean worktree, including ignored files, and refuses
 advanced detached HEADs. Session deletion never removes workspace files.
 See [workspace settings, boundaries and cleanup](workspaces.md).
+
+### Source control
+
+Initialization advertises `capabilities.git` when the workspace adapter implements
+the optional source-control interface. Every operation targets an existing
+`sessionId`; arbitrary repository paths are not accepted as RPC parameters.
+Closed and suspended sessions can use these methods without starting a runtime.
+
+| Method | Additional params | Result |
+| --- | --- | --- |
+| `git.status` | none | root, HEAD/branch, upstream, files, remotes, truncation |
+| `git.diff` | `path?`, `staged?`, `maxBytes?` | patch, truncation, encoding loss |
+| `git.branches` | none | branches, truncation |
+| `git.log` | `ref?`, `limit?` | commits, truncation |
+| `git.stage`, `git.unstage` | `paths` | `{}` |
+| `git.commit` | `message` | commit ID |
+| `git.checkout` | `branch`, `create?`, `base?` | `{}` |
+| `git.fetch`, `git.pull`, `git.push` | `remote?`, `branch?`, `setUpstream?` (push only) | bounded output, truncation |
+
+Global `git` settings in the unified settings document take effect at the next
+operation. Reads and writes honor cancellation and deadlines. Writes coordinate
+with agent turns in the same checkout unless the host opts into concurrency.
+The native backend serializes operations that share a repository. Responses are
+request results, not durable transcript events; hosts refresh after writes and
+choose their own polling or filesystem notification strategy for external edits.
+
+See [Git integration](git.md) for settings, literal-path behavior, bounded output,
+credential handling and optional embedded adapters. Exact request/result fields
+are generated in the [protocol schema](../../protocol/schema.json).

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,8 +18,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/tomanagle/harness-kit/core/agent"
-	"github.com/tomanagle/harness-kit/core/budget"
+	"github.com/tomanagle/harness-kit/core/config"
 	"github.com/tomanagle/harness-kit/core/event"
+	"github.com/tomanagle/harness-kit/core/internal/budget"
 	"github.com/tomanagle/harness-kit/core/mcp"
 	"github.com/tomanagle/harness-kit/core/permission"
 	"github.com/tomanagle/harness-kit/core/settings"
@@ -138,11 +140,12 @@ type Manager struct {
 	baseCancel context.CancelFunc
 
 	// lifecycleMu serialises restore, rename and delete, including dormant sessions.
-	lifecycleMu sync.Mutex
-	mu          sync.Mutex
-	sessions    map[string]*managed
-	closedOrder []*managed
-	turns       sync.WaitGroup
+	lifecycleMu   sync.Mutex
+	gitOperations map[string]gitReservation // protected by lifecycleMu; keyed by Git directory
+	mu            sync.Mutex
+	sessions      map[string]*managed
+	closedOrder   []*managed
+	turns         sync.WaitGroup
 
 	settingsMu          sync.RWMutex
 	settingsChangeMu    sync.Mutex
@@ -200,7 +203,7 @@ type CreateParams struct {
 	// belong to ConfigureSettings.
 	Settings settings.Patch
 	pinned   bool
-	budget   budget.Limits
+	budget   config.BudgetLimits
 	Runtime  string
 	Config   agent.SessionConfig
 	Metadata map[string]string
@@ -413,8 +416,10 @@ func (m *Manager) newManaged(ctx context.Context, info Info, cfg agent.SessionCo
 		if err != nil {
 			return nil, err
 		}
-		if rec.Accounting != nil {
-			ledger = *rec.Accounting
+		if len(rec.Accounting) != 0 && strings.TrimSpace(string(rec.Accounting)) != "null" {
+			if err := json.Unmarshal(rec.Accounting, &ledger); err != nil {
+				return nil, fmt.Errorf("session: decode accounting checkpoint: %w", err)
+			}
 			accountingAfter = rec.Info.LastSeq
 		}
 		if rec.InitialBudget != nil {
@@ -738,8 +743,10 @@ func (m *Manager) storedInfo(ctx context.Context, info Info) (Info, error) {
 	}
 	ledger := budget.New(rec.Config.ResumeID != "")
 	var ledgerAfter uint64
-	if rec.Accounting != nil {
-		ledger = *rec.Accounting
+	if len(rec.Accounting) != 0 && strings.TrimSpace(string(rec.Accounting)) != "null" {
+		if err := json.Unmarshal(rec.Accounting, &ledger); err != nil {
+			return Info{}, fmt.Errorf("session: decode accounting checkpoint: %w", err)
+		}
 		ledgerAfter = rec.Info.LastSeq
 	}
 	after := info.LastSeq
@@ -843,7 +850,7 @@ type Turn struct {
 	done       chan struct{}
 	result     agent.TurnResult
 	budget     turnBudget
-	budgetStop *budget.Exceeded
+	budgetStop *event.BudgetExceededData
 }
 
 // Done is closed when the turn has finished and turn.completed was emitted.
@@ -895,6 +902,9 @@ func (m *Manager) Prompt(requestCtx context.Context, sessionID string, p PromptP
 		return nil, ErrNotFound
 	}
 	if err := m.checkForkAdmission(requestCtx, ms); err != nil {
+		return nil, err
+	}
+	if err := m.checkGitPrompt(requestCtx, ms); err != nil {
 		return nil, err
 	}
 	ms.emitMu.Lock()
@@ -1249,7 +1259,7 @@ type managed struct {
 	rt               agent.Runtime
 	cfg              agent.SessionConfig
 	initialCfg       agent.SessionConfig
-	initialBudget    budget.Limits
+	initialBudget    config.BudgetLimits
 	initialWorkspace workspace.Settings
 	accounting       budget.Ledger
 	log              *event.Log
@@ -1352,8 +1362,12 @@ func (ms *managed) persist() error {
 		defaults = &selection
 	}
 	initialWorkspace := ms.initialWorkspace
-	rec := Record{Accounting: &ledger, InitialBudget: &initialBudget, InitialWorkspace: &initialWorkspace, Info: ms.snapshot(), Config: cfg, InitialConfig: &initial, NativeDefaults: defaults, ForkSourceRuntimeID: cfg.ForkFrom}
-	err := ms.m.store.Put(context.Background(), rec)
+	checkpoint, err := json.Marshal(ledger)
+	if err != nil {
+		return fmt.Errorf("session: encode accounting checkpoint: %w", err)
+	}
+	rec := Record{Accounting: checkpoint, InitialBudget: &initialBudget, InitialWorkspace: &initialWorkspace, Info: ms.snapshot(), Config: cfg, InitialConfig: &initial, NativeDefaults: defaults, ForkSourceRuntimeID: cfg.ForkFrom}
+	err = ms.m.store.Put(context.Background(), rec)
 	ms.mu.Lock()
 	ms.recordWriteFailed = err != nil
 	ms.mu.Unlock()

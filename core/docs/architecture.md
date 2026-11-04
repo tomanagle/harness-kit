@@ -41,7 +41,7 @@ applicable:
 A context manager cannot compact a Codex conversation, and a tool registry
 cannot inject a Go function into Claude Code's tool loop directly. Harness
 Kit therefore has a **delegated track** (`agent.Runtime`) and a
-**build-your-own track** (`model.Provider` + tools + `contextwindow`).
+**build-your-own track** (`model.Provider` + tools + `model/contextwindow`).
 Sessions, events and permissions are shared by both. This is the
 `AgentRuntime` / `ModelProvider` split the proposal asks for, followed
 through to the other primitives.
@@ -178,13 +178,13 @@ dependencies.
 | `mcp` | Portable MCP server config: layers, merge, `${VAR}` expansion, project trust ([mcp.md](mcp.md)) |
 | `tools` | Host tool registry: schemas, validation, execution ([tools.md](tools.md)) |
 | `toolhost` | Serves the registry (and Claude Code permission prompts) to runtimes as MCP over a private Unix socket |
-| `process` | Native-only: binary lookup incl. GUI-app install dirs, process groups, SIGINT then kill, `Tail` |
+| `internal/process` | Private native implementation: binary lookup incl. GUI-app install dirs, process groups, SIGINT then kill, `Tail` |
 | `rpc/protocol` | Wire types, method names, error codes, protocol version |
 | `rpc/server` | Serves a `session.Manager` over any `io.Reader`/`io.Writer` |
-| `rpc/client` | Compatibility Go client using core-domain types |
+| `internal/rpcclient` | Private CLI client using core-domain types |
 | `runtimes/codex`, `runtimes/claude`, `runtimes/acp`, `runtimes/fake` | Adapters |
-| `model`, `contextwindow` | Portable raw inference contract and caller-owned context management |
-| `budget` | Observed token/cost accounting with durable checkpoints and explicit limits |
+| `model`, `model/contextwindow` | Portable raw inference contract and caller-owned context management |
+| `internal/budget` | Private observed-usage accounting; public policy is `config.BudgetLimits`, public usage and exceedance payloads live in `event` |
 | `workspace`, `workspace/git` | Portable workspace contract and optional native Git worktree/diff backend |
 | `providers/openai`, `providers/anthropic` | Separate modules using official provider SDKs |
 | `cmd/harness-kit` | The sidecar binary |
@@ -197,9 +197,9 @@ settings and error constants. The generator reads the Go server's wire/domain
 types and method registry, writes `protocol/schema.json`, then renders both
 clients from it. This avoids maintaining a second TypeScript model by hand.
 Generated files are committed so consumers do not need the generator or a core
-checkout. The `rpc/client` package is retained for compatibility with existing
-Go applications; new clients can import the independent module under
-`packages/client-go`. See [protocol generation](../../protocol/README.md).
+checkout. The CLI uses `internal/rpcclient`; applications import the independent
+module under `packages/client-go`. The [package boundary guide](packages.md)
+explains which APIs are public and how to migrate the earlier flat source layout. See [protocol generation](../../protocol/README.md).
 
 ### 2.2 Public interfaces
 

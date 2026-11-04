@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -219,7 +220,9 @@ func toRPCError(err error) error {
 		return rpcErr(protocol.CodeUnsupported, protocol.ReasonUnsupported, err.Error())
 	case errors.Is(err, workspace.ErrInvalid):
 		return invalidParams(err.Error())
-	case errors.Is(err, workspace.ErrDirty) || errors.Is(err, workspace.ErrNotOwned):
+	case errors.Is(err, workspace.ErrConflict):
+		return rpcErr(protocol.CodeGitConflict, protocol.ReasonGitConflict, err.Error())
+	case errors.Is(err, workspace.ErrDirty) || errors.Is(err, workspace.ErrNotOwned) || errors.Is(err, workspace.ErrReadOnly) || errors.Is(err, workspace.ErrRemoteDisabled):
 		return rpcErr(protocol.CodePolicyViolation, protocol.ReasonPolicyViolation, err.Error())
 	case err == nil:
 		return nil
@@ -311,6 +314,7 @@ func (c *conn) initialize(req *jsonrpc.Request) (any, error) {
 		ProtocolVersion: protocol.Version,
 		ServerInfo:      protocol.ServerInfo{Name: c.srv.opts.Name, Version: c.srv.opts.Version},
 		Capabilities: protocol.ServerCapabilities{
+			Git:          c.srv.mgr.HasSourceControl(),
 			Runtimes:     c.srv.mgr.Registry().List(),
 			AllowUnsafe:  snapshot.Values.Process.AllowUnsafe,
 			EventLogSize: snapshot.Values.Memory.EventLogSize,
@@ -322,6 +326,9 @@ func (c *conn) initialize(req *jsonrpc.Request) (any, error) {
 }
 
 func (c *conn) dispatch(ctx context.Context, req *jsonrpc.Request) (any, error) {
+	if strings.HasPrefix(req.Method, "git.") {
+		return c.dispatchGit(ctx, req)
+	}
 	mgr := c.srv.mgr
 	switch req.Method {
 	case protocol.MethodSettingsGet:
@@ -771,10 +778,16 @@ func (c *conn) dispatch(ctx context.Context, req *jsonrpc.Request) (any, error) 
 
 // orderKey serialises the requests that change a session's state, so a
 // client's "prompt, then cancel" or "prompt, prompt" is applied in the
-// order it was sent. Everything else (reads, discovery, approvals) runs
-// concurrently. These handlers return quickly: a prompt only starts its
-// turn.
+// order it was sent. Git operations also use this queue, so pipelined stage
+// and commit requests stay ordered. Discovery, approvals and non-Git reads run
+// concurrently. Git commands are bounded by policy and request cancellation.
 func orderKey(req *jsonrpc.Request) string {
+	if strings.HasPrefix(req.Method, "git.") {
+		var p protocol.SessionIDParams
+		if json.Unmarshal(req.Params, &p) == nil && p.SessionID != "" {
+			return "session:" + p.SessionID
+		}
+	}
 	if req.Method == protocol.MethodSettingsConfigure {
 		var p settings.ConfigureParams
 		if json.Unmarshal(req.Params, &p) == nil && p.Target.SessionID != "" {

@@ -10,7 +10,7 @@ import (
 
 	"github.com/tomanagle/harness-kit/core/agent"
 	"github.com/tomanagle/harness-kit/core/event"
-	"github.com/tomanagle/harness-kit/core/rpc/client"
+	"github.com/tomanagle/harness-kit/core/internal/rpcclient"
 	"github.com/tomanagle/harness-kit/core/rpc/protocol"
 	"github.com/tomanagle/harness-kit/core/rpc/server"
 	"github.com/tomanagle/harness-kit/core/runtimes/fake"

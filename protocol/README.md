@@ -40,5 +40,5 @@ Generated files:
 Connection lifecycle, transport adapters, streaming conveniences and tool
 callbacks remain handwritten. The [protocol behavior guide](../core/docs/protocol.md)
 defines ordering, cancellation and replay in addition to the schema's data shapes.
-The existing `core/rpc/client` remains available for compatibility; new Go
-applications can use the independent [Go client module](../packages/client-go/README.md).
+The CLI uses a private core-domain client at `core/internal/rpcclient`. Go
+applications use the independent [Go client module](../packages/client-go/README.md).

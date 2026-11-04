@@ -72,7 +72,40 @@
   const promptInput = Object.assign(el("input"), { id: "prompt", placeholder: "Message the agent…", disabled: true, autocomplete: "off" });
   const sendBtn = Object.assign(el("button", "primary", "Send"), { id: "send", type: "submit", disabled: true });
   composer.append(promptInput, sendBtn);
-  main.append(header, approval, transcript, composer);
+  const gitPanel = Object.assign(el("details", "git-panel"), { id: "git-panel", hidden: true });
+  const gitSummary = Object.assign(el("summary", "", "Source control"), { id: "git-summary" });
+  const gitToolbar = el("div", "git-toolbar");
+  const gitRefresh = Object.assign(el("button", "", "Refresh"), { id: "git-refresh", type: "button" });
+  const gitHistory = Object.assign(el("button", "", "Recent commits"), { id: "git-history", type: "button" });
+  const gitRoot = Object.assign(el("span", "meta mono"), { id: "git-root" });
+  gitToolbar.append(gitRefresh, gitHistory, gitRoot);
+  const gitMessage = Object.assign(el("p", "status"), { id: "git-message" });
+  const gitFiles = Object.assign(el("ul", "git-files list"), { id: "git-files" });
+  const gitBranchRow = el("div", "git-toolbar");
+  const gitBranches = Object.assign(el("select"), { id: "git-branch", title: "Local branch" });
+  const gitSwitch = Object.assign(el("button", "", "Switch branch"), { id: "git-switch", type: "button" });
+  const gitNewBranch = Object.assign(el("input"), { id: "git-new-branch", placeholder: "New branch name", autocomplete: "off" });
+  const gitCreateBranch = Object.assign(el("button", "", "Create branch"), { id: "git-create-branch", type: "button" });
+  gitBranchRow.append(gitBranches, gitSwitch, gitNewBranch, gitCreateBranch);
+  const gitCommitForm = Object.assign(el("form", "git-toolbar"), { id: "git-commit-form" });
+  const gitCommitMessage = Object.assign(el("input"), { id: "git-commit-message", placeholder: "Commit message (staged changes only)", autocomplete: "off" });
+  const gitCommit = Object.assign(el("button", "primary", "Commit staged"), { id: "git-commit", type: "submit" });
+  gitCommitForm.append(gitCommitMessage, gitCommit);
+  const gitRemoteRow = el("div", "git-toolbar");
+  const gitRemote = Object.assign(el("select"), { id: "git-remote", title: "Configured Git remote" });
+  const gitRemoteBranch = Object.assign(el("input"), { id: "git-remote-branch", placeholder: "Remote branch (optional)", autocomplete: "off" });
+  const gitUpstreamLabel = el("label", "meta git-checkbox");
+  const gitUpstream = Object.assign(el("input"), { id: "git-set-upstream", type: "checkbox" });
+  gitUpstreamLabel.append(gitUpstream, "Set upstream on push");
+  const gitFetch = Object.assign(el("button", "", "Fetch"), { id: "git-fetch", type: "button" });
+  const gitPull = Object.assign(el("button", "", "Pull (fast-forward)"), { id: "git-pull", type: "button" });
+  const gitPush = Object.assign(el("button", "", "Push"), { id: "git-push", type: "button" });
+  gitRemoteRow.append(gitRemote, gitRemoteBranch, gitUpstreamLabel, gitFetch, gitPull, gitPush);
+  const gitDiffTitle = Object.assign(el("p", "meta"), { id: "git-diff-title" });
+  const gitDiff = Object.assign(el("pre", "diff-output"), { id: "git-diff" });
+  const gitDiffNote = Object.assign(el("p", "status"), { id: "git-diff-note" });
+  gitPanel.append(gitSummary, gitToolbar, gitMessage, gitFiles, gitBranchRow, gitCommitForm, gitRemoteRow, gitDiffTitle, gitDiffNote, gitDiff);
+  main.append(header, approval, gitPanel, transcript, composer);
   document.body.append(sidebar, main);
 
   // ---- state ----------------------------------------------------------------
@@ -87,17 +120,27 @@
   let opening = null; // buffers live events while loading a transcript
   let openVersion = 0;
   let lastSeq = 0;
+  let gitStatus = null;
+  let gitAvailable = false;
+  let gitLoading = false;
+  let gitAction = null;
+  let gitVersion = 0;
+  let gitDiffVersion = 0;
+  let gitFileActions = [];
 
   function setBusy(b) {
     busy = b;
     cancelBtn.disabled = !b;
     sendBtn.disabled = b || !current;
     promptInput.disabled = !current;
+    updateGitControls();
   }
 
   // ---- sidebar --------------------------------------------------------------
   async function refreshOverview() {
-    const { runtimes, tools, mcp } = await hk.overview();
+    const { runtimes, tools, mcp, git } = await hk.overview();
+    gitAvailable = git !== false && typeof hk.gitStatus === "function";
+    gitPanel.hidden = !gitAvailable || !current;
 
     const rl = $("#runtimes");
     rl.replaceChildren();
@@ -155,6 +198,179 @@
     sessions.clear();
     for (const info of list) rememberSession(info);
     drawSessions();
+  }
+
+  // ---- source control -------------------------------------------------------
+  // All mutations are explicit user actions. This example chooses to disable
+  // them while a turn runs; the host independently enforces its settings.git.
+  function updateGitControls() {
+    const unavailable = !current || !gitStatus || gitLoading || Boolean(gitAction);
+    const writesDisabled = unavailable || busy;
+    gitRefresh.disabled = !current || gitLoading || Boolean(gitAction);
+    gitHistory.disabled = unavailable || gitStatus?.unborn;
+    gitSwitch.disabled = writesDisabled || !gitBranches.value;
+    gitCreateBranch.disabled = writesDisabled;
+    gitCommit.disabled = writesDisabled || !(gitStatus?.files || []).some((f) => hasIndexChange(f));
+    gitBranches.disabled = gitNewBranch.disabled = gitCommitMessage.disabled = writesDisabled;
+    const remoteDisabled = writesDisabled || !(gitStatus?.remotes || []).length;
+    gitFetch.disabled = gitPull.disabled = gitPush.disabled = remoteDisabled;
+    gitRemote.disabled = gitRemoteBranch.disabled = gitUpstream.disabled = remoteDisabled;
+    for (const { button, write } of gitFileActions) button.disabled = write ? writesDisabled : unavailable;
+  }
+
+  function hasIndexChange(file) { return Boolean(file.index && ![" ", ".", "?"].includes(file.index)); }
+  function hasWorktreeChange(file) { return Boolean(file.untracked || (file.worktree && ![" ", "."].includes(file.worktree))); }
+  function gitNote(text, error = false) {
+    gitMessage.textContent = text;
+    gitMessage.className = "status" + (error ? " error" : "");
+  }
+  function resetGit() {
+    gitVersion++;
+    gitDiffVersion++;
+    gitStatus = null;
+    gitLoading = false;
+    gitFileActions = [];
+    gitPanel.hidden = !gitAvailable;
+    gitFiles.replaceChildren();
+    gitBranches.replaceChildren();
+    gitRemote.replaceChildren();
+    gitRoot.textContent = gitDiff.textContent = gitDiffTitle.textContent = gitDiffNote.textContent = "";
+    gitCommitMessage.value = gitNewBranch.value = gitRemoteBranch.value = "";
+    gitUpstream.checked = false;
+    gitSummary.textContent = "Source control";
+    gitNote("Loading repository…");
+    updateGitControls();
+  }
+
+  async function refreshGit() {
+    if (!current || !gitAvailable) return false;
+    const id = current.sessionId, version = ++gitVersion;
+    gitLoading = true;
+    updateGitControls();
+    try {
+      const [status, branches] = await Promise.all([hk.gitStatus(id), hk.gitBranches(id)]);
+      if (version !== gitVersion || current?.sessionId !== id) return false;
+      gitStatus = status;
+      gitRoot.textContent = status.root;
+      gitSummary.textContent = `Source control · ${status.branch || (status.detached ? "detached HEAD" : "unborn branch")} · ${status.files.length} changed file(s)`;
+      const upstream = status.upstream ? ` · ${status.upstream}: ${status.ahead} ahead, ${status.behind} behind` : "";
+      gitNote(`${status.unborn ? "No commits yet" : status.head?.slice(0, 10) || "Repository"}${upstream}${status.truncated ? " · File list truncated by host limits" : ""}${branches.truncated ? " · Branch list truncated" : ""}`);
+      gitBranches.replaceChildren();
+      if (!status.branch) gitBranches.append(Object.assign(el("option", "", "Select a local branch"), { value: "" }));
+      for (const branch of branches.branches.filter((b) => !b.remote)) {
+        gitBranches.append(Object.assign(el("option", "", branch.name), { value: branch.name }));
+      }
+      gitBranches.value = status.branch || "";
+      const remote = gitRemote.value;
+      gitRemote.replaceChildren(Object.assign(el("option", "", "Configured upstream"), { value: "" }));
+      for (const entry of status.remotes) gitRemote.append(Object.assign(el("option", "", entry.name), { value: entry.name }));
+      gitRemote.value = status.remotes.some((r) => r.name === remote) ? remote : "";
+      drawGitFiles(status.files);
+      return true;
+    } catch (error) {
+      if (version !== gitVersion || current?.sessionId !== id) return false;
+      gitStatus = null;
+      gitSummary.textContent = "Source control · unavailable";
+      gitFiles.replaceChildren();
+      gitFileActions = [];
+      gitNote(String(error?.message ?? error), true);
+      return false;
+    } finally {
+      if (version === gitVersion) {
+        gitLoading = false;
+        updateGitControls();
+      }
+    }
+  }
+
+  function drawGitFiles(files) {
+    gitFiles.replaceChildren();
+    gitFileActions = [];
+    if (!files.length) gitFiles.append(el("li", "meta", "Working tree clean"));
+    for (const file of files) {
+      const row = el("li", "git-file");
+      row.dataset.path = file.path;
+      row.append(el("span", "mono git-file-name", file.originalPath ? `${file.originalPath} → ${file.path}` : file.path));
+      row.append(badge(file.conflicted ? "conflict" : file.untracked ? "untracked" : `${file.index || " "}${file.worktree || " "}`));
+      const paths = [...new Set([file.originalPath, file.path].filter(Boolean))];
+      const action = (name, label, write, fn) => {
+        const button = Object.assign(el("button", `git-${name}`, label), { type: "button" });
+        button.dataset.path = file.path;
+        button.addEventListener("click", () => { if (!button.disabled) fn(); });
+        gitFileActions.push({ button, write });
+        row.append(button);
+      };
+      if (hasWorktreeChange(file)) {
+        action("view-working", "Working diff", false, () => showGitDiff(file.path, false));
+        action("stage", "Stage", true, () => runGit("Stage", (id) => hk.gitStage(id, paths)));
+      }
+      if (hasIndexChange(file)) {
+        action("view-staged", "Staged diff", false, () => showGitDiff(file.path, true));
+        action("unstage", "Unstage", true, () => runGit("Unstage", (id) => hk.gitUnstage(id, paths)));
+      }
+      gitFiles.append(row);
+    }
+  }
+
+  async function showGitDiff(path, staged) {
+    if (!current || gitLoading || gitAction) return;
+    const id = current.sessionId, version = ++gitDiffVersion;
+    gitDiffTitle.textContent = `${staged ? "Staged" : "Working"} · ${path}`;
+    gitDiff.textContent = "Loading…";
+    gitDiffNote.textContent = "";
+    try {
+      const diff = await hk.gitDiff(id, { path, staged, maxBytes: 131072 });
+      if (version !== gitDiffVersion || current?.sessionId !== id) return;
+      gitDiff.textContent = diff.patch || "No text changes to display.";
+      gitDiffNote.textContent = [diff.truncated ? "Diff truncated by the configured size limit." : "", diff.encodingLossy ? "Some bytes could not be displayed as text." : ""].filter(Boolean).join(" ");
+    } catch (error) {
+      if (version !== gitDiffVersion || current?.sessionId !== id) return;
+      gitDiff.textContent = "";
+      gitDiffNote.textContent = String(error?.message ?? error);
+    }
+  }
+
+  async function showGitHistory() {
+    if (!current || gitHistory.disabled) return;
+    const id = current.sessionId, version = ++gitDiffVersion;
+    gitDiffTitle.textContent = "Recent commits";
+    gitDiff.textContent = "Loading…";
+    gitDiffNote.textContent = "";
+    try {
+      const result = await hk.gitLog(id, { limit: 20 });
+      if (version !== gitDiffVersion || current?.sessionId !== id) return;
+      gitDiff.textContent = result.commits.map((commit) => `${commit.id.slice(0, 10)} ${commit.subject}\n  ${commit.authorName} · ${commit.time}`).join("\n");
+      gitDiffNote.textContent = result.truncated ? "More commits are available; this view is bounded." : "";
+    } catch (error) {
+      if (version !== gitDiffVersion || current?.sessionId !== id) return;
+      gitDiff.textContent = "";
+      gitDiffNote.textContent = String(error?.message ?? error);
+    }
+  }
+
+  async function runGit(label, operation, success) {
+    if (!current || !gitStatus || gitLoading || gitAction || busy) return;
+    const id = current.sessionId;
+    const action = { id };
+    gitAction = action;
+    gitDiffVersion++;
+    gitNote(`${label}…`);
+    updateGitControls();
+    try {
+      const result = await operation(id);
+      if (current?.sessionId !== id) return;
+      success?.();
+      gitDiff.textContent = gitDiffTitle.textContent = gitDiffNote.textContent = "";
+      const refreshed = await refreshGit();
+      if (current?.sessionId !== id) return;
+      const note = result?.commit ? `Committed ${result.commit.slice(0, 10)}.` : result?.output || `${label} complete.`;
+      gitNote(`${note}${result?.truncated ? " (Output truncated.)" : ""}${refreshed ? "" : " Repository refresh failed: " + gitMessage.textContent}`, !refreshed);
+    } catch (error) {
+      if (current?.sessionId === id) gitNote(String(error?.message ?? error), true);
+    } finally {
+      if (gitAction === action) gitAction = null;
+      updateGitControls();
+    }
   }
 
   function rememberSession(info) {
@@ -231,6 +447,8 @@
     showSessionState();
     promptInput.focus();
     drawSessions();
+    resetGit();
+    void refreshGit();
   }
 
   async function newSession() {
@@ -436,6 +654,29 @@
   }
 
   // ---- wiring ---------------------------------------------------------------
+  gitRefresh.addEventListener("click", () => { if (!gitRefresh.disabled) void refreshGit(); });
+  gitHistory.addEventListener("click", () => void showGitHistory());
+  gitBranches.addEventListener("change", updateGitControls);
+  gitSwitch.addEventListener("click", () => {
+    if (!gitSwitch.disabled && gitBranches.value) void runGit("Switch branch", (id) => hk.gitCheckout(id, { branch: gitBranches.value }));
+  });
+  gitCreateBranch.addEventListener("click", () => {
+    if (gitCreateBranch.disabled) return;
+    const branch = gitNewBranch.value.trim();
+    if (!branch) { gitNote("Enter a branch name.", true); return; }
+    void runGit("Create branch", (id) => hk.gitCheckout(id, { branch, create: true }), () => { if (gitNewBranch.value.trim() === branch) gitNewBranch.value = ""; });
+  });
+  gitCommitForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (gitCommit.disabled) return;
+    const message = gitCommitMessage.value;
+    if (!message.trim()) { gitNote("Enter a commit message.", true); return; }
+    void runGit("Commit", (id) => hk.gitCommit(id, message), () => { if (gitCommitMessage.value === message) gitCommitMessage.value = ""; });
+  });
+  const remoteOptions = () => ({ ...(gitRemote.value ? { remote: gitRemote.value } : {}), ...(gitRemoteBranch.value.trim() ? { branch: gitRemoteBranch.value.trim() } : {}) });
+  gitFetch.addEventListener("click", () => { if (!gitFetch.disabled) void runGit("Fetch", (id) => hk.gitFetch(id, remoteOptions())); });
+  gitPull.addEventListener("click", () => { if (!gitPull.disabled) void runGit("Pull", (id) => hk.gitPull(id, remoteOptions())); });
+  gitPush.addEventListener("click", () => { if (!gitPush.disabled) void runGit("Push", (id) => hk.gitPush(id, { ...remoteOptions(), ...(gitUpstream.checked ? { setUpstream: true } : {}) })); });
   newBtn.addEventListener("click", () => newSession().catch(showError));
   renameBtn.addEventListener("click", startRename);
   $("#session-title").addEventListener("dblclick", startRename);
@@ -476,6 +717,7 @@
         openSession(ev.sessionId).catch(showError);
       } else {
         renderOrdered(ev);
+        if (ev.type === "turn.completed") void refreshGit();
       }
     });
     await Promise.all([refreshOverview(), refreshSessions()]);

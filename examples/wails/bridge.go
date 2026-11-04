@@ -14,8 +14,6 @@ import (
 	"time"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
-
-	"github.com/tomanagle/harness-kit/core/process"
 )
 
 // rpcEvent is the Wails event carrying sidecar -> frontend protocol lines.
@@ -54,7 +52,7 @@ func NewBridge(bin string) *Bridge { return &Bridge{bin: bin, done: make(chan st
 func (b *Bridge) startup(ctx context.Context) {
 	b.ctx = ctx
 	b.cmd = exec.Command(b.bin, "serve", "--fake-runtime", "--kit-mcp", "--store", storeDir())
-	process.Configure(b.cmd)
+	configureSidecarProcess(b.cmd)
 	b.cmd.Stderr = os.Stderr
 	stdin, _ := b.cmd.StdinPipe()
 	stdout, _ := b.cmd.StdoutPipe()
@@ -121,7 +119,7 @@ func (b *Bridge) shutdown(context.Context) {
 	select {
 	case <-b.done:
 	case <-time.After(10 * time.Second):
-		_ = process.Kill(b.cmd)
+		_ = killSidecarProcess(b.cmd)
 	}
 }
 

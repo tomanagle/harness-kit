@@ -73,6 +73,13 @@ repository checkout, regenerate the schema and clients with `make generate`;
 [Go client](https://github.com/tomanagle/harness-kit/tree/main/packages/client-go)
 uses the same generated contract.
 
+Optional source-control helpers are exposed through `kit.git`: status, diffs,
+branches, history, stage/unstage, commit, checkout, fetch, pull and push. They
+target a session without starting its runtime. Check `kit.server.capabilities.git`
+and configure host policy through `kit.settings.configure({ patch: { git: ... } })`.
+See the [Git guide](https://github.com/tomanagle/harness-kit/blob/main/core/docs/git.md)
+for examples, limits and application timing.
+
 Settings describe their application timing, including live changes, next-turn
 changes, and process wiring that requires a restart. See the
 [configuration guide](https://github.com/tomanagle/harness-kit/blob/main/core/docs/configuration.md),

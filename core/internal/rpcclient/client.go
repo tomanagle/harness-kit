@@ -1,7 +1,6 @@
-// Package client is a Go client for the Harness Kit sidecar protocol. Use
-// it when a Go program (for example a Wails backend) talks to a separate
-// harness-kit process. Go programs that can link Harness Kit directly
-// should use the session package instead and skip the RPC hop.
+// Package client is the CLI's private sidecar client using core-domain types.
+// Applications connecting to a sidecar use the independent generated Go client
+// in github.com/tomanagle/harness-kit/packages/client-go instead.
 package client
 
 import (
@@ -18,8 +17,8 @@ import (
 	"github.com/tomanagle/harness-kit/core/agent"
 	"github.com/tomanagle/harness-kit/core/event"
 	"github.com/tomanagle/harness-kit/core/internal/jsonrpc"
+	"github.com/tomanagle/harness-kit/core/internal/process"
 	"github.com/tomanagle/harness-kit/core/permission"
-	"github.com/tomanagle/harness-kit/core/process"
 	"github.com/tomanagle/harness-kit/core/rpc/protocol"
 	"github.com/tomanagle/harness-kit/core/session"
 	"github.com/tomanagle/harness-kit/core/settings"

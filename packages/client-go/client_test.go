@@ -299,6 +299,43 @@ func TestFakeSidecarIntegration(t *testing.T) {
 	if err != nil || len(page.Events) == 0 {
 		t.Fatalf("history: %+v, %v", page, err)
 	}
+	// The generated Git methods use standalone wire types, with no core import.
+	repo := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-b", "main")
+	git("config", "user.name", "Kit Test")
+	git("config", "user.email", "kit@example.invalid")
+	git("config", "commit.gpgsign", "false")
+	git("commit", "--allow-empty", "-m", "initial")
+	if err := os.WriteFile(filepath.Join(repo, "added.txt"), []byte("generated Go client\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	gitSession, err := c.SessionCreate(ctx, hk.CreateSessionParams{Runtime: "fake", Cwd: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := c.GitStatus(ctx, hk.SessionIDParams{SessionID: gitSession.Session.ID})
+	if err != nil || len(status.Files) != 1 {
+		t.Fatalf("status: %+v %v", status, err)
+	}
+	if _, err := c.GitStage(ctx, hk.GitPathsParams{SessionID: gitSession.Session.ID, Paths: []string{"added.txt"}}); err != nil {
+		t.Fatal(err)
+	}
+	commit, err := c.GitCommit(ctx, hk.GitCommitParams{SessionID: gitSession.Session.ID, Message: "Generated client commit"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head := git("rev-parse", "HEAD"); head != commit.Commit {
+		t.Fatalf("commit=%s head=%s", commit.Commit, head)
+	}
 	if err := c.CloseContext(ctx); err != nil {
 		t.Fatalf("sidecar close: %v", err)
 	}

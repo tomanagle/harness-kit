@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tomanagle/harness-kit/core/rpc/client"
+	"github.com/tomanagle/harness-kit/core/internal/rpcclient"
 	"github.com/tomanagle/harness-kit/core/settings"
 )
 

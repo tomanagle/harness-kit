@@ -20,7 +20,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tomanagle/harness-kit/core/budget"
 	"github.com/tomanagle/harness-kit/core/config"
 	"github.com/tomanagle/harness-kit/core/event"
 	"github.com/tomanagle/harness-kit/core/mcp"
@@ -226,11 +225,11 @@ func JoinText(in []InputPart) string {
 
 // TurnResult is the outcome of Prompt.
 type TurnResult struct {
-	Budget        *budget.Exceeded `json:"budget,omitempty"`
-	Status        event.TurnStatus `json:"status"`
-	Error         *event.ErrorInfo `json:"error,omitempty"`
-	Usage         *event.UsageData `json:"usage,omitempty"`
-	RuntimeTurnID string           `json:"runtimeTurnId,omitempty"`
+	Budget        *event.BudgetExceededData `json:"budget,omitempty"`
+	Status        event.TurnStatus          `json:"status"`
+	Error         *event.ErrorInfo          `json:"error,omitempty"`
+	Usage         *event.UsageData          `json:"usage,omitempty"`
+	RuntimeTurnID string                    `json:"runtimeTurnId,omitempty"`
 }
 
 // SessionLister is implemented by runtimes that can list the sessions they

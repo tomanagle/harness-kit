@@ -19,6 +19,83 @@ func (c *Client) ApprovalRespond(ctx context.Context, params ApprovalRespondPara
 	return result, err
 }
 
+// GitBranches calls git.branches.
+func (c *Client) GitBranches(ctx context.Context, params SessionIDParams) (GitBranchesResult, error) {
+	var result GitBranchesResult
+	err := c.Call(ctx, "git.branches", params, &result)
+	return result, err
+}
+
+// GitCheckout calls git.checkout.
+func (c *Client) GitCheckout(ctx context.Context, params GitCheckoutParams) (Empty, error) {
+	var result Empty
+	err := c.Call(ctx, "git.checkout", params, &result)
+	return result, err
+}
+
+// GitCommit calls git.commit.
+func (c *Client) GitCommit(ctx context.Context, params GitCommitParams) (GitCommitResult, error) {
+	var result GitCommitResult
+	err := c.Call(ctx, "git.commit", params, &result)
+	return result, err
+}
+
+// GitDiff calls git.diff.
+func (c *Client) GitDiff(ctx context.Context, params GitDiffParams) (GitDiff, error) {
+	var result GitDiff
+	err := c.Call(ctx, "git.diff", params, &result)
+	return result, err
+}
+
+// GitFetch calls git.fetch.
+func (c *Client) GitFetch(ctx context.Context, params GitRemoteParams) (GitRemoteResult, error) {
+	var result GitRemoteResult
+	err := c.Call(ctx, "git.fetch", params, &result)
+	return result, err
+}
+
+// GitLog calls git.log.
+func (c *Client) GitLog(ctx context.Context, params GitLogParams) (GitLogResult, error) {
+	var result GitLogResult
+	err := c.Call(ctx, "git.log", params, &result)
+	return result, err
+}
+
+// GitPull calls git.pull.
+func (c *Client) GitPull(ctx context.Context, params GitRemoteParams) (GitRemoteResult, error) {
+	var result GitRemoteResult
+	err := c.Call(ctx, "git.pull", params, &result)
+	return result, err
+}
+
+// GitPush calls git.push.
+func (c *Client) GitPush(ctx context.Context, params GitRemoteParams) (GitRemoteResult, error) {
+	var result GitRemoteResult
+	err := c.Call(ctx, "git.push", params, &result)
+	return result, err
+}
+
+// GitStage calls git.stage.
+func (c *Client) GitStage(ctx context.Context, params GitPathsParams) (Empty, error) {
+	var result Empty
+	err := c.Call(ctx, "git.stage", params, &result)
+	return result, err
+}
+
+// GitStatus calls git.status.
+func (c *Client) GitStatus(ctx context.Context, params SessionIDParams) (GitStatus, error) {
+	var result GitStatus
+	err := c.Call(ctx, "git.status", params, &result)
+	return result, err
+}
+
+// GitUnstage calls git.unstage.
+func (c *Client) GitUnstage(ctx context.Context, params GitPathsParams) (Empty, error) {
+	var result Empty
+	err := c.Call(ctx, "git.unstage", params, &result)
+	return result, err
+}
+
 // Initialize calls initialize.
 func (c *Client) Initialize(ctx context.Context, params InitializeParams) (InitializeResult, error) {
 	var result InitializeResult

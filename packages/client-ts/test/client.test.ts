@@ -5,7 +5,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -32,6 +32,44 @@ test("LineDecoder splits chunked input", () => {
   const d = new LineDecoder();
   assert.deepEqual(d.push('{"a":1}\n{"b"'), ['{"a":1}']);
   assert.deepEqual(d.push(':2}\r\n\n{"c":3}\n'), ['{"b":2}', '{"c":3}']);
+});
+
+test("generated Git methods operate on a session repository and apply live policy", async () => {
+  const repo = mkdtempSync(join(binDir, "git-client-"));
+  const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" }).trim();
+  git("init", "-b", "main");
+  git("config", "user.name", "Kit Test");
+  git("config", "user.email", "kit@example.invalid");
+  git("config", "commit.gpgsign", "false");
+  git("commit", "--allow-empty", "-m", "initial");
+  writeFileSync(join(repo, "space name.txt"), "selected file\n");
+  writeFileSync(join(repo, "leave.txt"), "leave untracked\n");
+  const kit = await connect();
+  try {
+    assert.equal(kit.server.capabilities.git, true);
+    const session = await kit.sessions.create({ runtime: "fake", cwd: repo });
+    assert.equal((await kit.git.status(session.id)).files.length, 2);
+    assert.ok((await kit.sessions.get(session.id)).workspace?.gitDirIdentity);
+    const diff = await kit.git.diff(session.id, { path: "space name.txt" });
+    assert.match(diff.patch, /selected file/);
+    const bounded = await kit.protocol.gitDiff({ sessionId: session.id, path: "space name.txt", maxBytes: 20 });
+    assert.equal(bounded.truncated, true);
+    assert.ok(Buffer.byteLength(bounded.patch) <= 20);
+    await kit.git.checkout(session.id, { branch: "kit-change", create: true });
+    await kit.git.stage(session.id, ["space name.txt"]);
+    assert.equal((await kit.git.status(session.id)).files.find(f => f.path === "space name.txt")?.index, "A");
+    await kit.settings.configure({ patch: { git: { readOnly: true } } });
+    await assert.rejects(kit.git.commit(session.id, "blocked"), (error: HarnessKitError) => error.code === ErrorCodes.PolicyViolation);
+    await kit.settings.configure({ patch: { git: { readOnly: false, allowRemote: false } } });
+    await assert.rejects(kit.git.fetch(session.id), (error: HarnessKitError) => error.code === ErrorCodes.PolicyViolation);
+    const committed = await kit.git.commit(session.id, "Add selected file");
+    assert.equal(git("rev-parse", "HEAD"), committed.commit);
+    assert.equal((await kit.git.log(session.id, { limit: 1 })).commits[0]?.id, committed.commit);
+    assert.ok((await kit.git.branches(session.id)).branches.some(b => b.name === "kit-change" && b.current));
+    assert.deepEqual((await kit.git.status(session.id)).files.map(f => f.path), ["leave.txt"]);
+    await assert.rejects(kit.git.stage(session.id, ["../escape"]), (error: HarnessKitError) => error.code === ErrorCodes.InvalidParams);
+    await assert.rejects(kit.protocol.gitStatus({ sessionId: "missing" }), (error: HarnessKitError) => error.code === ErrorCodes.SessionNotFound);
+  } finally { await kit.close(); }
 });
 
 test("workspace settings, saved diff and explicit cleanup use the typed client", async () => {

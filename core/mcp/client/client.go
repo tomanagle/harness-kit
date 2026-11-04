@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"github.com/tomanagle/harness-kit/core/internal/jsonrpc"
+	"github.com/tomanagle/harness-kit/core/internal/process"
 	"github.com/tomanagle/harness-kit/core/mcp"
-	"github.com/tomanagle/harness-kit/core/process"
 )
 
 // ProtocolVersion is the MCP protocol version this client requests.

@@ -66,14 +66,16 @@ func SameLocation(a, b Settings) bool {
 // Binding is durable identity data. Owned means the backend created a dedicated
 // worktree for SessionID; it is not permission to delete dirty files.
 type Binding struct {
-	Kind       string `json:"kind"`
-	SessionID  string `json:"sessionId"`
-	Repo       string `json:"repo"`
-	Path       string `json:"path"`
-	GitDir     string `json:"gitDir"`
-	CommonDir  string `json:"commonDir"`
-	BaseCommit string `json:"baseCommit,omitempty"`
-	Owned      bool   `json:"owned"`
+	Kind              string `json:"kind"`
+	SessionID         string `json:"sessionId"`
+	Repo              string `json:"repo"`
+	Path              string `json:"path"`
+	GitDir            string `json:"gitDir"`
+	CommonDir         string `json:"commonDir"`
+	GitDirIdentity    string `json:"gitDirIdentity,omitempty"`
+	CommonDirIdentity string `json:"commonDirIdentity,omitempty"`
+	BaseCommit        string `json:"baseCommit,omitempty"`
+	Owned             bool   `json:"owned"`
 }
 
 // Snapshot references durable content objects in the repository. Capture does

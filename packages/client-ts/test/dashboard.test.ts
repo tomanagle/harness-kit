@@ -14,6 +14,7 @@ class Element {
   className = "";
   hidden = false;
   disabled = false;
+  checked = false;
   value = "";
   parent?: Element;
   classList = { add: (name: string) => { this.className += " " + name; } };
@@ -28,7 +29,8 @@ class Element {
   appendChild(node: Element) { this.append(node); return node; }
   replaceChildren(...nodes: (Element | string)[]) { this.children = []; this.append(...nodes); }
   addEventListener(name: string, fn: Function) { this.listeners.set(name, [...(this.listeners.get(name) || []), fn]); }
-  click() { for (const fn of this.listeners.get("click") || []) fn({ target: this }); }
+  fire(name: string) { for (const fn of this.listeners.get(name) || []) fn({ target: this, preventDefault() {} }); }
+  click() { if (!this.disabled) this.fire("click"); }
   focus() {}
   select() {}
   after(node: Element) { this.parent?.children.splice(this.parent.children.indexOf(this) + 1, 0, node); node.parent = this.parent; }
@@ -158,4 +160,145 @@ test("dashboard API reads history without restoring; prompts restore lazily", as
   assert.equal(restores, 0);
   assert.equal(await api.prompt("ses_a", "continue"), "t");
   assert.equal(restores, 1);
+});
+
+const gitStatus = (root = "/repo", files: unknown[] = []) => ({ root, head: "a".repeat(40), branch: "main", detached: false, unborn: false, ahead: 0, behind: 0, files, remotes: [{ name: "origin" }], truncated: false });
+const gitBranches = async () => ({ branches: [{ name: "main", current: true }, { name: "topic" }], truncated: false });
+const gitButton = (ui: Awaited<ReturnType<typeof dashboard>>, name: string) => all(ui.get("git-files")).find((e) => e.className.split(" ").includes("git-" + name))!;
+const plain = (value: unknown) => JSON.parse(JSON.stringify(value));
+
+test("source control stages exact selected paths and commits only after explicit actions", async () => {
+  const calls: unknown[] = [];
+  const path = "new <script> literal\nfile.txt";
+  const status = gitStatus("/repo", [{ path, originalPath: "old name.txt", index: "R", worktree: "M" }]);
+  const ui = await dashboard({
+    gitStatus: async () => status, gitBranches,
+    gitStage: async (...args: unknown[]) => { calls.push(["stage", ...args]); },
+    gitUnstage: async (...args: unknown[]) => { calls.push(["unstage", ...args]); },
+    gitCommit: async (...args: unknown[]) => { calls.push(["commit", ...args]); return { commit: "b".repeat(40) }; },
+    gitPush: async (...args: unknown[]) => { calls.push(["push", ...args]); return { output: "Pushed", truncated: false }; },
+  });
+  (ui.get("sessions").children[0] as Element).click();
+  await flush();
+  assert.equal(ui.get("git-panel").hidden, false);
+  assert.match(ui.get("git-files").textContent, /<script> literal/);
+  assert.deepEqual(calls, [], "viewing a session must not stage, commit or push");
+  gitButton(ui, "stage").click();
+  await flush();
+  assert.deepEqual(plain(calls), [["stage", "ses_a", ["old name.txt", path]]]);
+  ui.get("git-commit-message").value = "Keep the caller's message";
+  ui.get("git-commit-form").fire("submit");
+  await flush();
+  assert.deepEqual(plain(calls), [["stage", "ses_a", ["old name.txt", path]], ["commit", "ses_a", "Keep the caller's message"]]);
+  assert.equal(ui.get("git-commit-message").value, "");
+  assert.match(ui.get("git-message").textContent, /Committed bbbbbbbbbb/);
+  ui.get("git-remote").value = "origin";
+  ui.get("git-remote-branch").value = "topic";
+  ui.get("git-set-upstream").checked = true;
+  ui.get("git-push").click();
+  await flush();
+  assert.deepEqual(plain(calls).at(-1), ["push", "ses_a", { remote: "origin", branch: "topic", setUpstream: true }]);
+});
+
+test("source control displays bounded staged diffs as literal text", async () => {
+  let request: unknown;
+  const patch = "diff --git a/file b/file\n+<img src=x onerror=bad()>";
+  const ui = await dashboard({
+    gitStatus: async () => gitStatus("/repo", [{ path: "file", index: "M", worktree: " " }]), gitBranches,
+    gitDiff: async (...args: unknown[]) => { request = args; return { patch, truncated: true, encodingLossy: true }; },
+  });
+  (ui.get("sessions").children[0] as Element).click();
+  await flush();
+  gitButton(ui, "view-staged").click();
+  await flush();
+  assert.deepEqual(plain(request), ["ses_a", { path: "file", staged: true, maxBytes: 131072 }]);
+  assert.equal(ui.get("git-diff").textContent, patch);
+  assert.match(ui.get("git-diff-note").textContent, /truncated.*bytes could not/);
+});
+
+test("stale Git reads cannot replace another session's source-control panel", async () => {
+  let finishStatus!: (value: unknown) => void;
+  let finishDiff!: (value: unknown) => void;
+  let slowStatus = true;
+  const ui = await dashboard({
+    listSessions: async () => [info("ses_a"), info("ses_b")],
+    openSession: async (id: string) => info(id),
+    gitStatus: (id: string) => id === "ses_a" && slowStatus ? new Promise((resolve) => { finishStatus = resolve; }) : Promise.resolve(gitStatus("/repo/" + id, [{ path: "file", index: "M", worktree: " " }])),
+    gitBranches,
+    gitDiff: () => new Promise((resolve) => { finishDiff = resolve; }),
+  });
+  (ui.get("sessions").children[0] as Element).click();
+  await flush();
+  (ui.get("sessions").children[1] as Element).click();
+  await flush();
+  finishStatus(gitStatus("/stale"));
+  await flush();
+  assert.equal(ui.get("git-root").textContent, "/repo/ses_b");
+  gitButton(ui, "view-staged").click();
+  slowStatus = false;
+  (ui.get("sessions").children[0] as Element).click();
+  await flush();
+  finishDiff({ patch: "old session diff", truncated: false });
+  await flush();
+  assert.equal(ui.get("git-root").textContent, "/repo/ses_a");
+  assert.equal(ui.get("git-diff").textContent, "");
+});
+
+test("Git failures remain local to the panel and writes pause during a turn", async () => {
+  let available = false, commits = 0;
+  const ui = await dashboard({
+    gitStatus: async () => { if (!available) throw new Error("not a Git repository"); return gitStatus("/repo", [{ path: "file", index: "M", worktree: " " }]); },
+    gitBranches,
+    gitCommit: async () => { commits++; throw new Error("commit hook rejected the message"); },
+  });
+  (ui.get("sessions").children[0] as Element).click();
+  await flush();
+  assert.match(ui.get("git-message").textContent, /not a Git repository/);
+  assert.doesNotMatch(ui.get("transcript").textContent, /not a Git repository/);
+  assert.equal(ui.get("send").disabled, false);
+  available = true;
+  ui.get("git-refresh").click();
+  await flush();
+  ui.receive(event(6, "session.updated", { title: "Running", state: "running", activeTurnId: "t", turns: 2, updatedAt: stamp }));
+  ui.get("git-commit-message").value = "Message retained on failure";
+  ui.get("git-commit-form").fire("submit");
+  await flush();
+  assert.equal(commits, 0);
+  ui.receive(event(7, "session.updated", { title: "Idle", state: "idle", turns: 2, updatedAt: stamp }));
+  ui.get("git-commit-form").fire("submit");
+  await flush();
+  assert.equal(commits, 1);
+  assert.match(ui.get("git-message").textContent, /hook rejected/);
+  assert.equal(ui.get("git-commit-message").value, "Message retained on failure");
+});
+
+test("dashboard Git API forwards explicit operations without restoring the runtime", async () => {
+  const calls: unknown[] = [];
+  const api = makeApi({
+    git: {
+      status: async (...args: unknown[]) => { calls.push(["status", ...args]); return gitStatus(); },
+      stage: async (...args: unknown[]) => { calls.push(["stage", ...args]); },
+      commit: async (...args: unknown[]) => { calls.push(["commit", ...args]); },
+      push: async (...args: unknown[]) => { calls.push(["push", ...args]); },
+    },
+    sessions: { restore: () => { throw new Error("Git actions must not start an agent"); } },
+  });
+  await api.gitStatus("ses_a");
+  await api.gitStage("ses_a", ["literal [file].txt"]);
+  await api.gitCommit("ses_a", "Chosen message");
+  await api.gitPush("ses_a", { remote: "origin", branch: "topic" });
+  assert.deepEqual(calls, [["status", "ses_a"], ["stage", "ses_a", ["literal [file].txt"]], ["commit", "ses_a", "Chosen message"], ["push", "ses_a", { remote: "origin", branch: "topic" }]]);
+});
+
+test("dashboard hides source control when the host does not advertise Git", async () => {
+  let gitReads = 0;
+  const ui = await dashboard({
+    overview: async () => ({ runtimes: [], tools: [], mcp: { enabled: true, servers: [] }, git: false }),
+    gitStatus: async () => { gitReads++; return gitStatus(); }, gitBranches,
+  });
+  (ui.get("sessions").children[0] as Element).click();
+  await flush();
+  assert.equal(ui.get("git-panel").hidden, true);
+  assert.equal(gitReads, 0);
+  assert.equal(ui.get("send").disabled, false);
 });

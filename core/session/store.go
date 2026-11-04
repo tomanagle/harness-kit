@@ -12,6 +12,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"maps"
 	"slices"
@@ -20,7 +21,7 @@ import (
 	"time"
 
 	"github.com/tomanagle/harness-kit/core/agent"
-	"github.com/tomanagle/harness-kit/core/budget"
+	"github.com/tomanagle/harness-kit/core/config"
 	"github.com/tomanagle/harness-kit/core/event"
 	"github.com/tomanagle/harness-kit/core/workspace"
 )
@@ -48,10 +49,10 @@ func (s State) Terminal() bool { return s == StateClosed || s == StateFailed }
 
 // Info describes a session.
 type Info struct {
-	Workspace         *workspace.Binding `json:"workspace,omitempty"`
-	WorkspaceSettings workspace.Settings `json:"workspaceSettings"`
-	Budget            budget.Limits      `json:"budget"`
-	Usage             budget.Usage       `json:"usage"`
+	Workspace         *workspace.Binding  `json:"workspace,omitempty"`
+	WorkspaceSettings workspace.Settings  `json:"workspaceSettings"`
+	Budget            config.BudgetLimits `json:"budget"`
+	Usage             event.BudgetUsage   `json:"usage"`
 	// Archived hides a conversation only when a caller requests that filter.
 	// It is independent of runtime lifecycle and never cancels work.
 	Archived       bool   `json:"archived,omitempty"`
@@ -89,8 +90,10 @@ type Info struct {
 // Record is what a Store persists.
 type Record struct {
 	InitialWorkspace *workspace.Settings `json:"initialWorkspace,omitempty"`
-	Accounting       *budget.Ledger      `json:"accounting,omitempty"`
-	InitialBudget    *budget.Limits      `json:"initialBudget,omitempty"`
+	// Accounting is the kit's opaque checkpoint. Custom stores preserve these
+	// bytes as JSON; accounting implementation types are intentionally private.
+	Accounting    json.RawMessage      `json:"accounting,omitempty"`
+	InitialBudget *config.BudgetLimits `json:"initialBudget,omitempty"`
 	// ForkSourceRuntimeID is retained until a lazy native fork materializes.
 	ForkSourceRuntimeID string `json:"forkSourceRuntimeId,omitempty"`
 	// InitialConfig is the immutable parent of session.configure patches.
@@ -148,8 +151,7 @@ func cloneRecord(rec Record) (Record, error) {
 	rec.Info.Budget = rec.Info.Budget.Clone()
 	rec.Info.Usage = rec.Info.Usage.Clone()
 	if rec.Accounting != nil {
-		v := *rec.Accounting
-		rec.Accounting = &v
+		rec.Accounting = append(json.RawMessage(nil), rec.Accounting...)
 	}
 	if rec.InitialBudget != nil {
 		v := rec.InitialBudget.Clone()

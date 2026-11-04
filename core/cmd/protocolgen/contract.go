@@ -4,7 +4,6 @@ import (
 	"reflect"
 
 	"github.com/tomanagle/harness-kit/core/agent"
-	"github.com/tomanagle/harness-kit/core/budget"
 	"github.com/tomanagle/harness-kit/core/config"
 	"github.com/tomanagle/harness-kit/core/event"
 	"github.com/tomanagle/harness-kit/core/mcp"
@@ -29,6 +28,17 @@ func method[P, R any](name string) methodSpec {
 
 func methods() []methodSpec {
 	return []methodSpec{
+		method[protocol.SessionIDParams, workspace.RepositoryStatus](protocol.MethodGitStatus),
+		method[protocol.GitDiffParams, workspace.FileDiff](protocol.MethodGitDiff),
+		method[protocol.SessionIDParams, workspace.BranchesResult](protocol.MethodGitBranches),
+		method[protocol.GitLogParams, workspace.LogResult](protocol.MethodGitLog),
+		method[protocol.GitPathsParams, protocol.Empty](protocol.MethodGitStage),
+		method[protocol.GitPathsParams, protocol.Empty](protocol.MethodGitUnstage),
+		method[protocol.GitCommitParams, workspace.CommitResult](protocol.MethodGitCommit),
+		method[protocol.GitCheckoutParams, protocol.Empty](protocol.MethodGitCheckout),
+		method[protocol.GitRemoteParams, workspace.RemoteResult](protocol.MethodGitFetch),
+		method[protocol.GitRemoteParams, workspace.RemoteResult](protocol.MethodGitPull),
+		method[protocol.GitRemoteParams, workspace.RemoteResult](protocol.MethodGitPush),
 		method[protocol.InitializeParams, protocol.InitializeResult](protocol.MethodInitialize),
 		method[any, protocol.Empty](protocol.MethodShutdown),
 		method[protocol.SettingsGetParams, settings.Snapshot](protocol.MethodSettingsGet),
@@ -70,6 +80,22 @@ func methods() []methodSpec {
 // Fields and their JSON names are always read from the server's real types.
 func publicNames() map[reflect.Type]string {
 	return map[reflect.Type]string{
+		reflect.TypeFor[workspace.FileStatus]():         "GitFileStatus",
+		reflect.TypeFor[workspace.Remote]():             "GitRemote",
+		reflect.TypeFor[workspace.RepositoryStatus]():   "GitStatus",
+		reflect.TypeFor[workspace.FileDiff]():           "GitDiff",
+		reflect.TypeFor[workspace.FileDiffParams]():     "GitDiffOptions",
+		reflect.TypeFor[workspace.Branch]():             "GitBranch",
+		reflect.TypeFor[workspace.BranchesResult]():     "GitBranchesResult",
+		reflect.TypeFor[workspace.LogParams]():          "GitLogOptions",
+		reflect.TypeFor[workspace.CommitInfo]():         "GitCommitInfo",
+		reflect.TypeFor[workspace.LogResult]():          "GitLogResult",
+		reflect.TypeFor[workspace.PathsParams]():        "GitPathsOptions",
+		reflect.TypeFor[workspace.CommitParams]():       "GitCommitOptions",
+		reflect.TypeFor[workspace.CommitResult]():       "GitCommitResult",
+		reflect.TypeFor[workspace.CheckoutParams]():     "GitCheckoutOptions",
+		reflect.TypeFor[workspace.RemoteParams]():       "GitRemoteOptions",
+		reflect.TypeFor[workspace.RemoteResult]():       "GitRemoteResult",
 		reflect.TypeFor[agent.Info]():                   "RuntimeInfo",
 		reflect.TypeFor[agent.SessionConfig]():          "SessionConfig",
 		reflect.TypeFor[config.Settings]():              "TurnConfig",
@@ -108,9 +134,9 @@ func publicNames() map[reflect.Type]string {
 		reflect.TypeFor[settings.History]():             "HistorySettings",
 		reflect.TypeFor[settings.Streams]():             "StreamSettings",
 		reflect.TypeFor[settings.ACPRuntime]():          "AcpRuntimeSettings",
-		reflect.TypeFor[budget.Limits]():                "BudgetLimits",
-		reflect.TypeFor[budget.Usage]():                 "BudgetUsage",
-		reflect.TypeFor[budget.Exceeded]():              "BudgetExceeded",
+		reflect.TypeFor[config.BudgetLimits]():          "BudgetLimits",
+		reflect.TypeFor[event.BudgetUsage]():            "BudgetUsage",
+		reflect.TypeFor[event.BudgetExceededData]():     "BudgetExceeded",
 		reflect.TypeFor[workspace.Settings]():           "WorkspaceSettings",
 		reflect.TypeFor[workspace.Binding]():            "WorkspaceBinding",
 		reflect.TypeFor[workspace.Snapshot]():           "WorkspaceSnapshot",

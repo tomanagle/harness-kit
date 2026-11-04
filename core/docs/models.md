@@ -5,7 +5,7 @@ agent loop, tools, approvals, persistence and UI to the application. Delegated
 Codex/Claude Code sessions continue using `agent.Runtime`; this track does not
 require their CLIs or change their runtime-owned context.
 
-The core `model` and `contextwindow` packages have no external dependencies and
+The core `model` and `model/contextwindow` packages have no external dependencies and
 build for WebAssembly. SDK adapters live in separate Go modules:
 
 | Module | API | Minimum Go |
@@ -100,7 +100,7 @@ the start of portable history. Unsupported input returns an explicit error.
 
 ## Context ownership and memory
 
-`contextwindow.Window` stores an application's raw-model conversation and exposes
+`contextwindow.Window` (import `github.com/tomanagle/harness-kit/core/model/contextwindow`) stores an application's raw-model conversation and exposes
 JSON-serializable, independent snapshots. Save snapshots wherever your application
 chooses, discard the Window to release its references, and `Restore` it when needed.
 It does not own an automatic disk cache. Delegated session memory/eviction settings

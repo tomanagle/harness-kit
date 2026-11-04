@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/tomanagle/harness-kit/core/config"
-	"github.com/tomanagle/harness-kit/core/contextwindow"
 	"github.com/tomanagle/harness-kit/core/mcp"
 	"github.com/tomanagle/harness-kit/core/model"
+	"github.com/tomanagle/harness-kit/core/model/contextwindow"
 	hkanthropic "github.com/tomanagle/harness-kit/core/providers/anthropic"
 	hkopenai "github.com/tomanagle/harness-kit/core/providers/openai"
 	"github.com/tomanagle/harness-kit/core/tools"

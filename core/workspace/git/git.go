@@ -17,15 +17,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tomanagle/harness-kit/core/process"
+	"github.com/tomanagle/harness-kit/core/internal/process"
 	"github.com/tomanagle/harness-kit/core/workspace"
 )
 
-// Backend uses Git for detached worktrees and snapshots. No branch is created
-// or deleted. Operations on one Backend are serialized to protect ownership.
+// Backend implements optional Git workspaces and source-control operations.
+// Conflicting operations share a cancellable lock per Git common directory.
 type Backend struct {
-	Command string
-	mu      sync.Mutex
+	Command      string
+	mu           sync.Mutex
+	repositories map[string]*repositoryLock
 }
 
 func New(command string) *Backend {
@@ -116,15 +117,54 @@ func (b *Backend) identity(ctx context.Context, path string) (workspace.Binding,
 	if err != nil {
 		return workspace.Binding{}, err
 	}
-	return workspace.Binding{Kind: "git", Repo: root, Path: root, GitDir: gitdir, CommonDir: common}, nil
+	gitID, err := directoryIdentity(gitdir)
+	if err != nil {
+		return workspace.Binding{}, err
+	}
+	commonID, err := directoryIdentity(common)
+	if err != nil {
+		return workspace.Binding{}, err
+	}
+	return workspace.Binding{Kind: "git", Repo: root, Path: root, GitDir: gitdir, CommonDir: common, GitDirIdentity: gitID, CommonDirIdentity: commonID}, nil
+}
+
+func sameIdentity(expected, actual workspace.Binding) bool {
+	return expected.Path == actual.Path && expected.GitDir == actual.GitDir && expected.CommonDir == actual.CommonDir &&
+		(expected.GitDirIdentity == "" || expected.GitDirIdentity == actual.GitDirIdentity) &&
+		(expected.CommonDirIdentity == "" || expected.CommonDirIdentity == actual.CommonDirIdentity)
+}
+
+func pinIdentity(binding, actual workspace.Binding) workspace.Binding {
+	binding.GitDirIdentity, binding.CommonDirIdentity = actual.GitDirIdentity, actual.CommonDirIdentity
+	return binding
 }
 
 func (b *Backend) Prepare(ctx context.Context, id, cwd string, s workspace.Settings, existing *workspace.Binding) (workspace.Binding, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
 	if err := workspace.Validate(s); err != nil {
 		return workspace.Binding{}, err
 	}
+	lockPath := cwd
+	if existing != nil {
+		lockPath = existing.Path
+	} else if s.Mode == "worktree" && s.Repo != "" {
+		lockPath = s.Repo
+	}
+	if lockPath == "" {
+		var err error
+		lockPath, err = os.Getwd()
+		if err != nil {
+			return workspace.Binding{}, err
+		}
+	}
+	identity, err := b.identity(ctx, lockPath)
+	if err != nil {
+		return workspace.Binding{}, err
+	}
+	unlock, err := b.lockRepository(ctx, identity.CommonDir)
+	if err != nil {
+		return workspace.Binding{}, err
+	}
+	defer unlock()
 	if id == "" {
 		return workspace.Binding{}, fmt.Errorf("%w: empty session ID", workspace.ErrInvalid)
 	}
@@ -136,7 +176,7 @@ func (b *Backend) Prepare(ctx context.Context, id, cwd string, s workspace.Setti
 		if err != nil {
 			return workspace.Binding{}, fmt.Errorf("workspace missing or changed: %w", err)
 		}
-		if current.Path != existing.Path || current.GitDir != existing.GitDir || current.CommonDir != existing.CommonDir {
+		if !sameIdentity(*existing, current) {
 			return workspace.Binding{}, fmt.Errorf("%w: repository identity changed", workspace.ErrNotOwned)
 		}
 		if existing.Owned {
@@ -144,7 +184,7 @@ func (b *Backend) Prepare(ctx context.Context, id, cwd string, s workspace.Setti
 				return workspace.Binding{}, err
 			}
 		}
-		return *existing, nil
+		return pinIdentity(*existing, current), nil
 	}
 	if cwd == "" {
 		var err error
@@ -245,20 +285,34 @@ func (b *Backend) verifyOwner(binding workspace.Binding) error {
 		return fmt.Errorf("%w: %v", workspace.ErrNotOwned, err)
 	}
 	var owner workspace.Binding
-	if json.Unmarshal(data, &owner) != nil || owner != binding {
+	if json.Unmarshal(data, &owner) != nil {
+		return workspace.ErrNotOwned
+	}
+	// Legacy ownership records did not have physical directory identities.
+	// Upgrade the session binding without rewriting the repository's marker.
+	if owner.GitDirIdentity == "" {
+		binding.GitDirIdentity = ""
+	}
+	if owner.CommonDirIdentity == "" {
+		binding.CommonDirIdentity = ""
+	}
+	if owner != binding {
 		return workspace.ErrNotOwned
 	}
 	return nil
 }
 
 func (b *Backend) Remove(ctx context.Context, binding workspace.Binding) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	unlock, err := b.lockRepository(ctx, binding.CommonDir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	current, err := b.identity(ctx, binding.Path)
 	if err != nil {
 		return err
 	}
-	if current.GitDir != binding.GitDir || current.CommonDir != binding.CommonDir || current.Path != binding.Path {
+	if !sameIdentity(binding, current) {
 		return workspace.ErrNotOwned
 	}
 	if err = b.verifyOwner(binding); err != nil {
@@ -269,7 +323,13 @@ func (b *Backend) Remove(ctx context.Context, binding workspace.Binding) error {
 		return err
 	}
 	if head != binding.BaseCommit {
-		return fmt.Errorf("%w: worktree HEAD advanced from its creation commit; preserve those commits before manual cleanup", workspace.ErrDirty)
+		// A named branch remains in the common repository after its worktree is
+		// removed. Detached commits have no such retention guarantee.
+		branch, branchErr := b.text(ctx, binding.Path, "symbolic-ref", "--quiet", "HEAD")
+		retained, retainedErr := b.text(ctx, binding.Path, "rev-parse", "--verify", "--end-of-options", branch+"^{commit}")
+		if branchErr != nil || retainedErr != nil || !strings.HasPrefix(branch, "refs/heads/") || retained != head {
+			return fmt.Errorf("%w: detached worktree HEAD advanced; create a branch to retain those commits before cleanup", workspace.ErrDirty)
+		}
 	}
 	// Include ignored files: they may be valuable even though Git would allow
 	// removing them with a clean tracked index.
@@ -285,8 +345,11 @@ func (b *Backend) Remove(ctx context.Context, binding workspace.Binding) error {
 }
 
 func (b *Backend) Capture(ctx context.Context, binding workspace.Binding, turnID, phase string, s workspace.Settings) (workspace.Snapshot, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	unlock, err := b.lockRepository(ctx, binding.CommonDir)
+	if err != nil {
+		return workspace.Snapshot{}, err
+	}
+	defer unlock()
 	if err := workspace.Validate(s); err != nil {
 		return workspace.Snapshot{}, err
 	}
@@ -297,7 +360,7 @@ func (b *Backend) Capture(ctx context.Context, binding workspace.Binding, turnID
 	if err != nil {
 		return workspace.Snapshot{}, err
 	}
-	if current.GitDir != binding.GitDir || current.CommonDir != binding.CommonDir {
+	if !sameIdentity(binding, current) {
 		return workspace.Snapshot{}, workspace.ErrNotOwned
 	}
 	// A NUL-delimited listing preserves tabs and newlines in filenames.
@@ -451,6 +514,20 @@ func (b *Backend) Diff(ctx context.Context, change workspace.TurnChange, opts wo
 	if !change.Complete || change.Before == nil || change.After == nil {
 		return out, nil
 	}
+	unlock, err := b.lockRepository(ctx, change.Binding.CommonDir)
+	if err != nil {
+		return out, err
+	}
+	defer unlock()
+	if change.Binding.CommonDirIdentity != "" {
+		identity, err := directoryIdentity(change.Binding.CommonDir)
+		if err != nil {
+			return out, err
+		}
+		if identity != change.Binding.CommonDirIdentity {
+			return out, workspace.ErrNotOwned
+		}
+	}
 	limit := change.MaxDiffBytes
 	if opts.MaxBytes > 0 && opts.MaxBytes < limit {
 		limit = opts.MaxBytes
@@ -496,8 +573,18 @@ func effectiveLimit(base, requested int64) int64 {
 // ReleaseSnapshots removes only this session/turn's private temporary refs.
 // Git's ordinary garbage collection can reclaim unreachable blob/tree objects.
 func (b *Backend) ReleaseSnapshots(ctx context.Context, binding workspace.Binding, turnID string) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	unlock, err := b.lockRepository(ctx, binding.CommonDir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	current, err := b.identity(ctx, binding.Path)
+	if err != nil {
+		return err
+	}
+	if !sameIdentity(binding, current) {
+		return workspace.ErrNotOwned
+	}
 	if binding.SessionID == "" || turnID == "" {
 		return workspace.ErrInvalid
 	}

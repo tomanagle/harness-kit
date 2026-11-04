@@ -73,7 +73,7 @@ type sourceInfo struct {
 
 func readSource(root string) (*sourceInfo, error) {
 	s := &sourceInfo{map[string]string{}, map[string][]sourceConstant{}}
-	for _, dir := range []string{"agent", "budget", "config", "event", "mcp", "permission", "rpc/protocol", "settings", "session", "tools", "workspace", "internal/jsonrpc"} {
+	for _, dir := range []string{"agent", "config", "event", "mcp", "permission", "rpc/protocol", "settings", "session", "tools", "workspace", "internal/jsonrpc"} {
 		files, err := os.ReadDir(filepath.Join(root, "core", dir))
 		if err != nil {
 			return nil, err
@@ -416,9 +416,11 @@ func (b *builder) shape(t reflect.Type) *Schema {
 func applyFieldConstraints(t reflect.Type, f reflect.StructField, p *Schema) {
 	key := strings.TrimPrefix(t.PkgPath(), module) + "." + t.Name() + "." + f.Name
 	choices := map[string][]string{
-		"event.InputPart.Type": {"text", "image"}, "event.UsageData.Mode": {"snapshot", "delta"},
-		"event.UsageData.Scope": {"turn", "session"}, "budget.Exceeded.Scope": {"session", "turn"},
-		"budget.Exceeded.Metric": {"tokens", "costUsd"}, "workspace.Settings.Mode": {"existing", "worktree"},
+		"workspace.GitSettings.Hooks":   {"inherit", "disabled"},
+		"workspace.GitSettings.Signing": {"inherit", "disabled", "enabled"},
+		"event.InputPart.Type":          {"text", "image"}, "event.UsageData.Mode": {"snapshot", "delta"},
+		"event.UsageData.Scope": {"turn", "session"}, "event.BudgetExceededData.Scope": {"session", "turn"},
+		"event.BudgetExceededData.Metric": {"tokens", "costUsd"}, "workspace.Settings.Mode": {"existing", "worktree"},
 		"settings.Logging.Level": {"debug", "info", "warn", "error"}, "mcp.Server.Type": {"stdio", "http", "streamable-http"},
 		"tools.Content.Type": {"text"}, "mcp.Entry.Source": {"user", "project"},
 	}

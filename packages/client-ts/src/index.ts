@@ -27,6 +27,7 @@ import {
   type Outcome,
   type RuntimeInfo,
   type RuntimeSession,
+  type RpcMethods,
   type SessionInfo,
   type ToolCallParams,
   type ToolResult,
@@ -190,6 +191,33 @@ export class HarnessKit {
       return () => this.#settingsListeners.delete(listener);
     },
     stats: (): Promise<ResourceStats> => this.protocol.settingsStats(),
+  };
+
+  /** Optional Git operations on a session's repository. These methods never
+   * stage, commit or contact remotes implicitly. Host policy uses settings.git. */
+  readonly git = {
+    status: (sessionId: string, opts?: RequestOptions) => this.protocol.gitStatus({ sessionId }, opts),
+    diff: (sessionId: string, params: Omit<RpcMethods["git.diff"]["params"], "sessionId"> = {}, opts?: RequestOptions) =>
+      this.protocol.gitDiff({ sessionId, ...params }, opts),
+    branches: (sessionId: string, opts?: RequestOptions) => this.protocol.gitBranches({ sessionId }, opts),
+    log: (sessionId: string, params: Omit<RpcMethods["git.log"]["params"], "sessionId"> = {}, opts?: RequestOptions) =>
+      this.protocol.gitLog({ sessionId, ...params }, opts),
+    stage: async (sessionId: string, paths: string[], opts?: RequestOptions): Promise<void> => {
+      await this.protocol.gitStage({ sessionId, paths }, opts);
+    },
+    unstage: async (sessionId: string, paths: string[], opts?: RequestOptions): Promise<void> => {
+      await this.protocol.gitUnstage({ sessionId, paths }, opts);
+    },
+    commit: (sessionId: string, message: string, opts?: RequestOptions) => this.protocol.gitCommit({ sessionId, message }, opts),
+    checkout: async (sessionId: string, params: Omit<RpcMethods["git.checkout"]["params"], "sessionId">, opts?: RequestOptions): Promise<void> => {
+      await this.protocol.gitCheckout({ sessionId, ...params }, opts);
+    },
+    fetch: (sessionId: string, params: Omit<RpcMethods["git.fetch"]["params"], "sessionId"> = {}, opts?: RequestOptions) =>
+      this.protocol.gitFetch({ sessionId, ...params }, opts),
+    pull: (sessionId: string, params: Omit<RpcMethods["git.pull"]["params"], "sessionId"> = {}, opts?: RequestOptions) =>
+      this.protocol.gitPull({ sessionId, ...params }, opts),
+    push: (sessionId: string, params: Omit<RpcMethods["git.push"]["params"], "sessionId"> = {}, opts?: RequestOptions) =>
+      this.protocol.gitPush({ sessionId, ...params }, opts),
   };
 
   readonly runtimes = {

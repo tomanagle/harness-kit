@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/tomanagle/harness-kit/core/agent"
-	"github.com/tomanagle/harness-kit/core/budget"
 	"github.com/tomanagle/harness-kit/core/config"
 	"github.com/tomanagle/harness-kit/core/workspace"
 )
@@ -31,15 +30,16 @@ var (
 // limit; a zero cache budget retains no cached events. These are data budgets,
 // not limits on process RSS or memory owned by child processes.
 type Values struct {
-	Workspace workspace.Settings `json:"workspace"`
-	Budget    budget.Limits      `json:"budget"`
-	Process   Process            `json:"process"`
-	Logging   Logging            `json:"logging"`
-	Approvals Approvals          `json:"approvals"`
-	Memory    Memory             `json:"memory"`
-	History   History            `json:"history"`
-	Streams   Streams            `json:"streams"`
-	Session   Session            `json:"session"`
+	Git       workspace.GitSettings `json:"git"`
+	Workspace workspace.Settings    `json:"workspace"`
+	Budget    config.BudgetLimits   `json:"budget"`
+	Process   Process               `json:"process"`
+	Logging   Logging               `json:"logging"`
+	Approvals Approvals             `json:"approvals"`
+	Memory    Memory                `json:"memory"`
+	History   History               `json:"history"`
+	Streams   Streams               `json:"streams"`
+	Session   Session               `json:"session"`
 }
 
 type Process struct {
@@ -138,6 +138,7 @@ type Snapshot struct {
 func Defaults() Values {
 	pageBytes := int64(1024 * 1024)
 	return Values{
+		Git:       workspace.GitDefaults(),
 		Workspace: workspace.Defaults(),
 		Process:   Process{Store: "memory", Runtimes: []string{}, ShutdownTimeoutMs: 10000},
 		Logging:   Logging{Level: "info"},
@@ -153,6 +154,16 @@ func Describe() map[string]Field {
 		out[path] = Field{Type: typ, Unit: unit, When: when, Nullable: nullable, Minimum: min, Writable: when != "restart", Scopes: scopes}
 	}
 	zero, one := int64(0), int64(1)
+	for _, p := range []string{"readOnly", "allowRemote", "allowDuringTurn"} {
+		add("git."+p, "boolean", "", "nextOperation", false, nil, "global")
+	}
+	for _, p := range []string{"hooks", "signing"} {
+		add("git."+p, "string", "", "nextOperation", false, nil, "global")
+	}
+	add("git.timeoutMs", "integer", "milliseconds", "nextOperation", false, &one, "global")
+	add("git.maxOutputBytes", "integer", "bytes", "nextOperation", false, &one, "global")
+	add("git.maxFiles", "integer", "files", "nextOperation", false, &one, "global")
+	add("git.maxLogEntries", "integer", "commits", "nextOperation", false, &one, "global")
 	for _, p := range []string{"mode", "repo", "base", "path", "root"} {
 		add("workspace."+p, "string", "", "newSession", false, nil, "global", "session")
 	}
@@ -396,6 +407,9 @@ func Apply(base Values, patch Patch, reset []string, defaults Values) (Values, [
 
 func Validate(v Values) error {
 	if err := workspace.Validate(v.Workspace); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	if err := workspace.ValidateGit(v.Git); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	if err := validateACP(v.Process.ACP); err != nil {

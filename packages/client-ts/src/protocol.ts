@@ -8,6 +8,8 @@ export const ErrorCodes = {
   BudgetExceeded: -32019,
   EventTooLarge: -32017,
   ForkSourceChanged: -32018,
+  GitConflict: -32021,
+  GitError: -32020,
   InternalError: -32603,
   InvalidDecision: -32010,
   InvalidParams: -32602,
@@ -124,6 +126,7 @@ export interface AuthStatus {
   state: AuthState;
 }
 
+// BudgetExceededData identifies the observed threshold that stopped further work.
 export interface BudgetExceeded {
   limit: number;
   metric: "tokens" | "costUsd";
@@ -131,7 +134,7 @@ export interface BudgetExceeded {
   scope: "session" | "turn";
 }
 
-// Limits are host policy. Nil disables a limit; zero admits no further work.
+// BudgetLimits are host policy. Nil disables a limit; zero admits no further work.
 export interface BudgetLimits {
   maxSessionCostUsd: number | null;
   maxSessionTokens: number | null;
@@ -139,7 +142,7 @@ export interface BudgetLimits {
   maxTurnTokens: number | null;
 }
 
-// Limits are host policy. Nil disables a limit; zero admits no further work.
+// BudgetLimits are host policy. Nil disables a limit; zero admits no further work.
 export interface BudgetLimitsPatch {
   maxSessionCostUsd?: number | null;
   maxSessionTokens?: number | null;
@@ -147,7 +150,7 @@ export interface BudgetLimitsPatch {
   maxTurnTokens?: number | null;
 }
 
-// Usage contains observed totals. Incomplete totals are lower bounds; nil cost
+// BudgetUsage contains observed totals. Incomplete totals are lower bounds; nil cost
 // means no cost estimate was supplied. Reported costs are estimates, not bills.
 export interface BudgetUsage {
   costComplete: boolean;
@@ -282,7 +285,7 @@ export interface ErrorInfo {
   retryable?: boolean;
 }
 
-export type ErrorReason = "approval_not_found" | "budget_exceeded" | "duplicate_tool" | "duplicate_turn" | "event_too_large" | "fork_source_changed" | "invalid_decision" | "invalid_params" | "new_session_required" | "not_initialized" | "not_resumable" | "policy_violation" | "restart_required" | "runtime_error" | "runtime_not_found" | "runtime_unavailable" | "session_busy" | "session_closed" | "session_not_found" | "settings_conflict" | "unsupported" | "unsupported_version";
+export type ErrorReason = "approval_not_found" | "budget_exceeded" | "duplicate_tool" | "duplicate_turn" | "event_too_large" | "fork_source_changed" | "git_conflict" | "git_error" | "invalid_decision" | "invalid_params" | "new_session_required" | "not_initialized" | "not_resumable" | "policy_violation" | "restart_required" | "runtime_error" | "runtime_not_found" | "runtime_unavailable" | "session_busy" | "session_closed" | "session_not_found" | "settings_conflict" | "unsupported" | "unsupported_version";
 
 // EventPage is a bounded transcript page. NextSeq is the last returned event's
 // sequence, or the supplied cursor for an empty page. HasMore means another
@@ -302,6 +305,182 @@ export type EventType = "approval.requested" | "approval.resolved" | "budget.exc
 export interface ForkSessionOptions {
   settings?: SettingsPatch;
   title?: string;
+}
+
+export interface GitBranch {
+  commit: string;
+  current: boolean;
+  name: string;
+  remote: boolean;
+  upstream?: string;
+  worktree?: string;
+}
+
+export interface GitBranchesResult {
+  branches: Array<GitBranch>;
+  truncated: boolean;
+}
+
+export interface GitCheckoutOptions {
+  base?: string;
+  branch: string;
+  create?: boolean;
+}
+
+export interface GitCheckoutParams {
+  base?: string;
+  branch: string;
+  create?: boolean;
+  sessionId: string;
+}
+
+export interface GitCommitInfo {
+  authorEmail: string;
+  authorName: string;
+  id: string;
+  parents: Array<string>;
+  subject: string;
+  time: string;
+}
+
+export interface GitCommitOptions {
+  message: string;
+}
+
+export interface GitCommitParams {
+  message: string;
+  sessionId: string;
+}
+
+export interface GitCommitResult {
+  commit: string;
+}
+
+export interface GitDiff {
+  encodingLossy?: boolean;
+  patch: string;
+  truncated: boolean;
+}
+
+export interface GitDiffOptions {
+  maxBytes?: number;
+  path?: string;
+  staged?: boolean;
+}
+
+// Git methods accept a session ID. The host resolves its saved repository; a
+// client cannot substitute an arbitrary filesystem root in a request.
+export interface GitDiffParams {
+  maxBytes?: number;
+  path?: string;
+  sessionId: string;
+  staged?: boolean;
+}
+
+// FileStatus uses Git's porcelain status letters. Paths are repository-relative
+// literal paths, not pathspec patterns. OriginalPath is present for renames.
+export interface GitFileStatus {
+  conflicted?: boolean;
+  index: string;
+  originalPath?: string;
+  path: string;
+  untracked?: boolean;
+  worktree: string;
+}
+
+export interface GitLogOptions {
+  limit?: number;
+  ref?: string;
+}
+
+export interface GitLogParams {
+  limit?: number;
+  ref?: string;
+  sessionId: string;
+}
+
+export interface GitLogResult {
+  commits: Array<GitCommitInfo>;
+  truncated: boolean;
+}
+
+export interface GitPathsOptions {
+  paths: Array<string>;
+}
+
+export interface GitPathsParams {
+  paths: Array<string>;
+  sessionId: string;
+}
+
+export interface GitRemote {
+  fetchUrl?: string;
+  name: string;
+  pushUrl?: string;
+}
+
+// RemoteParams chooses a configured remote by name. Empty fields use Git's
+// configured upstream. Push never forces and Pull only fast-forwards.
+export interface GitRemoteOptions {
+  branch?: string;
+  remote?: string;
+  setUpstream?: boolean;
+}
+
+export interface GitRemoteParams {
+  branch?: string;
+  remote?: string;
+  sessionId: string;
+  setUpstream?: boolean;
+}
+
+export interface GitRemoteResult {
+  output: string;
+  truncated: boolean;
+}
+
+// GitSettings is the git group of the shared settings document. Each operation
+// captures the current host policy. These settings never choose a UI workflow.
+export interface GitSettings {
+  allowDuringTurn: boolean;
+  allowRemote: boolean;
+  // Hooks and Signing are "inherit" or "disabled"; signing also accepts "enabled".
+  hooks: "inherit" | "disabled";
+  maxFiles: number;
+  maxLogEntries: number;
+  maxOutputBytes: number;
+  readOnly: boolean;
+  signing: "inherit" | "disabled" | "enabled";
+  timeoutMs: number;
+}
+
+// GitSettings is the git group of the shared settings document. Each operation
+// captures the current host policy. These settings never choose a UI workflow.
+export interface GitSettingsPatch {
+  allowDuringTurn?: boolean;
+  allowRemote?: boolean;
+  // Hooks and Signing are "inherit" or "disabled"; signing also accepts "enabled".
+  hooks?: "inherit" | "disabled";
+  maxFiles?: number;
+  maxLogEntries?: number;
+  maxOutputBytes?: number;
+  readOnly?: boolean;
+  signing?: "inherit" | "disabled" | "enabled";
+  timeoutMs?: number;
+}
+
+export interface GitStatus {
+  ahead: number;
+  behind: number;
+  branch?: string;
+  detached: boolean;
+  files: Array<GitFileStatus>;
+  head?: string;
+  remotes: Array<GitRemote>;
+  root: string;
+  truncated: boolean;
+  unborn: boolean;
+  upstream?: string;
 }
 
 // Event is the envelope for everything a session emits.
@@ -625,6 +804,7 @@ export interface ServerCapabilities {
   allowUnsafe: boolean;
   // EventLogSize is the per-session replay window.
   eventLogSize: number;
+  git: boolean;
   runtimes: Array<RuntimeInfo>;
   // Settings advertises the unified live settings API.
   settings: boolean;
@@ -926,6 +1106,7 @@ export interface SettingsGetParams {
 export interface SettingsPatch {
   approvals?: ApprovalSettingsPatch;
   budget?: BudgetLimitsPatch;
+  git?: GitSettingsPatch;
   history?: HistorySettingsPatch;
   logging?: LoggingSettingsPatch;
   memory?: MemorySettingsPatch;
@@ -958,6 +1139,7 @@ export interface SettingsTarget {
 export interface SettingsValues {
   approvals: ApprovalSettings;
   budget: BudgetLimits;
+  git: GitSettings;
   history: HistorySettings;
   logging: LoggingSettings;
   memory: MemorySettings;
@@ -1137,7 +1319,9 @@ export interface UsageData {
 export interface WorkspaceBinding {
   baseCommit?: string;
   commonDir: string;
+  commonDirIdentity?: string;
   gitDir: string;
+  gitDirIdentity?: string;
   kind: string;
   owned: boolean;
   path: string;
@@ -1211,6 +1395,17 @@ export type EventData<T extends EventType> = Extract<HarnessEvent, { type: T }>[
 export interface RpcMethods {
   "approval.list": { params: ApprovalListParams; result: ApprovalListResult };
   "approval.respond": { params: ApprovalRespondParams; result: Empty };
+  "git.branches": { params: SessionIDParams; result: GitBranchesResult };
+  "git.checkout": { params: GitCheckoutParams; result: Empty };
+  "git.commit": { params: GitCommitParams; result: GitCommitResult };
+  "git.diff": { params: GitDiffParams; result: GitDiff };
+  "git.fetch": { params: GitRemoteParams; result: GitRemoteResult };
+  "git.log": { params: GitLogParams; result: GitLogResult };
+  "git.pull": { params: GitRemoteParams; result: GitRemoteResult };
+  "git.push": { params: GitRemoteParams; result: GitRemoteResult };
+  "git.stage": { params: GitPathsParams; result: Empty };
+  "git.status": { params: SessionIDParams; result: GitStatus };
+  "git.unstage": { params: GitPathsParams; result: Empty };
   "initialize": { params: InitializeParams; result: InitializeResult };
   "mcp.list": { params: McpListParams; result: McpListResult };
   "runtime.discover": { params: RuntimeDiscoverParams; result: RuntimeDiscoverResult };

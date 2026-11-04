@@ -360,6 +360,7 @@
     },
     "BudgetExceeded": {
       "type": "object",
+      "description": "BudgetExceededData identifies the observed threshold that stopped further work.",
       "properties": {
         "limit": {
           "type": "number",
@@ -403,7 +404,7 @@
     },
     "BudgetLimits": {
       "type": "object",
-      "description": "Limits are host policy. Nil disables a limit; zero admits no further work.",
+      "description": "BudgetLimits are host policy. Nil disables a limit; zero admits no further work.",
       "properties": {
         "maxSessionCostUsd": {
           "anyOf": [
@@ -471,7 +472,7 @@
     },
     "BudgetLimitsPatch": {
       "type": "object",
-      "description": "Limits are host policy. Nil disables a limit; zero admits no further work.",
+      "description": "BudgetLimits are host policy. Nil disables a limit; zero admits no further work.",
       "properties": {
         "maxSessionCostUsd": {
           "anyOf": [
@@ -534,7 +535,7 @@
     },
     "BudgetUsage": {
       "type": "object",
-      "description": "Usage contains observed totals. Incomplete totals are lower bounds; nil cost\nmeans no cost estimate was supplied. Reported costs are estimates, not bills.",
+      "description": "BudgetUsage contains observed totals. Incomplete totals are lower bounds; nil cost\nmeans no cost estimate was supplied. Reported costs are estimates, not bills.",
       "properties": {
         "costComplete": {
           "type": "boolean",
@@ -1051,6 +1052,8 @@
         "duplicate_turn",
         "event_too_large",
         "fork_source_changed",
+        "git_conflict",
+        "git_error",
         "invalid_decision",
         "invalid_params",
         "new_session_required",
@@ -1155,6 +1158,824 @@
           "x-go-json-tag": "title,omitempty"
         }
       }
+    },
+    "GitBranch": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "x-go-name": "Commit",
+          "x-go-type": "string",
+          "x-go-json-tag": "commit"
+        },
+        "current": {
+          "type": "boolean",
+          "x-go-name": "Current",
+          "x-go-type": "bool",
+          "x-go-json-tag": "current"
+        },
+        "name": {
+          "type": "string",
+          "x-go-name": "Name",
+          "x-go-type": "string",
+          "x-go-json-tag": "name"
+        },
+        "remote": {
+          "type": "boolean",
+          "x-go-name": "Remote",
+          "x-go-type": "bool",
+          "x-go-json-tag": "remote"
+        },
+        "upstream": {
+          "type": "string",
+          "x-go-name": "Upstream",
+          "x-go-type": "string",
+          "x-go-json-tag": "upstream,omitempty"
+        },
+        "worktree": {
+          "type": "string",
+          "x-go-name": "Worktree",
+          "x-go-type": "string",
+          "x-go-json-tag": "worktree,omitempty"
+        }
+      },
+      "required": [
+        "commit",
+        "current",
+        "name",
+        "remote"
+      ]
+    },
+    "GitBranchesResult": {
+      "type": "object",
+      "properties": {
+        "branches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GitBranch",
+            "x-go-type": "GitBranch"
+          },
+          "x-go-name": "Branches",
+          "x-go-type": "[]GitBranch",
+          "x-go-json-tag": "branches"
+        },
+        "truncated": {
+          "type": "boolean",
+          "x-go-name": "Truncated",
+          "x-go-type": "bool",
+          "x-go-json-tag": "truncated"
+        }
+      },
+      "required": [
+        "branches",
+        "truncated"
+      ]
+    },
+    "GitCheckoutOptions": {
+      "type": "object",
+      "properties": {
+        "base": {
+          "type": "string",
+          "x-go-name": "Base",
+          "x-go-type": "string",
+          "x-go-json-tag": "base,omitempty"
+        },
+        "branch": {
+          "type": "string",
+          "x-go-name": "Branch",
+          "x-go-type": "string",
+          "x-go-json-tag": "branch"
+        },
+        "create": {
+          "type": "boolean",
+          "x-go-name": "Create",
+          "x-go-type": "bool",
+          "x-go-json-tag": "create,omitempty"
+        }
+      },
+      "required": [
+        "branch"
+      ]
+    },
+    "GitCheckoutParams": {
+      "type": "object",
+      "properties": {
+        "base": {
+          "type": "string",
+          "x-go-name": "Base",
+          "x-go-type": "string",
+          "x-go-json-tag": "base,omitempty"
+        },
+        "branch": {
+          "type": "string",
+          "x-go-name": "Branch",
+          "x-go-type": "string",
+          "x-go-json-tag": "branch"
+        },
+        "create": {
+          "type": "boolean",
+          "x-go-name": "Create",
+          "x-go-type": "bool",
+          "x-go-json-tag": "create,omitempty"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        }
+      },
+      "required": [
+        "branch",
+        "sessionId"
+      ]
+    },
+    "GitCommitInfo": {
+      "type": "object",
+      "properties": {
+        "authorEmail": {
+          "type": "string",
+          "x-go-name": "AuthorEmail",
+          "x-go-type": "string",
+          "x-go-json-tag": "authorEmail"
+        },
+        "authorName": {
+          "type": "string",
+          "x-go-name": "AuthorName",
+          "x-go-type": "string",
+          "x-go-json-tag": "authorName"
+        },
+        "id": {
+          "type": "string",
+          "x-go-name": "ID",
+          "x-go-type": "string",
+          "x-go-json-tag": "id"
+        },
+        "parents": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Parents",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "parents"
+        },
+        "subject": {
+          "type": "string",
+          "x-go-name": "Subject",
+          "x-go-type": "string",
+          "x-go-json-tag": "subject"
+        },
+        "time": {
+          "type": "string",
+          "x-go-name": "Time",
+          "x-go-type": "string",
+          "x-go-json-tag": "time"
+        }
+      },
+      "required": [
+        "authorEmail",
+        "authorName",
+        "id",
+        "parents",
+        "subject",
+        "time"
+      ]
+    },
+    "GitCommitOptions": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "x-go-name": "Message",
+          "x-go-type": "string",
+          "x-go-json-tag": "message"
+        }
+      },
+      "required": [
+        "message"
+      ]
+    },
+    "GitCommitParams": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "x-go-name": "Message",
+          "x-go-type": "string",
+          "x-go-json-tag": "message"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        }
+      },
+      "required": [
+        "message",
+        "sessionId"
+      ]
+    },
+    "GitCommitResult": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "x-go-name": "Commit",
+          "x-go-type": "string",
+          "x-go-json-tag": "commit"
+        }
+      },
+      "required": [
+        "commit"
+      ]
+    },
+    "GitDiff": {
+      "type": "object",
+      "properties": {
+        "encodingLossy": {
+          "type": "boolean",
+          "x-go-name": "EncodingLossy",
+          "x-go-type": "bool",
+          "x-go-json-tag": "encodingLossy,omitempty"
+        },
+        "patch": {
+          "type": "string",
+          "x-go-name": "Patch",
+          "x-go-type": "string",
+          "x-go-json-tag": "patch"
+        },
+        "truncated": {
+          "type": "boolean",
+          "x-go-name": "Truncated",
+          "x-go-type": "bool",
+          "x-go-json-tag": "truncated"
+        }
+      },
+      "required": [
+        "patch",
+        "truncated"
+      ]
+    },
+    "GitDiffOptions": {
+      "type": "object",
+      "properties": {
+        "maxBytes": {
+          "type": "integer",
+          "x-go-name": "MaxBytes",
+          "x-go-type": "int64",
+          "x-go-json-tag": "maxBytes,omitempty"
+        },
+        "path": {
+          "type": "string",
+          "x-go-name": "Path",
+          "x-go-type": "string",
+          "x-go-json-tag": "path,omitempty"
+        },
+        "staged": {
+          "type": "boolean",
+          "x-go-name": "Staged",
+          "x-go-type": "bool",
+          "x-go-json-tag": "staged,omitempty"
+        }
+      }
+    },
+    "GitDiffParams": {
+      "type": "object",
+      "description": "Git methods accept a session ID. The host resolves its saved repository; a\nclient cannot substitute an arbitrary filesystem root in a request.",
+      "properties": {
+        "maxBytes": {
+          "type": "integer",
+          "x-go-name": "MaxBytes",
+          "x-go-type": "int64",
+          "x-go-json-tag": "maxBytes,omitempty"
+        },
+        "path": {
+          "type": "string",
+          "x-go-name": "Path",
+          "x-go-type": "string",
+          "x-go-json-tag": "path,omitempty"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        },
+        "staged": {
+          "type": "boolean",
+          "x-go-name": "Staged",
+          "x-go-type": "bool",
+          "x-go-json-tag": "staged,omitempty"
+        }
+      },
+      "required": [
+        "sessionId"
+      ]
+    },
+    "GitFileStatus": {
+      "type": "object",
+      "description": "FileStatus uses Git's porcelain status letters. Paths are repository-relative\nliteral paths, not pathspec patterns. OriginalPath is present for renames.",
+      "properties": {
+        "conflicted": {
+          "type": "boolean",
+          "x-go-name": "Conflicted",
+          "x-go-type": "bool",
+          "x-go-json-tag": "conflicted,omitempty"
+        },
+        "index": {
+          "type": "string",
+          "x-go-name": "Index",
+          "x-go-type": "string",
+          "x-go-json-tag": "index"
+        },
+        "originalPath": {
+          "type": "string",
+          "x-go-name": "OriginalPath",
+          "x-go-type": "string",
+          "x-go-json-tag": "originalPath,omitempty"
+        },
+        "path": {
+          "type": "string",
+          "x-go-name": "Path",
+          "x-go-type": "string",
+          "x-go-json-tag": "path"
+        },
+        "untracked": {
+          "type": "boolean",
+          "x-go-name": "Untracked",
+          "x-go-type": "bool",
+          "x-go-json-tag": "untracked,omitempty"
+        },
+        "worktree": {
+          "type": "string",
+          "x-go-name": "Worktree",
+          "x-go-type": "string",
+          "x-go-json-tag": "worktree"
+        }
+      },
+      "required": [
+        "index",
+        "path",
+        "worktree"
+      ]
+    },
+    "GitLogOptions": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "x-go-name": "Limit",
+          "x-go-type": "int",
+          "x-go-json-tag": "limit,omitempty"
+        },
+        "ref": {
+          "type": "string",
+          "x-go-name": "Ref",
+          "x-go-type": "string",
+          "x-go-json-tag": "ref,omitempty"
+        }
+      }
+    },
+    "GitLogParams": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "x-go-name": "Limit",
+          "x-go-type": "int",
+          "x-go-json-tag": "limit,omitempty"
+        },
+        "ref": {
+          "type": "string",
+          "x-go-name": "Ref",
+          "x-go-type": "string",
+          "x-go-json-tag": "ref,omitempty"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        }
+      },
+      "required": [
+        "sessionId"
+      ]
+    },
+    "GitLogResult": {
+      "type": "object",
+      "properties": {
+        "commits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GitCommitInfo",
+            "x-go-type": "GitCommitInfo"
+          },
+          "x-go-name": "Commits",
+          "x-go-type": "[]GitCommitInfo",
+          "x-go-json-tag": "commits"
+        },
+        "truncated": {
+          "type": "boolean",
+          "x-go-name": "Truncated",
+          "x-go-type": "bool",
+          "x-go-json-tag": "truncated"
+        }
+      },
+      "required": [
+        "commits",
+        "truncated"
+      ]
+    },
+    "GitPathsOptions": {
+      "type": "object",
+      "properties": {
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Paths",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "paths"
+        }
+      },
+      "required": [
+        "paths"
+      ]
+    },
+    "GitPathsParams": {
+      "type": "object",
+      "properties": {
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Paths",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "paths"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        }
+      },
+      "required": [
+        "paths",
+        "sessionId"
+      ]
+    },
+    "GitRemote": {
+      "type": "object",
+      "properties": {
+        "fetchUrl": {
+          "type": "string",
+          "x-go-name": "FetchURL",
+          "x-go-type": "string",
+          "x-go-json-tag": "fetchUrl,omitempty"
+        },
+        "name": {
+          "type": "string",
+          "x-go-name": "Name",
+          "x-go-type": "string",
+          "x-go-json-tag": "name"
+        },
+        "pushUrl": {
+          "type": "string",
+          "x-go-name": "PushURL",
+          "x-go-type": "string",
+          "x-go-json-tag": "pushUrl,omitempty"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "GitRemoteOptions": {
+      "type": "object",
+      "description": "RemoteParams chooses a configured remote by name. Empty fields use Git's\nconfigured upstream. Push never forces and Pull only fast-forwards.",
+      "properties": {
+        "branch": {
+          "type": "string",
+          "x-go-name": "Branch",
+          "x-go-type": "string",
+          "x-go-json-tag": "branch,omitempty"
+        },
+        "remote": {
+          "type": "string",
+          "x-go-name": "Remote",
+          "x-go-type": "string",
+          "x-go-json-tag": "remote,omitempty"
+        },
+        "setUpstream": {
+          "type": "boolean",
+          "x-go-name": "SetUpstream",
+          "x-go-type": "bool",
+          "x-go-json-tag": "setUpstream,omitempty"
+        }
+      }
+    },
+    "GitRemoteParams": {
+      "type": "object",
+      "properties": {
+        "branch": {
+          "type": "string",
+          "x-go-name": "Branch",
+          "x-go-type": "string",
+          "x-go-json-tag": "branch,omitempty"
+        },
+        "remote": {
+          "type": "string",
+          "x-go-name": "Remote",
+          "x-go-type": "string",
+          "x-go-json-tag": "remote,omitempty"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        },
+        "setUpstream": {
+          "type": "boolean",
+          "x-go-name": "SetUpstream",
+          "x-go-type": "bool",
+          "x-go-json-tag": "setUpstream,omitempty"
+        }
+      },
+      "required": [
+        "sessionId"
+      ]
+    },
+    "GitRemoteResult": {
+      "type": "object",
+      "properties": {
+        "output": {
+          "type": "string",
+          "x-go-name": "Output",
+          "x-go-type": "string",
+          "x-go-json-tag": "output"
+        },
+        "truncated": {
+          "type": "boolean",
+          "x-go-name": "Truncated",
+          "x-go-type": "bool",
+          "x-go-json-tag": "truncated"
+        }
+      },
+      "required": [
+        "output",
+        "truncated"
+      ]
+    },
+    "GitSettings": {
+      "type": "object",
+      "description": "GitSettings is the git group of the shared settings document. Each operation\ncaptures the current host policy. These settings never choose a UI workflow.",
+      "properties": {
+        "allowDuringTurn": {
+          "type": "boolean",
+          "x-go-name": "AllowDuringTurn",
+          "x-go-type": "bool",
+          "x-go-json-tag": "allowDuringTurn"
+        },
+        "allowRemote": {
+          "type": "boolean",
+          "x-go-name": "AllowRemote",
+          "x-go-type": "bool",
+          "x-go-json-tag": "allowRemote"
+        },
+        "hooks": {
+          "type": "string",
+          "description": "Hooks and Signing are \"inherit\" or \"disabled\"; signing also accepts \"enabled\".",
+          "enum": [
+            "inherit",
+            "disabled"
+          ],
+          "x-go-name": "Hooks",
+          "x-go-type": "string",
+          "x-go-json-tag": "hooks"
+        },
+        "maxFiles": {
+          "type": "integer",
+          "x-go-name": "MaxFiles",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxFiles"
+        },
+        "maxLogEntries": {
+          "type": "integer",
+          "x-go-name": "MaxLogEntries",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxLogEntries"
+        },
+        "maxOutputBytes": {
+          "type": "integer",
+          "x-go-name": "MaxOutputBytes",
+          "x-go-type": "int64",
+          "x-go-json-tag": "maxOutputBytes"
+        },
+        "readOnly": {
+          "type": "boolean",
+          "x-go-name": "ReadOnly",
+          "x-go-type": "bool",
+          "x-go-json-tag": "readOnly"
+        },
+        "signing": {
+          "type": "string",
+          "enum": [
+            "inherit",
+            "disabled",
+            "enabled"
+          ],
+          "x-go-name": "Signing",
+          "x-go-type": "string",
+          "x-go-json-tag": "signing"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "x-go-name": "TimeoutMs",
+          "x-go-type": "int64",
+          "x-go-json-tag": "timeoutMs"
+        }
+      },
+      "required": [
+        "allowDuringTurn",
+        "allowRemote",
+        "hooks",
+        "maxFiles",
+        "maxLogEntries",
+        "maxOutputBytes",
+        "readOnly",
+        "signing",
+        "timeoutMs"
+      ]
+    },
+    "GitSettingsPatch": {
+      "type": "object",
+      "description": "GitSettings is the git group of the shared settings document. Each operation\ncaptures the current host policy. These settings never choose a UI workflow.",
+      "properties": {
+        "allowDuringTurn": {
+          "type": "boolean",
+          "x-go-name": "AllowDuringTurn",
+          "x-go-type": "bool",
+          "x-go-json-tag": "allowDuringTurn"
+        },
+        "allowRemote": {
+          "type": "boolean",
+          "x-go-name": "AllowRemote",
+          "x-go-type": "bool",
+          "x-go-json-tag": "allowRemote"
+        },
+        "hooks": {
+          "type": "string",
+          "description": "Hooks and Signing are \"inherit\" or \"disabled\"; signing also accepts \"enabled\".",
+          "enum": [
+            "inherit",
+            "disabled"
+          ],
+          "x-go-name": "Hooks",
+          "x-go-type": "string",
+          "x-go-json-tag": "hooks"
+        },
+        "maxFiles": {
+          "type": "integer",
+          "x-go-name": "MaxFiles",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxFiles"
+        },
+        "maxLogEntries": {
+          "type": "integer",
+          "x-go-name": "MaxLogEntries",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxLogEntries"
+        },
+        "maxOutputBytes": {
+          "type": "integer",
+          "x-go-name": "MaxOutputBytes",
+          "x-go-type": "int64",
+          "x-go-json-tag": "maxOutputBytes"
+        },
+        "readOnly": {
+          "type": "boolean",
+          "x-go-name": "ReadOnly",
+          "x-go-type": "bool",
+          "x-go-json-tag": "readOnly"
+        },
+        "signing": {
+          "type": "string",
+          "enum": [
+            "inherit",
+            "disabled",
+            "enabled"
+          ],
+          "x-go-name": "Signing",
+          "x-go-type": "string",
+          "x-go-json-tag": "signing"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "x-go-name": "TimeoutMs",
+          "x-go-type": "int64",
+          "x-go-json-tag": "timeoutMs"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
+    },
+    "GitStatus": {
+      "type": "object",
+      "properties": {
+        "ahead": {
+          "type": "integer",
+          "x-go-name": "Ahead",
+          "x-go-type": "int",
+          "x-go-json-tag": "ahead"
+        },
+        "behind": {
+          "type": "integer",
+          "x-go-name": "Behind",
+          "x-go-type": "int",
+          "x-go-json-tag": "behind"
+        },
+        "branch": {
+          "type": "string",
+          "x-go-name": "Branch",
+          "x-go-type": "string",
+          "x-go-json-tag": "branch,omitempty"
+        },
+        "detached": {
+          "type": "boolean",
+          "x-go-name": "Detached",
+          "x-go-type": "bool",
+          "x-go-json-tag": "detached"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GitFileStatus",
+            "x-go-type": "GitFileStatus"
+          },
+          "x-go-name": "Files",
+          "x-go-type": "[]GitFileStatus",
+          "x-go-json-tag": "files"
+        },
+        "head": {
+          "type": "string",
+          "x-go-name": "Head",
+          "x-go-type": "string",
+          "x-go-json-tag": "head,omitempty"
+        },
+        "remotes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GitRemote",
+            "x-go-type": "GitRemote"
+          },
+          "x-go-name": "Remotes",
+          "x-go-type": "[]GitRemote",
+          "x-go-json-tag": "remotes"
+        },
+        "root": {
+          "type": "string",
+          "x-go-name": "Root",
+          "x-go-type": "string",
+          "x-go-json-tag": "root"
+        },
+        "truncated": {
+          "type": "boolean",
+          "x-go-name": "Truncated",
+          "x-go-type": "bool",
+          "x-go-json-tag": "truncated"
+        },
+        "unborn": {
+          "type": "boolean",
+          "x-go-name": "Unborn",
+          "x-go-type": "bool",
+          "x-go-json-tag": "unborn"
+        },
+        "upstream": {
+          "type": "string",
+          "x-go-name": "Upstream",
+          "x-go-type": "string",
+          "x-go-json-tag": "upstream,omitempty"
+        }
+      },
+      "required": [
+        "ahead",
+        "behind",
+        "detached",
+        "files",
+        "remotes",
+        "root",
+        "truncated",
+        "unborn"
+      ]
     },
     "HarnessEvent": {
       "type": "object",
@@ -3526,6 +4347,12 @@
           "x-go-type": "int",
           "x-go-json-tag": "eventLogSize"
         },
+        "git": {
+          "type": "boolean",
+          "x-go-name": "Git",
+          "x-go-type": "bool",
+          "x-go-json-tag": "git"
+        },
         "runtimes": {
           "type": "array",
           "items": {
@@ -3560,6 +4387,7 @@
       "required": [
         "allowUnsafe",
         "eventLogSize",
+        "git",
         "runtimes",
         "settings",
         "tools",
@@ -4620,6 +5448,9 @@
         "budget": {
           "$ref": "#/$defs/BudgetLimitsPatch"
         },
+        "git": {
+          "$ref": "#/$defs/GitSettingsPatch"
+        },
         "history": {
           "$ref": "#/$defs/HistorySettingsPatch"
         },
@@ -4726,6 +5557,12 @@
           "x-go-type": "BudgetLimits",
           "x-go-json-tag": "budget"
         },
+        "git": {
+          "$ref": "#/$defs/GitSettings",
+          "x-go-name": "Git",
+          "x-go-type": "GitSettings",
+          "x-go-json-tag": "git"
+        },
         "history": {
           "$ref": "#/$defs/HistorySettings",
           "x-go-name": "History",
@@ -4772,6 +5609,7 @@
       "required": [
         "approvals",
         "budget",
+        "git",
         "history",
         "logging",
         "memory",
@@ -5443,11 +6281,23 @@
           "x-go-type": "string",
           "x-go-json-tag": "commonDir"
         },
+        "commonDirIdentity": {
+          "type": "string",
+          "x-go-name": "CommonDirIdentity",
+          "x-go-type": "string",
+          "x-go-json-tag": "commonDirIdentity,omitempty"
+        },
         "gitDir": {
           "type": "string",
           "x-go-name": "GitDir",
           "x-go-type": "string",
           "x-go-json-tag": "gitDir"
+        },
+        "gitDirIdentity": {
+          "type": "string",
+          "x-go-name": "GitDirIdentity",
+          "x-go-type": "string",
+          "x-go-json-tag": "gitDirIdentity,omitempty"
         },
         "kind": {
           "type": "string",
@@ -5790,6 +6640,8 @@
     "CodeBudgetExceeded": -32019,
     "CodeEventTooLarge": -32017,
     "CodeForkSourceChanged": -32018,
+    "CodeGitConflict": -32021,
+    "CodeGitError": -32020,
     "CodeInternalError": -32603,
     "CodeInvalidDecision": -32010,
     "CodeInvalidParams": -32602,
@@ -5813,6 +6665,17 @@
     "CodeUnsupportedVersion": -32008,
     "MethodApprovalList": "approval.list",
     "MethodApprovalRespond": "approval.respond",
+    "MethodGitBranches": "git.branches",
+    "MethodGitCheckout": "git.checkout",
+    "MethodGitCommit": "git.commit",
+    "MethodGitDiff": "git.diff",
+    "MethodGitFetch": "git.fetch",
+    "MethodGitLog": "git.log",
+    "MethodGitPull": "git.pull",
+    "MethodGitPush": "git.push",
+    "MethodGitStage": "git.stage",
+    "MethodGitStatus": "git.status",
+    "MethodGitUnstage": "git.unstage",
     "MethodInitialize": "initialize",
     "MethodMCPList": "mcp.list",
     "MethodRuntimeDiscover": "runtime.discover",
@@ -5854,6 +6717,8 @@
     "ReasonDuplicateTurn": "duplicate_turn",
     "ReasonEventTooLarge": "event_too_large",
     "ReasonForkSourceChanged": "fork_source_changed",
+    "ReasonGitConflict": "git_conflict",
+    "ReasonGitError": "git_error",
     "ReasonInvalidDecision": "invalid_decision",
     "ReasonInvalidParams": "invalid_params",
     "ReasonNewSessionRequired": "new_session_required",
@@ -5889,6 +6754,127 @@
       "params": {
         "$ref": "#/$defs/ApprovalRespondParams",
         "x-go-type": "ApprovalRespondParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "git.branches": {
+      "x-go-name": "GitBranches",
+      "params": {
+        "$ref": "#/$defs/SessionIDParams",
+        "x-go-type": "SessionIDParams"
+      },
+      "result": {
+        "$ref": "#/$defs/GitBranchesResult",
+        "x-go-type": "GitBranchesResult"
+      }
+    },
+    "git.checkout": {
+      "x-go-name": "GitCheckout",
+      "params": {
+        "$ref": "#/$defs/GitCheckoutParams",
+        "x-go-type": "GitCheckoutParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "git.commit": {
+      "x-go-name": "GitCommit",
+      "params": {
+        "$ref": "#/$defs/GitCommitParams",
+        "x-go-type": "GitCommitParams"
+      },
+      "result": {
+        "$ref": "#/$defs/GitCommitResult",
+        "x-go-type": "GitCommitResult"
+      }
+    },
+    "git.diff": {
+      "x-go-name": "GitDiff",
+      "params": {
+        "$ref": "#/$defs/GitDiffParams",
+        "x-go-type": "GitDiffParams"
+      },
+      "result": {
+        "$ref": "#/$defs/GitDiff",
+        "x-go-type": "GitDiff"
+      }
+    },
+    "git.fetch": {
+      "x-go-name": "GitFetch",
+      "params": {
+        "$ref": "#/$defs/GitRemoteParams",
+        "x-go-type": "GitRemoteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/GitRemoteResult",
+        "x-go-type": "GitRemoteResult"
+      }
+    },
+    "git.log": {
+      "x-go-name": "GitLog",
+      "params": {
+        "$ref": "#/$defs/GitLogParams",
+        "x-go-type": "GitLogParams"
+      },
+      "result": {
+        "$ref": "#/$defs/GitLogResult",
+        "x-go-type": "GitLogResult"
+      }
+    },
+    "git.pull": {
+      "x-go-name": "GitPull",
+      "params": {
+        "$ref": "#/$defs/GitRemoteParams",
+        "x-go-type": "GitRemoteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/GitRemoteResult",
+        "x-go-type": "GitRemoteResult"
+      }
+    },
+    "git.push": {
+      "x-go-name": "GitPush",
+      "params": {
+        "$ref": "#/$defs/GitRemoteParams",
+        "x-go-type": "GitRemoteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/GitRemoteResult",
+        "x-go-type": "GitRemoteResult"
+      }
+    },
+    "git.stage": {
+      "x-go-name": "GitStage",
+      "params": {
+        "$ref": "#/$defs/GitPathsParams",
+        "x-go-type": "GitPathsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "git.status": {
+      "x-go-name": "GitStatus",
+      "params": {
+        "$ref": "#/$defs/SessionIDParams",
+        "x-go-type": "SessionIDParams"
+      },
+      "result": {
+        "$ref": "#/$defs/GitStatus",
+        "x-go-type": "GitStatus"
+      }
+    },
+    "git.unstage": {
+      "x-go-name": "GitUnstage",
+      "params": {
+        "$ref": "#/$defs/GitPathsParams",
+        "x-go-type": "GitPathsParams"
       },
       "result": {
         "$ref": "#/$defs/Empty",

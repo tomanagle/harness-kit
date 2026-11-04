@@ -9,7 +9,7 @@ interface. The optional CLI/MCP configuration loaders remain host conveniences.
 
 The `settings` package is the shared configuration contract for Go hosts, the
 sidecar and clients. The document has `process`, `logging`, `approvals`,
-`memory`, `history`, `streams`, `budget`, `workspace`, and `session` sections. The same validated
+`memory`, `history`, `streams`, `budget`, `workspace`, `git`, and `session` sections. The same validated
 document initializes the sidecar and supplies runtime patches. The kit does
 not write application preferences to a second settings store.
 
@@ -30,6 +30,7 @@ not write application preferences to a second settings store.
   "streams": { "maxQueueEvents": 4096, "maxQueueBytes": 2097152 },
   "budget": { "maxSessionTokens": null, "maxSessionCostUsd": null, "maxTurnTokens": null, "maxTurnCostUsd": null },
   "workspace": { "mode": "existing", "captureDiff": false },
+  "git": { "readOnly": false, "allowRemote": true, "allowDuringTurn": false },
   "session": { "model": "", "effort": "" }
 }
 ```
@@ -58,6 +59,9 @@ A global patch to `session`, `budget` or `workspace` changes defaults for newly
 created sessions. Supply `target: {sessionId}` to configure an existing session
 according to each field's lifetime: model and diff-capture settings apply to the
 next turn, while usage-budget changes apply live.
+Global `git` settings govern source-control operations across sessions and apply
+to the next operation without restarting. They cannot be overridden per session
+or prompt. See [Git integration](git.md) for the complete settings and API.
 Session creation and prompting also accept a `settings` envelope, restricted
 to fields supported at that lifetime. Existing `session.configure` and prompt
 `config` remain available for compatibility.

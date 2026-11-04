@@ -119,8 +119,8 @@ tool callbacks and cancellation. See its README for a complete example and
 local-checkout installation instructions while the module is untagged.
 
 Both client packages generate their wire types and methods from the shared
-[protocol schema](../protocol/README.md). The existing `core/rpc/client` remains
-available for applications already using its core-domain types.
+[protocol schema](../protocol/README.md). The CLI's core-domain client lives in
+`internal/rpcclient`; applications use the standalone client above.
 
 ### Command line
 
@@ -315,6 +315,11 @@ title. Saved transcripts open without starting a runtime; sending the next
 prompt resumes it. Title and lifecycle changes update connected clients
 through `session.updated`.
 
+The optional source-control panel shows repository status, working and staged
+diffs, branches and history. Explicit actions stage, unstage, commit, switch
+branches, fetch, pull and push through the same generated client APIs. The
+harness controls the workflow; [Git settings](docs/git.md) apply at runtime.
+
 | Example | Shows |
 | --- | --- |
 | [examples/cli](../examples/cli) | A minimal harness of your own: about 150 lines linking the Go packages |
@@ -332,6 +337,9 @@ through `session.updated`.
   backpressure, errors, lifecycle
 - [Configuration](docs/configuration.md): host setup, session defaults, per-turn
   overrides, inheritance, and supported setting lifetimes
+- [Git integration](docs/git.md): optional source-control APIs, live policy and native adapters
+- [Workspaces](docs/workspaces.md): isolated worktrees and saved turn diffs
+- [Package boundaries](docs/packages.md): public building blocks and internal implementation
 - [Runtimes](docs/runtimes.md): Codex and Claude Code integration, usage
   policies, options, writing adapters
 - [MCP](docs/mcp.md): one MCP config for every runtime; layers, format, trust
@@ -375,13 +383,13 @@ core/
   event/            event model, per-session log, non-blocking bus
   permission/       approval requests, policies, broker
   session/          session manager and store
-  process/          native process host (lookup, process trees)
-  internal/jsonrpc/ NDJSON JSON-RPC 2.0 connection
-  rpc/              protocol types, server, compatibility Go client
+  internal/         private accounting, process supervision and RPC plumbing
+  rpc/              public protocol types and server integration
   runtimes/         codex, claude, acp, fake adapters
   model/            dependency-free streaming inference contract
-  contextwindow/    caller-owned history, limits, compaction and snapshots
-  budget/           observed token/cost limits and accounting
+    contextwindow/  public caller-owned history and compaction
+  config/           public configuration and budget policy types
+  settings/         one startup/runtime settings document
   workspace/        portable workspace contract and native Git backend
   providers/        optional OpenAI and Anthropic SDK modules
   cmd/harness-kit/  the local sidecar binary
@@ -396,6 +404,9 @@ examples/           cli, model, node, electron, wails and shared dashboard
 server/             planned coordination server; placeholder only
 .github/workflows/  repository CI and release workflows
 ```
+
+See [package boundaries](docs/packages.md) for what builders can import and
+the source migration from the earlier flat layout.
 
 ## License
 

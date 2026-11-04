@@ -116,6 +116,13 @@ when you need custom environment, working directory, or process supervision.
 - `Call` is available for additive methods on newer hosts. Generated methods
   cover the current contract with typed parameters and results.
 
+The generated `GitStatus`, `GitDiff`, `GitBranches`, `GitLog`, `GitStage`,
+`GitUnstage`, `GitCommit`, `GitCheckout`, `GitFetch`, `GitPull` and `GitPush`
+methods target a session without starting its runtime. Check the initialization
+result's `Capabilities.Git` field and use `SettingsConfigure` for host policy.
+See the [Git guide](https://github.com/tomanagle/harness-kit/blob/main/core/docs/git.md)
+for examples and operation behavior.
+
 From this directory, `go test -race ./...` runs transport tests. When run inside
 the repository checkout, it also builds the real sidecar and exercises an offline
 fake-runtime conversation. No paid model calls are made.

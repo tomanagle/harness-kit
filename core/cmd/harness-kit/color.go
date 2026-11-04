@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/tomanagle/harness-kit/core/process"
+	"github.com/tomanagle/harness-kit/core/internal/process"
 )
 
 // jsonWriter returns where JSON output should go, and a function to call

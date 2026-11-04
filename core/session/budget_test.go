@@ -170,8 +170,8 @@ func TestBudgetTurnOverridesZeroNullAndContextOccupancy(t *testing.T) {
 }
 
 func TestBudgetAccountingPersistsAcrossRestoreAndLegacyReplay(t *testing.T) {
-	for _, legacy := range []bool{false, true} {
-		t.Run(map[bool]string{false: "checkpoint", true: "replay"}[legacy], func(t *testing.T) {
+	for _, mode := range []string{"checkpoint", "replay", "null-checkpoint"} {
+		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			store, err := session.NewFileStore(t.TempDir())
 			if err != nil {
@@ -194,12 +194,15 @@ func TestBudgetAccountingPersistsAcrossRestoreAndLegacyReplay(t *testing.T) {
 			if err = m.Shutdown(ctx); err != nil {
 				t.Fatal(err)
 			}
-			if legacy {
+			if mode != "checkpoint" {
 				rec, err := store.Get(ctx, p.ID)
 				if err != nil {
 					t.Fatal(err)
 				}
 				rec.Accounting = nil
+				if mode == "null-checkpoint" {
+					rec.Accounting = json.RawMessage(`null`)
+				}
 				if err = store.Put(ctx, rec); err != nil {
 					t.Fatal(err)
 				}

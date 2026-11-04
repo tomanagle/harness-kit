@@ -26,11 +26,11 @@ implementation yet. The kit is usable independently.
 - ✅ `permission`: requests, decisions, rule policies, broker
 - ✅ `session`: manager, lifecycle states, one turn at a time, `Stream`
   iterator, approval routing, unsafe-option guard, in-memory store
-- ✅ `process`: binary lookup including GUI-app install dirs, process
+- ✅ `internal/process`: binary lookup including GUI-app install dirs, process
   groups, interrupt then kill
 - ✅ `internal/jsonrpc`: bidirectional NDJSON JSON-RPC, request
   cancellation, per-key ordering
-- ✅ `rpc/server`, `rpc/client`, `cmd/harness-kit` (sidecar and CLI:
+- ✅ `rpc/server`, `internal/rpcclient`, `cmd/harness-kit` (sidecar and CLI:
   `runtimes`, `prompt`, `chat`, `sessions`; `--rpc` runs any command
   through the sidecar)
 - ✅ Session history: `session.FileStore`, restore under the same ID,
@@ -76,7 +76,7 @@ Each is an independent package; none is required by the others.
 2. **`model`** ✅: `Provider` for raw inference (build-your-own loop), with
    API-key adapters over the official Anthropic and OpenAI Go SDKs in
    separate modules, so the core stays dependency-free.
-3. **`contextwindow`** ✅: history, token budgets, pluggable compaction
+3. **`model/contextwindow`** ✅: history, token budgets, pluggable compaction
    strategies, snapshots. Applies to the build-your-own track only.
 4. **`session` stores**: ✅ `FileStore` (JSON files) and `Manager.Restore`;
    ✅ JSONL event transcripts, replay after restart, stable sequence numbers,
@@ -101,6 +101,9 @@ Each is an independent package; none is required by the others.
     elsewhere (container, VM), reusing the same adapter contract.
 12. **Worktrees and turn diffs** ✅: optional Git worktrees, before/after snapshots,
     bounded durable diffs, explicit safe cleanup and a reference dashboard view.
+13. **Git operations** ✅: optional status, diffs, branches, history, staging,
+    commits and remote operations, shared runtime settings, generated clients
+    and desktop examples. Harnesses own their workflow and forge integrations.
 
 ## Release tooling
 

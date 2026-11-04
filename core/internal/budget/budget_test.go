@@ -2,6 +2,8 @@ package budget
 
 import (
 	"testing"
+
+	"github.com/tomanagle/harness-kit/core/config"
 )
 
 func integer(n int64) *int64    { return &n }
@@ -48,10 +50,10 @@ func TestExternalResumeAndUnknownMetrics(t *testing.T) {
 	l := New(true)
 	l.Begin()
 	l.Observe(Observation{Scope: "session", CostUSD: amount(100)})
-	if hit := l.Check(Limits{MaxTurnCostUSD: amount(1)}, false); hit != nil {
+	if hit := l.Check(config.BudgetLimits{MaxTurnCostUSD: amount(1)}, false); hit != nil {
 		t.Fatal("attributed historical cost to turn", hit)
 	}
-	if hit := l.Check(Limits{MaxSessionCostUSD: amount(99)}, false); hit == nil {
+	if hit := l.Check(config.BudgetLimits{MaxSessionCostUSD: amount(99)}, false); hit == nil {
 		t.Fatal("ignored observed historical total")
 	}
 	l.End()
@@ -60,10 +62,10 @@ func TestExternalResumeAndUnknownMetrics(t *testing.T) {
 	}
 	l.Begin()
 	l.Observe(Observation{Scope: "session", CostUSD: amount(101)})
-	if hit := l.Check(Limits{MaxTurnCostUSD: amount(1)}, false); hit == nil {
+	if hit := l.Check(config.BudgetLimits{MaxTurnCostUSD: amount(1)}, false); hit == nil {
 		t.Fatal("lost restored native baseline")
 	}
-	if hit := l.Check(Limits{MaxTurnTokens: integer(0)}, true); hit == nil {
+	if hit := l.Check(config.BudgetLimits{MaxTurnTokens: integer(0)}, true); hit == nil {
 		t.Fatal("zero must deny even unknown metrics")
 	}
 }

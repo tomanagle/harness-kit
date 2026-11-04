@@ -1,10 +1,10 @@
-// Package process contains the native process host: locating CLI binaries
+// Package process contains private native process helpers: locating CLI binaries
 // and starting, interrupting and killing child processes (with their whole
 // process tree) on macOS, Linux and Windows.
 //
-// This is the only Harness Kit package that knows about operating-system
-// processes. Core packages (agent, session, event, permission, rpc) never
-// import it, which is what keeps them portable to WebAssembly.
+// Native adapters and the CLI use these implementation details. Portable
+// contracts and session management never import it, which keeps them usable
+// in WebAssembly hosts.
 package process
 
 import (

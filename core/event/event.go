@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/tomanagle/harness-kit/core/budget"
 	"github.com/tomanagle/harness-kit/core/config"
 	"github.com/tomanagle/harness-kit/core/permission"
 	"github.com/tomanagle/harness-kit/core/workspace"
@@ -117,7 +116,7 @@ var payloadTypes = map[Type]func(json.RawMessage) (any, error){
 	ApprovalRequested:  decodeAs[permission.Request],
 	ApprovalResolved:   decodeAs[ApprovalResolvedData],
 	Usage:              decodeAs[UsageData],
-	BudgetExceeded:     decodeAs[budget.Exceeded],
+	BudgetExceeded:     decodeAs[BudgetExceededData],
 	RuntimeStatus:      decodeAs[RuntimeStatusData],
 	Error:              decodeAs[ErrorData],
 	RuntimeRaw:         decodeAs[RawData],
@@ -144,11 +143,11 @@ type SessionStartedData struct {
 // fields that are absent have been cleared, rather than left unchanged.
 // State uses the session lifecycle names (idle, running, closing, ...).
 type SessionUpdatedData struct {
-	Budget      *budget.Limits    `json:"budget,omitempty"`
-	Usage       *budget.Usage     `json:"usage,omitempty"`
-	Archived    bool              `json:"archived,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	ForkPending bool              `json:"forkPending,omitempty"`
+	Budget      *config.BudgetLimits `json:"budget,omitempty"`
+	Usage       *BudgetUsage         `json:"usage,omitempty"`
+	Archived    bool                 `json:"archived,omitempty"`
+	Metadata    map[string]string    `json:"metadata,omitempty"`
+	ForkPending bool                 `json:"forkPending,omitempty"`
 	// SettingsRevision changes only when session settings or pinning change.
 	SettingsRevision uint64 `json:"settingsRevision,omitempty"`
 	Pinned           bool   `json:"pinned,omitempty"`
@@ -172,8 +171,8 @@ type SessionClosedData struct {
 
 // TurnStartedData is the payload of turn.started.
 type TurnStartedData struct {
-	Workspace *workspace.Settings `json:"workspace,omitempty"`
-	Budget    *budget.Limits      `json:"budget,omitempty"`
+	Workspace *workspace.Settings  `json:"workspace,omitempty"`
+	Budget    *config.BudgetLimits `json:"budget,omitempty"`
 	// Config is the accepted effective turn selection after native resolution.
 	Config *config.Settings `json:"config,omitempty"`
 	// Text is the concatenated text of the prompt input.
@@ -202,11 +201,11 @@ const (
 // TurnCompletedData is the payload of turn.completed. Exactly one
 // turn.completed is emitted for every turn.started.
 type TurnCompletedData struct {
-	Budget        *budget.Exceeded `json:"budget,omitempty"`
-	Status        TurnStatus       `json:"status"`
-	Error         *ErrorInfo       `json:"error,omitempty"`
-	Usage         *UsageData       `json:"usage,omitempty"`
-	RuntimeTurnID string           `json:"runtimeTurnId,omitempty"`
+	Budget        *BudgetExceededData `json:"budget,omitempty"`
+	Status        TurnStatus          `json:"status"`
+	Error         *ErrorInfo          `json:"error,omitempty"`
+	Usage         *UsageData          `json:"usage,omitempty"`
+	RuntimeTurnID string              `json:"runtimeTurnId,omitempty"`
 }
 
 // MessageDeltaData is an incremental chunk of an agent message.

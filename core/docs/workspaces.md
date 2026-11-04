@@ -2,6 +2,8 @@
 
 Workspace isolation and diff capture are opt-in. They use the same settings
 document and methods as models, budgets and memory policy.
+For current status, staging, commits, branches and remotes, see
+[Git integration](git.md). Those operations are independent of turn capture.
 
 ~~~ts
 const conversation = await kit.sessions.create({
@@ -151,9 +153,10 @@ await kit.sessions.removeWorkspace(conversation.id);
 
 Removal requires the runtime to be closed or suspended, a matching ownership
 marker, unchanged repository identity, and no tracked, untracked **or ignored**
-changes. It also refuses a worktree whose HEAD advanced from the creation
-commit, avoiding loss of detached commits. There is no force mode. Preserve
-needed work and perform exceptional cleanup through the host's own Git workflow.
+changes. If HEAD advanced from the creation commit, a local branch must retain
+the new HEAD; that branch remains after worktree removal. Advanced detached
+commits require creating a branch before cleanup. There is no force mode.
+Preserve needed work and perform exceptional cleanup through the host's own Git workflow.
 Deleting the session record first does not delete its files, but also removes
 the manager's saved cleanup handle.
 

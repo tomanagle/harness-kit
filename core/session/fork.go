@@ -76,7 +76,10 @@ func (m *Manager) Fork(ctx context.Context, id string, p ForkParams) (Info, erro
 			return Info{}, err
 		}
 		ledger := recovered.accounting
-		rec.Accounting = &ledger
+		rec.Accounting, err = json.Marshal(ledger)
+		if err != nil {
+			return Info{}, fmt.Errorf("session: encode accounting checkpoint: %w", err)
+		}
 		parent.LastSeq = recovered.log.LastSeq()
 		parent.Usage = ledger.Usage()
 	}

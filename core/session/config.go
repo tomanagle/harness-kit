@@ -6,7 +6,6 @@ import (
 	"reflect"
 
 	"github.com/tomanagle/harness-kit/core/agent"
-	"github.com/tomanagle/harness-kit/core/budget"
 	"github.com/tomanagle/harness-kit/core/config"
 	"github.com/tomanagle/harness-kit/core/workspace"
 )
@@ -91,7 +90,7 @@ func (m *Manager) Configure(ctx context.Context, id string, patch agent.ConfigPa
 type sessionChanges struct {
 	workspace *workspace.Settings
 	pin       *bool
-	budget    *budget.Limits
+	budget    *config.BudgetLimits
 }
 
 func (m *Manager) configureLocked(ctx context.Context, id string, patch agent.ConfigPatch, changes sessionChanges) (Info, error) {

@@ -19,6 +19,50 @@ export class ProtocolClient {
     return this.#request("approval.respond", params, opts);
   }
 
+  gitBranches(params: RpcMethods["git.branches"]["params"], opts?: RequestOptions): Promise<RpcMethods["git.branches"]["result"]> {
+    return this.#request("git.branches", params, opts);
+  }
+
+  gitCheckout(params: RpcMethods["git.checkout"]["params"], opts?: RequestOptions): Promise<RpcMethods["git.checkout"]["result"]> {
+    return this.#request("git.checkout", params, opts);
+  }
+
+  gitCommit(params: RpcMethods["git.commit"]["params"], opts?: RequestOptions): Promise<RpcMethods["git.commit"]["result"]> {
+    return this.#request("git.commit", params, opts);
+  }
+
+  gitDiff(params: RpcMethods["git.diff"]["params"], opts?: RequestOptions): Promise<RpcMethods["git.diff"]["result"]> {
+    return this.#request("git.diff", params, opts);
+  }
+
+  gitFetch(params: RpcMethods["git.fetch"]["params"], opts?: RequestOptions): Promise<RpcMethods["git.fetch"]["result"]> {
+    return this.#request("git.fetch", params, opts);
+  }
+
+  gitLog(params: RpcMethods["git.log"]["params"], opts?: RequestOptions): Promise<RpcMethods["git.log"]["result"]> {
+    return this.#request("git.log", params, opts);
+  }
+
+  gitPull(params: RpcMethods["git.pull"]["params"], opts?: RequestOptions): Promise<RpcMethods["git.pull"]["result"]> {
+    return this.#request("git.pull", params, opts);
+  }
+
+  gitPush(params: RpcMethods["git.push"]["params"], opts?: RequestOptions): Promise<RpcMethods["git.push"]["result"]> {
+    return this.#request("git.push", params, opts);
+  }
+
+  gitStage(params: RpcMethods["git.stage"]["params"], opts?: RequestOptions): Promise<RpcMethods["git.stage"]["result"]> {
+    return this.#request("git.stage", params, opts);
+  }
+
+  gitStatus(params: RpcMethods["git.status"]["params"], opts?: RequestOptions): Promise<RpcMethods["git.status"]["result"]> {
+    return this.#request("git.status", params, opts);
+  }
+
+  gitUnstage(params: RpcMethods["git.unstage"]["params"], opts?: RequestOptions): Promise<RpcMethods["git.unstage"]["result"]> {
+    return this.#request("git.unstage", params, opts);
+  }
+
   initialize(params: RpcMethods["initialize"]["params"], opts?: RequestOptions): Promise<RpcMethods["initialize"]["result"]> {
     return this.#request("initialize", params, opts);
   }

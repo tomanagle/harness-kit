@@ -21,6 +21,7 @@ import (
 	"github.com/tomanagle/harness-kit/core/session"
 	"github.com/tomanagle/harness-kit/core/toolhost"
 	"github.com/tomanagle/harness-kit/core/tools"
+	"github.com/tomanagle/harness-kit/core/workspace"
 	gitworkspace "github.com/tomanagle/harness-kit/core/workspace/git"
 )
 
@@ -92,6 +93,7 @@ func (d *Direct) shutdown(ctx context.Context) {
 
 // OverviewResult is what the dashboard's sidebar shows.
 type OverviewResult struct {
+	Git      bool                   `json:"git"`
 	Runtimes []agent.Discovery      `json:"runtimes"`
 	Tools    []protocol.ToolSpec    `json:"tools"`
 	MCP      protocol.MCPListResult `json:"mcp"`
@@ -100,6 +102,7 @@ type OverviewResult struct {
 // Overview lists runtimes, host tools and MCP servers.
 func (d *Direct) Overview() (OverviewResult, error) {
 	var out OverviewResult
+	out.Git = true // NewDirect explicitly installs the native Git adapter.
 	var err error
 	if out.Runtimes, err = d.mgr.Registry().Discover(d.ctx); err != nil {
 		return out, err
@@ -140,6 +143,42 @@ func (d *Direct) RenameSession(id, title string) (session.Info, error) {
 
 // OpenSession reads a session without starting its runtime.
 func (d *Direct) OpenSession(id string) (session.Info, error) { return d.mgr.Get(d.ctx, id) }
+
+// Git bindings keep repository selection tied to the session. The example
+// exposes explicit actions; application-specific automation belongs to its host.
+func (d *Direct) GitStatus(id string) (workspace.RepositoryStatus, error) {
+	return d.mgr.GitStatus(d.ctx, id)
+}
+func (d *Direct) GitDiff(id string, p workspace.FileDiffParams) (workspace.FileDiff, error) {
+	return d.mgr.GitDiff(d.ctx, id, p)
+}
+func (d *Direct) GitBranches(id string) (workspace.BranchesResult, error) {
+	return d.mgr.GitBranches(d.ctx, id)
+}
+func (d *Direct) GitLog(id string, p workspace.LogParams) (workspace.LogResult, error) {
+	return d.mgr.GitLog(d.ctx, id, p)
+}
+func (d *Direct) GitStage(id string, p workspace.PathsParams) error {
+	return d.mgr.GitStage(d.ctx, id, p)
+}
+func (d *Direct) GitUnstage(id string, p workspace.PathsParams) error {
+	return d.mgr.GitUnstage(d.ctx, id, p)
+}
+func (d *Direct) GitCommit(id string, p workspace.CommitParams) (workspace.CommitResult, error) {
+	return d.mgr.GitCommit(d.ctx, id, p)
+}
+func (d *Direct) GitCheckout(id string, p workspace.CheckoutParams) error {
+	return d.mgr.GitCheckout(d.ctx, id, p)
+}
+func (d *Direct) GitFetch(id string, p workspace.RemoteParams) (workspace.RemoteResult, error) {
+	return d.mgr.GitFetch(d.ctx, id, p)
+}
+func (d *Direct) GitPull(id string, p workspace.RemoteParams) (workspace.RemoteResult, error) {
+	return d.mgr.GitPull(d.ctx, id, p)
+}
+func (d *Direct) GitPush(id string, p workspace.RemoteParams) (workspace.RemoteResult, error) {
+	return d.mgr.GitPush(d.ctx, id, p)
+}
 
 // History returns the session's retained events.
 func (d *Direct) History(id string) (protocol.SessionEventsResult, error) {
