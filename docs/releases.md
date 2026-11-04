@@ -4,6 +4,11 @@ The TypeScript client's npm package name is [`@tomanagle/harness-kit`](https://w
 Its publishing workflow is [`.github/workflows/publish-npm.yml`](../.github/workflows/publish-npm.yml).
 The npm package contains the client and type declarations; install the Go sidecar separately.
 
+The first release, `@tomanagle/harness-kit@0.2.0`, is public and tagged `latest`.
+Its registry artifact was verified against the staged build and tested with the
+released v0.2.0 sidecar, including live settings, per-turn budgets, cache eviction
+and transcript replay after restart.
+
 ## First npm publish
 
 Before a package exists on npm, use the `NPM_TOKEN` GitHub repository secret to
