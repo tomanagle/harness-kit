@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tomanagle/harness-kit/core/agent"
+	"github.com/tomanagle/harness-kit/core/config"
 	"github.com/tomanagle/harness-kit/core/settings"
 	"github.com/tomanagle/harness-kit/core/workspace"
 )
@@ -23,7 +24,7 @@ func (m *Manager) initSettings() {
 	for _, rt := range m.reg.List() {
 		v.Process.Runtimes = append(v.Process.Runtimes, rt.Name)
 	}
-	if fs, ok := m.store.(*FileStore); ok {
+	if fs, ok := m.store.(interface{ Dir() string }); ok {
 		v.Process.Store = fs.Dir()
 	}
 	v.Memory.EventLogSize = m.opts.EventLogSize
@@ -35,6 +36,8 @@ func (m *Manager) initSettings() {
 	if m.opts.LogLevel != nil {
 		v.Logging.Level = strings.ToLower(m.opts.LogLevel.Level().String())
 	}
+	limits := m.opts.Logs.Config()
+	v.Logging.MaxQueueRecords, v.Logging.MaxQueueBytes, v.Logging.MaxRecordBytes = limits.MaxQueueRecords, limits.MaxQueueBytes, limits.MaxRecordBytes
 	m.settings, m.initialSettings = v.Clone(), v.Clone()
 	m.settingsRevision = 1
 	m.bus.Configure(v.Streams.MaxQueueEvents, v.Streams.MaxQueueBytes)
@@ -67,9 +70,6 @@ func (m *Manager) InitializeSettings(ctx context.Context, v settings.Values) err
 	if used || initialized {
 		return fmt.Errorf("%w: startup settings have already been initialized", settings.ErrRestartRequired)
 	}
-	if copy.Logging.Level != m.currentSettings().Logging.Level && m.opts.LogLevel == nil {
-		return fmt.Errorf("%w: host logger does not expose a configurable level", agent.ErrUnsupported)
-	}
 	if err := m.validateResourceSettings(copy); err != nil {
 		return err
 	}
@@ -85,6 +85,7 @@ func (m *Manager) InitializeSettings(ctx context.Context, v settings.Values) err
 		_ = level.UnmarshalText([]byte(copy.Logging.Level))
 		m.opts.LogLevel.Set(level)
 	}
+	m.configureLogs(copy.Logging)
 	m.settingsMu.Lock()
 	m.settings = copy.Clone()
 	m.initialSettings = copy.Clone()
@@ -118,11 +119,6 @@ func (m *Manager) currentSettings() settings.Values {
 
 func (m *Manager) globalSnapshotLocked() settings.Snapshot {
 	fields := settings.Describe()
-	if m.opts.LogLevel == nil {
-		f := fields["logging.level"]
-		f.Writable = false
-		fields["logging.level"] = f
-	}
 	for name, f := range fields {
 		if !slices.Contains(f.Scopes, "global") {
 			f.Writable = false
@@ -180,11 +176,19 @@ func (m *Manager) settingsSnapshotLocked(ctx context.Context, target settings.Ta
 	snapshot.Values.Session = settings.Session{Runtime: info.Runtime, SessionConfig: cfg}
 	snapshot.Values.Memory.Pinned = info.Pinned
 	snapshot.Values.Budget = info.Budget.Clone()
+	snapshot.Values.Compaction = compactionPolicy(info.Compaction)
 	snapshot.Values.Workspace = workspacePolicy(info.WorkspaceSettings)
 	snapshot.Revision = max(uint64(1), info.SettingsRevision)
 	rt, _ := m.reg.Get(info.Runtime)
 	for path, f := range snapshot.Fields {
 		f.Writable = path == "memory.pinned"
+		if strings.HasPrefix(path, "compaction.") {
+			f.When = "nextOperation"
+			f.Writable = rt != nil && rt.Info().Capabilities.Compaction
+			if !f.Writable {
+				f.When = "unsupported"
+			}
+		}
 		if strings.HasPrefix(path, "budget.") {
 			f.Writable = true
 			f.When = "live"
@@ -261,9 +265,6 @@ func (m *Manager) ConfigureSettings(ctx context.Context, p settings.ConfigurePar
 			return settings.Snapshot{}, fmt.Errorf("%w: %s", settings.ErrRestartRequired, path)
 		}
 	}
-	if next.Logging.Level != base.Logging.Level && m.opts.LogLevel == nil {
-		return settings.Snapshot{}, fmt.Errorf("%w: host logger does not expose a live level", agent.ErrUnsupported)
-	}
 	if reflect.DeepEqual(base, next) {
 		m.settingsMu.RLock()
 		snapshot := m.globalSnapshotLocked()
@@ -287,6 +288,7 @@ func (m *Manager) ConfigureSettings(ctx context.Context, p settings.ConfigurePar
 		_ = level.UnmarshalText([]byte(next.Logging.Level))
 		m.opts.LogLevel.Set(level)
 	}
+	m.configureLogs(next.Logging)
 	m.bus.Configure(next.Streams.MaxQueueEvents, next.Streams.MaxQueueBytes)
 	// Cleanup is serialized with prompt admission. Busy/pinned/unsaved sessions
 	// stay resident, and the snapshot reports why any budget is still exceeded.
@@ -316,6 +318,9 @@ func (m *Manager) validateSessionDefaults(ctx context.Context, v settings.Values
 	rt, ok := m.reg.Get(v.Session.Runtime)
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrRuntimeNotFound, v.Session.Runtime)
+	}
+	if err := validateCompaction(rt, v.Compaction); err != nil {
+		return err
 	}
 	return m.validateConfig(ctx, rt, "", ConfigCreate, v.Session.SessionConfig)
 }
@@ -407,7 +412,7 @@ func (m *Manager) createSettings(p CreateParams) (CreateParams, error) {
 						return p, fmt.Errorf("%w: memory.%s requires global scope", settings.ErrScope, field)
 					}
 				}
-			} else if group != "session" && group != "workspace" && group != "budget" {
+			} else if group != "session" && group != "workspace" && group != "budget" && group != "compaction" {
 				return p, fmt.Errorf("%w: %s cannot be set during session creation", settings.ErrScope, group)
 			}
 		}
@@ -443,13 +448,14 @@ func (m *Manager) createSettings(p CreateParams) (CreateParams, error) {
 	p.Config = base.Session.SessionConfig
 	p.pinned = base.Memory.Pinned
 	p.budget = base.Budget.Clone()
+	p.compaction = base.Compaction.Clone()
 	p.workspace = base.Workspace
 	return p, nil
 }
 
 func promptSettings(p settings.Patch) (agent.ConfigPatch, error) {
 	for group := range p {
-		if group == "workspace" {
+		if group == "workspace" || group == "compaction" {
 			continue
 		}
 		if group != "session" && group != "budget" {
@@ -501,6 +507,10 @@ func (m *Manager) configureSessionSettings(ctx context.Context, p settings.Confi
 	if rec.InitialBudget != nil {
 		initial.Budget = rec.InitialBudget.Clone()
 	}
+	initial.Compaction = compactionPolicy(config.CompactionSettings{})
+	if rec.InitialCompaction != nil {
+		initial.Compaction = compactionPolicy(*rec.InitialCompaction)
+	}
 	next, paths, err := settings.Apply(current.Values, p.Patch, p.Reset, initial)
 	if err != nil {
 		return settings.Snapshot{}, err
@@ -515,6 +525,9 @@ func (m *Manager) configureSessionSettings(ctx context.Context, p settings.Confi
 			continue
 		}
 		switch {
+		case strings.HasPrefix(path, "compaction."):
+			v := next.Compaction.Clone()
+			changes.compaction = &v
 		case path == "memory.pinned":
 			v := next.Memory.Pinned
 			changes.pin = &v

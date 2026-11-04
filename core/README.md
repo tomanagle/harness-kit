@@ -46,11 +46,11 @@ search, tags and live settings. Separate SDK modules support direct inference
 and caller-owned context management. Optional worktrees and turn diffs isolate
 and inspect changes; usage budgets stop work based on reported consumption.
 
-| | Codex | Claude Code | fake |
-| --- | --- | --- | --- |
-| streaming, cancel, resume, usage | ✓ | ✓ | ✓ |
-| interactive approvals | ✓ | ✓ (through the [tool bridge](docs/tools.md#claude-code-approvals)) | ✓ |
-| per-session MCP servers, host tools | ✓ | ✓ | ✓ |
+|                                     | Codex | Claude Code                                                        | fake |
+| ----------------------------------- | ----- | ------------------------------------------------------------------ | ---- |
+| streaming, cancel, resume, usage    | ✓     | ✓                                                                  | ✓    |
+| interactive approvals               | ✓     | ✓ (through the [tool bridge](docs/tools.md#claude-code-approvals)) | ✓    |
+| per-session MCP servers, host tools | ✓     | ✓                                                                  | ✓    |
 
 See [session management](docs/sessions.md), [configuration](docs/configuration.md),
 [ACP](docs/acp.md), [direct models](docs/models.md) and the
@@ -156,16 +156,16 @@ approvals and usage survive restarts and can be replayed with
 Existing records remain readable; turns from before event persistence was
 added cannot be reconstructed by Harness Kit.
 
-| flag | |
-| --- | --- |
-| `-runtime codex\|claude\|fake` | which runtime (default `codex`) |
-| `-cwd DIR`, `-model NAME`, `-effort LEVEL`, `-instructions TEXT` | session settings; explicit `-model`/`-effort` with `-resume ses_…` update future defaults |
-| `-turn-config JSON` | overrides for each prompt without changing defaults, e.g. `'{"effort":"high"}'` |
-| `-title TEXT` | name the session (default: the start of the first prompt); with `-resume ses_…`, renames it |
-| `-resume ID` | continue a session: a `ses_…` ID from `harness-kit sessions`, or a runtime-native ID together with `-runtime` |
-| `-options JSON` | runtime options, e.g. `'{"sandbox":"read-only"}'` or `'{"permissionMode":"acceptEdits"}'` ([all options](docs/runtimes.md)) |
-| `-approve ask\|allow\|deny` | how approvals are answered (default `ask`; `deny` when there's no terminal) |
-| `-rpc` | run through a sidecar over JSON-RPC instead of in-process, to test the protocol path |
+| flag                                                             |                                                                                                                             |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `-runtime codex\|claude\|fake`                                   | which runtime (default `codex`)                                                                                             |
+| `-cwd DIR`, `-model NAME`, `-effort LEVEL`, `-instructions TEXT` | session settings; explicit `-model`/`-effort` with `-resume ses_…` update future defaults                                   |
+| `-turn-config JSON`                                              | overrides for each prompt without changing defaults, e.g. `'{"effort":"high"}'`                                             |
+| `-title TEXT`                                                    | name the session (default: the start of the first prompt); with `-resume ses_…`, renames it                                 |
+| `-resume ID`                                                     | continue a session: a `ses_…` ID from `harness-kit sessions`, or a runtime-native ID together with `-runtime`               |
+| `-options JSON`                                                  | runtime options, e.g. `'{"sandbox":"read-only"}'` or `'{"permissionMode":"acceptEdits"}'` ([all options](docs/runtimes.md)) |
+| `-approve ask\|allow\|deny`                                      | how approvals are answered (default `ask`; `deny` when there's no terminal)                                                 |
+| `-rpc`                                                           | run through a sidecar over JSON-RPC instead of in-process, to test the protocol path                                        |
 
 In `chat`, `/configure {"effort":"high"}` changes subsequent turns. A
 configuration patch preserves omitted fields; `{"reset":["effort"]}`
@@ -175,11 +175,11 @@ sources and policy; see [configuration](docs/configuration.md).
 
 Output, for every command:
 
-| flag | prints |
-| --- | --- |
-| `--output text` (default) | readable output; for prompts, the reply on stdout and progress on stderr |
+| flag                                 | prints                                                                                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `--output text` (default)            | readable output; for prompts, the reply on stdout and progress on stderr                                                 |
 | `--output json`, `--json`, `-o json` | one JSON document; for prompts, the final result: `status`, `text`, `usage`, `error`, `runtimeSessionId` (for `-resume`) |
-| `--output stream-json` | prompt and chat: every event as a JSON line, the same events the sidecar sends |
+| `--output stream-json`               | prompt and chat: every event as a JSON line, the same events the sidecar sends                                           |
 
 ```sh
 harness-kit runtimes discover --json
@@ -264,13 +264,15 @@ const session = await kit.sessions.create({ runtime: "codex", cwd: process.cwd()
 
 for await (const event of session.prompt("Explain this codebase")) {
   if (event.type === "message.delta") process.stdout.write(event.data.text);
-  if (event.type === "approval.requested") await kit.approvals.respond(event.data.approvalId, "allow");
+  if (event.type === "approval.requested")
+    await kit.approvals.respond(event.data.approvalId, "allow");
 }
 // Update defaults, then override one prompt without changing those defaults.
 await session.configure({ effort: "high" });
 for await (const event of session.prompt("Briefly summarize", { config: { effort: "low" } })) {
   if (event.type === "message.delta") process.stdout.write(event.data.text);
-  if (event.type === "approval.requested") await kit.approvals.respond(event.data.approvalId, "allow");
+  if (event.type === "approval.requested")
+    await kit.approvals.respond(event.data.approvalId, "allow");
 }
 await kit.close();
 ```
@@ -320,14 +322,14 @@ diffs, branches and history. Explicit actions stage, unstage, commit, switch
 branches, fetch, pull and push through the same generated client APIs. The
 harness controls the workflow; [Git settings](docs/git.md) apply at runtime.
 
-| Example | Shows |
-| --- | --- |
-| [examples/cli](../examples/cli) | A minimal harness of your own: about 150 lines linking the Go packages |
-| [examples/node](../examples/node) | Node.js sidecar client (the Electron main-process code path), and `tools.ts`: host tools with approvals |
-| [examples/ui](../examples/ui) | The dashboard shared by Electron and Wails, written against one small API (`api.js`) |
-| [examples/electron](../examples/electron) | Electron app; the main process mediates typed IPC (the renderer never sees raw RPC) and registers the demo tools |
-| [examples/wails](../examples/wails) | Wails app: sidecar mode with the *same* TS client (tools registered in the webview), or in-process mode with Go tools |
-| [examples/node/overview.ts](../examples/node/overview.ts) | Everything at a glance from Node.js; `--json` for one document |
+| Example                                                   | Shows                                                                                                                 |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [examples/cli](../examples/cli)                           | A minimal harness of your own: about 150 lines linking the Go packages                                                |
+| [examples/node](../examples/node)                         | Node.js sidecar client (the Electron main-process code path), and `tools.ts`: host tools with approvals               |
+| [examples/ui](../examples/ui)                             | The dashboard shared by Electron and Wails, written against one small API (`api.js`)                                  |
+| [examples/electron](../examples/electron)                 | Electron app; the main process mediates typed IPC (the renderer never sees raw RPC) and registers the demo tools      |
+| [examples/wails](../examples/wails)                       | Wails app: sidecar mode with the _same_ TS client (tools registered in the webview), or in-process mode with Go tools |
+| [examples/node/overview.ts](../examples/node/overview.ts) | Everything at a glance from Node.js; `--json` for one document                                                        |
 
 ## Documentation
 

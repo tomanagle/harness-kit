@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"iter"
 	"log/slog"
 	"maps"
@@ -21,6 +20,7 @@ import (
 	"github.com/tomanagle/harness-kit/core/config"
 	"github.com/tomanagle/harness-kit/core/event"
 	"github.com/tomanagle/harness-kit/core/internal/budget"
+	"github.com/tomanagle/harness-kit/core/logging"
 	"github.com/tomanagle/harness-kit/core/mcp"
 	"github.com/tomanagle/harness-kit/core/permission"
 	"github.com/tomanagle/harness-kit/core/settings"
@@ -47,9 +47,13 @@ type Options struct {
 	// Workspace supplies optional native worktrees and turn snapshot support.
 	// Nil leaves the portable manager usable without Git/process dependencies.
 	Workspace workspace.Backend
-	// LogLevel controls the host logger's live level. Supply the same LevelVar
-	// used by the logger handler to enable logging.level updates.
+	// LogLevel optionally shares a level with host handlers. The manager creates
+	// one when omitted; settings.logging.level always controls the UI stream.
 	LogLevel *slog.LevelVar
+	// Logs optionally shares a structured stream with other host components.
+	// When supplied, its level/configuration take precedence over LogLevel.
+	// The caller owns its lifetime; otherwise the manager owns the stream.
+	Logs *logging.Stream
 	// ValidateConfig lets the host apply its own constraints at creation,
 	// restore, session updates and turn admission (including resolved settings).
 	// It must be safe for concurrent calls and must not call back into Manager.
@@ -87,7 +91,8 @@ type Options struct {
 	// AllowUnsafe permits session configurations that a Guarded runtime
 	// reports as disabling its sandbox or approvals.
 	AllowUnsafe bool
-	// Logger receives diagnostics. Defaults to discarding.
+	// Logger receives diagnostics in addition to the UI stream. Its handler's
+	// own filtering is respected. Nil leaves diagnostics in the stream only.
 	Logger *slog.Logger
 }
 
@@ -129,12 +134,13 @@ type Attachment struct {
 // Manager owns sessions across all registered runtimes. It is safe for
 // concurrent use.
 type Manager struct {
-	reg    *agent.Registry
-	opts   Options
-	store  Store
-	broker *permission.Broker
-	bus    *event.Bus
-	log    *slog.Logger
+	reg      *agent.Registry
+	opts     Options
+	store    Store
+	broker   *permission.Broker
+	bus      *event.Bus
+	log      *slog.Logger
+	ownsLogs bool
 
 	baseCtx    context.Context
 	baseCancel context.CancelFunc
@@ -169,8 +175,19 @@ func NewManager(reg *agent.Registry, opts Options) *Manager {
 	if opts.MaxClosedSessions <= 0 {
 		opts.MaxClosedSessions = 64
 	}
-	if opts.Logger == nil {
-		opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	ownsLogs := opts.Logs == nil
+	if opts.Logs == nil {
+		var next slog.Handler
+		if opts.Logger != nil {
+			next = opts.Logger.Handler()
+		}
+		opts.Logs = logging.New(opts.LogLevel, next, logging.DefaultConfig())
+	}
+	opts.LogLevel = opts.Logs.Level()
+	if !ownsLogs && opts.Logger != nil {
+		opts.Logger = slog.New(opts.Logs.WithDestination(opts.Logger.Handler()))
+	} else {
+		opts.Logger = slog.New(opts.Logs)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{
@@ -180,6 +197,7 @@ func NewManager(reg *agent.Registry, opts Options) *Manager {
 		broker:              permission.NewBroker(),
 		bus:                 event.NewBus(),
 		log:                 opts.Logger,
+		ownsLogs:            ownsLogs,
 		baseCtx:             ctx,
 		baseCancel:          cancel,
 		sessions:            make(map[string]*managed),
@@ -197,7 +215,8 @@ func (m *Manager) Registry() *agent.Registry { return m.reg }
 
 // CreateParams configure a new session.
 type CreateParams struct {
-	workspace workspace.Settings
+	compaction config.CompactionSettings
+	workspace  workspace.Settings
 	// Settings uses the unified settings envelope: session values and
 	// memory.pinned may be supplied at creation. Global resource policies
 	// belong to ConfigureSettings.
@@ -254,6 +273,7 @@ func (m *Manager) Create(ctx context.Context, p CreateParams) (Info, error) {
 	}
 	now := time.Now().UTC()
 	return m.start(ctx, Info{
+		Compaction:        p.compaction.Clone(),
 		WorkspaceSettings: p.workspace,
 		ID:                NewID("ses_"),
 		Budget:            p.budget.Clone(),
@@ -398,10 +418,15 @@ func (m *Manager) newManaged(ctx context.Context, info Info, cfg agent.SessionCo
 	}
 	ledger := budget.New(cfg.ResumeID != "")
 	initialBudget := info.Budget.Clone()
+	info.Compaction = compactionPolicy(info.Compaction)
+	initialCompaction := info.Compaction.Clone()
 	initialWorkspace := workspacePolicy(info.WorkspaceSettings)
 	var accountingAfter uint64
 	_, hasLookup := m.store.(TurnLookup)
 	visit := func(ev event.Event) error {
+		if ev.Seq > info.LastSeq {
+			replayContextEvent(&info, ev)
+		}
 		if ev.Seq > accountingAfter {
 			replayBudgetEvent(&ledger, ev)
 		}
@@ -424,6 +449,9 @@ func (m *Manager) newManaged(ctx context.Context, info Info, cfg agent.SessionCo
 		}
 		if rec.InitialBudget != nil {
 			initialBudget = rec.InitialBudget.Clone()
+		}
+		if rec.InitialCompaction != nil {
+			initialCompaction = compactionPolicy(*rec.InitialCompaction)
 		}
 		if rec.InitialWorkspace != nil {
 			initialWorkspace = *rec.InitialWorkspace
@@ -490,7 +518,7 @@ func (m *Manager) newManaged(ctx context.Context, info Info, cfg agent.SessionCo
 	info.Model = selection.Model
 	ledger.Interrupt()
 	info.Usage = ledger.Usage()
-	return &managed{m: m, cfg: cfg, initialCfg: initial, initialWorkspace: initialWorkspace, initialBudget: initialBudget, accounting: ledger, info: info, turnIDs: turnIDs, log: log, lastAccess: time.Now()}, nil
+	return &managed{m: m, cfg: cfg, initialCfg: initial, initialWorkspace: initialWorkspace, initialCompaction: initialCompaction, initialBudget: initialBudget, accounting: ledger, info: info, turnIDs: turnIDs, log: log, lastAccess: time.Now()}, nil
 }
 
 // Warnings returns the warning messages recorded for a session (from
@@ -530,6 +558,10 @@ func (m *Manager) start(ctx context.Context, info Info, cfg agent.SessionConfig,
 		}
 	}
 	if err := validateBudgetPolicy(rt, info.Budget); err != nil {
+		return Info{}, err
+	}
+	info.Compaction = compactionPolicy(info.Compaction)
+	if err := validateCompaction(rt, info.Compaction); err != nil {
 		return Info{}, err
 	}
 	if err := m.validateConfig(ctx, rt, info.ID, op, cfg); err != nil {
@@ -635,6 +667,9 @@ func (m *Manager) start(ctx context.Context, info Info, cfg agent.SessionConfig,
 		ms.info.ForkPending = false
 	}
 	ms.info.State = StateIdle
+	if ms.nativeCompaction != nil {
+		ms.info.State = StateCompacting
+	}
 	ms.mu.Unlock()
 	ms.emitMu.Lock()
 	ms.persist()
@@ -651,6 +686,7 @@ func (m *Manager) start(ctx context.Context, info Info, cfg agent.SessionConfig,
 		ms.emit(event.Event{Type: event.RuntimeStatus, Data: event.RuntimeStatusData{Status: "warning", Message: w}})
 	}
 	m.wakeResources()
+	m.log.InfoContext(ctx, "session started", "sessionId", info.ID, "runtime", info.Runtime, "resumed", cfg.ResumeID != "")
 	return ms.snapshot(), nil
 }
 
@@ -724,6 +760,12 @@ func (m *Manager) Get(ctx context.Context, id string) (Info, error) {
 
 // dormantInfo distinguishes stored history from runtime instances in this manager.
 func dormantInfo(info Info) Info {
+	info.Compaction = compactionPolicy(info.Compaction)
+	if info.Context != nil {
+		v := info.Context.Clone()
+		v.Stale = true
+		info.Context = &v
+	}
 	if info.SettingsRevision == 0 {
 		info.SettingsRevision = 1
 	}
@@ -757,6 +799,7 @@ func (m *Manager) storedInfo(ctx context.Context, info Info) (Info, error) {
 		if ev.Seq <= after {
 			return nil
 		}
+		replayContextEvent(&info, ev)
 		if d, ok := ev.Data.(event.SessionUpdatedData); ok {
 			info.Title, info.State, info.ActiveTurnID = d.Title, State(d.State), d.ActiveTurnID
 			info.RuntimeSessionID, info.Turns, info.LastStatus = d.RuntimeSessionID, d.Turns, d.LastStatus
@@ -842,9 +885,10 @@ type PromptParams struct {
 
 // Turn is a handle on a running turn.
 type Turn struct {
-	workspace workspace.Settings
-	ID        string
-	SessionID string
+	compactionPolicy config.CompactionSettings
+	workspace        workspace.Settings
+	ID               string
+	SessionID        string
 
 	cancel     context.CancelFunc
 	done       chan struct{}
@@ -927,6 +971,10 @@ func (m *Manager) Prompt(requestCtx context.Context, sessionID string, p PromptP
 	if err != nil {
 		return nil, err
 	}
+	compactionSettings, err := ms.turnCompaction(p.Settings)
+	if err != nil {
+		return nil, err
+	}
 	settings, err := ms.prepareTurn(requestCtx, p.Config)
 	if err != nil {
 		return nil, err
@@ -956,7 +1004,7 @@ func (m *Manager) Prompt(requestCtx context.Context, sessionID string, p PromptP
 	// are checked on disk rather than retained for the lifetime of the process.
 	ms.turnIDs[turnID] = struct{}{}
 	ctx, cancel := context.WithCancel(m.baseCtx)
-	t := &Turn{ID: turnID, SessionID: sessionID, cancel: cancel, done: make(chan struct{}), budget: budgetSelection, workspace: workspaceSettings}
+	t := &Turn{ID: turnID, SessionID: sessionID, cancel: cancel, done: make(chan struct{}), budget: budgetSelection, workspace: workspaceSettings, compactionPolicy: compactionSettings}
 	ms.turn = t
 	ms.accounting.Begin()
 	ms.info.State = StateRunning
@@ -1035,8 +1083,8 @@ func (m *Manager) Stream(ctx context.Context, sessionID string, p PromptParams) 
 	}
 }
 
-// Cancel interrupts the session's active turn, if any. It returns
-// immediately; the turn ends with status "cancelled" shortly after.
+// Cancel requests interruption of the active turn or requested compaction.
+// The operation keeps its slot until the runtime confirms it has stopped.
 func (m *Manager) Cancel(sessionID string) error {
 	ms, ok := m.lookup(sessionID)
 	if !ok {
@@ -1044,14 +1092,22 @@ func (m *Manager) Cancel(sessionID string) error {
 	}
 	ms.mu.Lock()
 	t := ms.turn
+	c := ms.compaction
+	nativeOnly := t == nil && c == nil && ms.nativeCompaction != nil
 	ms.mu.Unlock()
+	if nativeOnly {
+		return fmt.Errorf("%w: runtime-initiated idle compaction has no cancellable request; close the session to stop its runtime", agent.ErrUnsupported)
+	}
 	if t != nil {
 		t.cancel()
+	}
+	if c != nil {
+		c.cancel()
 	}
 	return nil
 }
 
-// Close cancels any active turn, releases the runtime session and emits
+// Close cancels active operations, releases the runtime session and emits
 // session.closed. Closing a closed session is a no-op.
 func (m *Manager) Close(ctx context.Context, sessionID string) error {
 	m.lifecycleMu.Lock()
@@ -1192,6 +1248,9 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		errs = append(errs, ctx.Err())
 	}
+	if m.ownsLogs {
+		m.opts.Logs.Close()
+	}
 	return errors.Join(errs...)
 }
 
@@ -1255,14 +1314,15 @@ func title(prompt string) string {
 
 // managed is one session held by the Manager. It implements agent.Handler.
 type managed struct {
-	m                *Manager
-	rt               agent.Runtime
-	cfg              agent.SessionConfig
-	initialCfg       agent.SessionConfig
-	initialBudget    config.BudgetLimits
-	initialWorkspace workspace.Settings
-	accounting       budget.Ledger
-	log              *event.Log
+	m                 *Manager
+	rt                agent.Runtime
+	cfg               agent.SessionConfig
+	initialCfg        agent.SessionConfig
+	initialBudget     config.BudgetLimits
+	initialCompaction config.CompactionSettings
+	initialWorkspace  workspace.Settings
+	accounting        budget.Ledger
+	log               *event.Log
 
 	// emitMu serialises Append+Publish so subscribers observe events in
 	// sequence order. Lock order: emitMu before mu.
@@ -1273,15 +1333,18 @@ type managed struct {
 	// persistMu serialises store writes (lock order: persistMu before mu).
 	persistMu sync.Mutex
 
-	mu                sync.Mutex
-	info              Info
-	recordWriteFailed bool // guarded by mu; prevents losing an unsaved record
-	sess              agent.Session
-	turn              *Turn
-	turnIDs           map[string]struct{}
-	closeOnce         sync.Once
-	closeErr          error
-	detach            func() // revokes the tool bridge binding
+	mu                 sync.Mutex
+	info               Info
+	recordWriteFailed  bool // guarded by mu; prevents losing an unsaved record
+	sess               agent.Session
+	turn               *Turn
+	compaction         *compactionOperation
+	nativeCompaction   *compactionOperation
+	contextObservation uint64
+	turnIDs            map[string]struct{}
+	closeOnce          sync.Once
+	closeErr           error
+	detach             func() // revokes the tool bridge binding
 }
 
 func (ms *managed) currentTurnID() string {
@@ -1296,9 +1359,13 @@ func (ms *managed) currentTurnID() string {
 func (ms *managed) cancelTurn() {
 	ms.mu.Lock()
 	t := ms.turn
+	c := ms.compaction
 	ms.mu.Unlock()
 	if t != nil {
 		t.cancel()
+	}
+	if c != nil {
+		c.cancel()
 	}
 }
 
@@ -1308,6 +1375,11 @@ func (ms *managed) snapshot() Info {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	info := ms.info
+	info.Compaction = compactionPolicy(info.Compaction)
+	if info.Context != nil {
+		v := info.Context.Clone()
+		info.Context = &v
+	}
 	if info.Workspace != nil {
 		v := *info.Workspace
 		info.Workspace = &v
@@ -1362,17 +1434,18 @@ func (ms *managed) persist() error {
 		defaults = &selection
 	}
 	initialWorkspace := ms.initialWorkspace
+	initialCompaction := ms.initialCompaction.Clone()
 	checkpoint, err := json.Marshal(ledger)
 	if err != nil {
 		return fmt.Errorf("session: encode accounting checkpoint: %w", err)
 	}
-	rec := Record{Accounting: checkpoint, InitialBudget: &initialBudget, InitialWorkspace: &initialWorkspace, Info: ms.snapshot(), Config: cfg, InitialConfig: &initial, NativeDefaults: defaults, ForkSourceRuntimeID: cfg.ForkFrom}
+	rec := Record{Accounting: checkpoint, InitialBudget: &initialBudget, InitialWorkspace: &initialWorkspace, InitialCompaction: &initialCompaction, Info: ms.snapshot(), Config: cfg, InitialConfig: &initial, NativeDefaults: defaults, ForkSourceRuntimeID: cfg.ForkFrom}
 	err = ms.m.store.Put(context.Background(), rec)
 	ms.mu.Lock()
 	ms.recordWriteFailed = err != nil
 	ms.mu.Unlock()
 	if err != nil {
-		ms.m.log.Warn("persist session", "session", rec.Info.ID, "err", err)
+		ms.m.log.Warn("persist session", "sessionId", rec.Info.ID, "err", err)
 	}
 	return err
 }
@@ -1381,6 +1454,7 @@ func (ms *managed) persist() error {
 func (ms *managed) updatedLocked(turnID string) {
 	info := ms.snapshot()
 	ms.emitLocked(event.Event{Type: event.SessionUpdated, TurnID: turnID, Data: event.SessionUpdatedData{
+		Context: info.Context, Compaction: &info.Compaction,
 		Budget: &info.Budget, Usage: &info.Usage, Archived: info.Archived, Metadata: maps.Clone(info.Metadata), ForkPending: info.ForkPending,
 		Config: info.Config, SettingsRevision: info.SettingsRevision, Pinned: info.Pinned, Title: info.Title, State: string(info.State), ActiveTurnID: info.ActiveTurnID,
 		RuntimeSessionID: info.RuntimeSessionID, Turns: info.Turns,
@@ -1399,8 +1473,12 @@ func (ms *managed) Emit(ev event.Event) {
 	}
 	ms.emitMu.Lock()
 	ms.emitLocked(ev)
+	ms.observeNativeCompactionLocked(ev)
 	if u, ok := ev.Data.(event.UsageData); ok {
 		ms.observeUsageLocked(u, false)
+		_ = ms.persist()
+	}
+	if ev.Type == event.ContextUsage || ev.Type == event.RuntimeStatus {
 		_ = ms.persist()
 	}
 	ms.emitMu.Unlock()
@@ -1413,13 +1491,14 @@ func (ms *managed) emit(ev event.Event) {
 }
 
 func (ms *managed) emitLocked(ev event.Event) {
+	ms.applyContextEventLocked(&ev)
 	ev.SessionID = ms.info.ID // immutable after creation
 	ev.Seq = 0
 	stored := ms.log.Append(ev)
 	if store, ok := ms.m.store.(EventStore); ok {
 		if err := store.AppendEvent(context.Background(), stored); err != nil {
 			ms.unsaved = append(ms.unsaved, stored)
-			ms.m.log.Error("persist event", "session", stored.SessionID, "seq", stored.Seq, "err", err)
+			ms.m.log.Error("persist event", "sessionId", stored.SessionID, "seq", stored.Seq, "err", err)
 			ms.m.bus.Publish(stored)
 			if !ms.eventWriteFailed {
 				ms.eventWriteFailed = true
@@ -1483,10 +1562,18 @@ func (ms *managed) RequestApproval(ctx context.Context, req permission.Request) 
 func (ms *managed) runTurn(ctx context.Context, t *Turn, input agent.Turn) {
 	defer ms.m.turns.Done()
 	defer t.cancel()
+	ms.m.log.DebugContext(ctx, "turn started", "sessionId", ms.info.ID, "turnId", t.ID)
 
-	workspaceChange := ms.captureWorkspace(ctx, t)
-	res, err := ms.sess.Prompt(ctx, input)
-	ms.completeWorkspace(t, workspaceChange)
+	var res agent.TurnResult
+	err := ms.compactBeforeTurn(ctx, t)
+	if err == nil {
+		err = ctx.Err()
+	}
+	if err == nil {
+		workspaceChange := ms.captureWorkspace(ctx, t)
+		res, err = ms.sess.Prompt(ctx, input)
+		ms.completeWorkspace(t, workspaceChange)
+	}
 	dead := errors.Is(err, agent.ErrSessionDead)
 	switch {
 	case err != nil && ctx.Err() != nil && !dead:
@@ -1502,6 +1589,16 @@ func (ms *managed) runTurn(ctx context.Context, t *Turn, input agent.Turn) {
 		res.Status = event.TurnStatusCompleted
 	}
 	ms.emitMu.Lock()
+	ms.mu.Lock()
+	nativePending := ms.nativeCompaction != nil
+	ms.mu.Unlock()
+	if nativePending {
+		status := "compaction_failed"
+		if res.Status == event.TurnStatusCancelled {
+			status = "compaction_cancelled"
+		}
+		ms.observeNativeCompactionLocked(event.Event{Type: event.RuntimeStatus, TurnID: t.ID, Data: event.RuntimeStatusData{Status: status, Message: "native turn ended without confirming compaction completion"}})
+	}
 	if res.Usage != nil {
 		ms.observeUsageLocked(*res.Usage, true)
 	}
@@ -1524,6 +1621,7 @@ func (ms *managed) runTurn(ctx context.Context, t *Turn, input agent.Turn) {
 	case dead:
 		ms.info.State = StateFailed
 		ms.info.Error = res.Error
+		ms.markContextStaleLocked()
 	case ms.info.State == StateRunning:
 		ms.info.State = StateIdle
 	}
@@ -1548,6 +1646,7 @@ func (ms *managed) runTurn(ctx context.Context, t *Turn, input agent.Turn) {
 	}
 	ms.emitMu.Unlock()
 	ms.m.wakeResources()
+	ms.m.log.Info("turn completed", "sessionId", ms.info.ID, "turnId", t.ID, "status", string(res.Status))
 	close(t.done)
 
 	if dead {
@@ -1582,6 +1681,7 @@ func (ms *managed) close(ctx context.Context, reason string) error {
 	}
 	ms.info.State = StateClosing
 	t := ms.turn
+	c := ms.compaction
 	ms.mu.Unlock()
 	ms.updatedLocked("")
 	ms.emitMu.Unlock()
@@ -1593,18 +1693,33 @@ func (ms *managed) close(ctx context.Context, reason string) error {
 		case <-ctx.Done():
 		}
 	}
+	if c != nil {
+		c.cancel()
+		select {
+		case <-c.done:
+		case <-ctx.Done():
+		}
+	}
 	err := ms.closeRuntime(ctx)
 
 	ms.emitMu.Lock()
 	ms.mu.Lock()
+	nativePending := ms.nativeCompaction != nil
+	ms.mu.Unlock()
+	if nativePending {
+		ms.observeNativeCompactionLocked(event.Event{Type: event.RuntimeStatus, Data: event.RuntimeStatusData{Status: "compaction_cancelled", Message: "runtime closed during native compaction"}})
+	}
+	ms.mu.Lock()
 	ms.info.State = StateClosed
 	ms.info.UpdatedAt = time.Now().UTC()
+	ms.markContextStaleLocked()
 	ms.mu.Unlock()
 	ms.updatedLocked("")
 	ms.emitLocked(event.Event{Type: event.SessionClosed, Data: event.SessionClosedData{Reason: reason}})
 	ms.persist()
 	ms.emitMu.Unlock()
 	ms.m.retire(ms)
+	ms.m.log.Info("session closed", "sessionId", ms.info.ID, "reason", reason)
 	return err
 }
 

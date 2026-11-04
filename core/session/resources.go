@@ -47,7 +47,7 @@ func (m *Manager) MemoryStats() ResourceStats {
 		ms.mu.Lock()
 		state, pinned, recordFailed := ms.info.State, ms.info.Pinned, ms.recordWriteFailed
 		ms.mu.Unlock()
-		if state == StateIdle || state == StateRunning || state == StateStarting || state == StateSuspending {
+		if state == StateIdle || state == StateRunning || state == StateCompacting || state == StateStarting || state == StateSuspending {
 			stats.ResidentSessions++
 		}
 		if recordFailed {
@@ -115,7 +115,7 @@ func (m *Manager) evictLocked(ms *managed) error {
 	ms.emitMu.Lock()
 	defer ms.emitMu.Unlock()
 	ms.mu.Lock()
-	busy := ms.turn != nil || ms.info.State == StateStarting || ms.info.State == StateClosing || ms.info.State == StateSuspending
+	busy := ms.turn != nil || ms.compaction != nil || ms.nativeCompaction != nil || ms.info.State == StateStarting || ms.info.State == StateClosing || ms.info.State == StateSuspending
 	pin := ms.info.Pinned
 	terminal := ms.info.State.Terminal()
 	ms.mu.Unlock()
@@ -229,6 +229,7 @@ func (m *Manager) suspendLocked(ctx context.Context, id string) error {
 	ms.emitMu.Lock()
 	ms.mu.Lock()
 	ms.info.State = StateSuspended
+	ms.markContextStaleLocked()
 	if closeErr != nil {
 		ms.info.State = StateFailed
 		ms.info.Error = &event.ErrorInfo{Code: "suspend_failed", Message: closeErr.Error()}
@@ -273,7 +274,7 @@ func (m *Manager) enforceResources(ctx context.Context) []string {
 		ms.emitMu.Lock()
 		ms.mu.Lock()
 		idle := maxTime(ms.info.UpdatedAt, ms.lastAccess)
-		eligible := ms.turn == nil && ms.info.State != StateStarting && ms.info.State != StateClosing && ms.info.State != StateSuspending && !ms.info.Pinned && !ms.eventWriteFailed && !ms.recordWriteFailed
+		eligible := ms.turn == nil && ms.compaction == nil && ms.nativeCompaction == nil && ms.info.State != StateStarting && ms.info.State != StateClosing && ms.info.State != StateSuspending && !ms.info.Pinned && !ms.eventWriteFailed && !ms.recordWriteFailed
 		state := ms.info.State
 		pinned := ms.info.Pinned
 		ms.mu.Unlock()

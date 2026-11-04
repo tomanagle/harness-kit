@@ -91,6 +91,32 @@ func fakeClaude(args []string) int {
 		return 1
 	}
 	emit(map[string]any{"type": "system", "subtype": "init", "session_id": sid, "model": "claude-test", "permissionMode": "default", "tools": []string{"Bash"}})
+	if prompt == "/compact" {
+		mode := os.Getenv("HK_FAKE_CLAUDE_COMPACT")
+		if mode == "wait" {
+			sigs := make(chan os.Signal, 1)
+			signal.Notify(sigs, os.Interrupt)
+			select {
+			case <-sigs:
+				return 130
+			case <-time.After(20 * time.Second):
+				return 1
+			}
+		}
+		if mode != "missing-boundary" && mode != "failed" {
+			emit(map[string]any{"type": "system", "subtype": "compact_boundary", "session_id": sid, "compact_metadata": map[string]any{"trigger": "manual", "pre_tokens": 50000}})
+		}
+		emit(map[string]any{"type": "assistant", "message": map[string]any{"id": "compact-summary", "content": []any{map[string]any{"type": "text", "text": "Compacted"}}}})
+		command := "compact"
+		if mode == "missing-command" {
+			command = ""
+		}
+		emit(map[string]any{"type": "result", "subtype": "success", "local_command": command, "is_error": mode == "failed", "result": "compact result"})
+		if mode == "bad-exit" {
+			return 1
+		}
+		return 0
+	}
 	emit(map[string]any{"type": "rate_limit_event", "rate_limit_info": map[string]any{"status": "allowed"}, "session_id": sid})
 	textBlock := func(msgID, text string) {
 		emit(map[string]any{"type": "stream_event", "session_id": sid, "parent_tool_use_id": nil, "event": map[string]any{"type": "message_start", "message": map[string]any{"id": msgID}}})

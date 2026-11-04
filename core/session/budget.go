@@ -89,6 +89,16 @@ func observation(u event.UsageData, terminal bool) budget.Observation {
 
 func replayBudgetEvent(l *budget.Ledger, ev event.Event) {
 	switch d := ev.Data.(type) {
+	case event.ContextCompactionData:
+		if d.Reason == "manual" {
+			if d.Status == "started" {
+				l.Begin()
+			} else {
+				l.End()
+			}
+		} else if d.Reason == "threshold" && d.Status == "completed" {
+			l.NextSegment()
+		}
 	case event.TurnStartedData:
 		l.Begin()
 	case event.UsageData:
@@ -113,7 +123,26 @@ func (ms *managed) observeUsageLocked(u event.UsageData, terminal bool) {
 func (ms *managed) checkBudgetLocked() {
 	ms.mu.Lock()
 	t := ms.turn
-	if t == nil || t.budgetStop != nil {
+	if t == nil {
+		op := ms.compaction
+		if op == nil || op.budgetStop {
+			ms.mu.Unlock()
+			return
+		}
+		limits := ms.info.Budget.Clone()
+		limits.MaxTurnTokens, limits.MaxTurnCostUSD = nil, nil
+		hit := ms.accounting.Check(limits, false)
+		if hit == nil {
+			ms.mu.Unlock()
+			return
+		}
+		op.budgetStop = true
+		ms.mu.Unlock()
+		op.cancel()
+		ms.emitLocked(event.Event{Type: event.BudgetExceeded, Data: *hit})
+		return
+	}
+	if t.budgetStop != nil {
 		ms.mu.Unlock()
 		return
 	}

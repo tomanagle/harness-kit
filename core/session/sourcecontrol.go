@@ -163,7 +163,7 @@ func (m *Manager) beginGit(ctx context.Context, id string, write, remote bool) (
 		m.mu.Unlock()
 		for _, ms := range live {
 			info := ms.snapshot()
-			if info.State != StateRunning && info.State != StateStarting && info.State != StateClosing && info.State != StateSuspending {
+			if info.State != StateRunning && info.State != StateCompacting && info.State != StateStarting && info.State != StateClosing && info.State != StateSuspending {
 				continue
 			}
 			other := info.Workspace

@@ -41,7 +41,10 @@
   }
   section("Runtimes", "runtimes");
   const newBox = el("span", "actions");
-  const newRuntime = Object.assign(el("select"), { id: "new-runtime", title: "Runtime for a new session" });
+  const newRuntime = Object.assign(el("select"), {
+    id: "new-runtime",
+    title: "Runtime for a new session",
+  });
   const newBtn = Object.assign(el("button", "", "New"), { id: "new-session" });
   newBox.append(newRuntime, newBtn);
   section("Sessions", "sessions", newBox);
@@ -52,16 +55,45 @@
   const main = el("main");
   const header = el("header", "session-header");
   const titleBox = el("div");
-  titleBox.append(Object.assign(el("strong", "", "No session"), { id: "session-title" }), " ", Object.assign(el("span", "meta"), { id: "session-meta" }));
-  const renameBtn = Object.assign(el("button", "", "Rename"), { id: "rename", disabled: true, title: "Rename this session (or double-click its title)" });
-  const cancelBtn = Object.assign(el("button", "", "Cancel turn"), { id: "cancel", disabled: true });
+  titleBox.append(
+    Object.assign(el("strong", "", "No session"), { id: "session-title" }),
+    " ",
+    Object.assign(el("span", "meta"), { id: "session-meta" }),
+  );
+  const renameBtn = Object.assign(el("button", "", "Rename"), {
+    id: "rename",
+    disabled: true,
+    title: "Rename this session (or double-click its title)",
+  });
+  const cancelBtn = Object.assign(el("button", "", "Cancel turn"), {
+    id: "cancel",
+    disabled: true,
+  });
   const headerActions = el("div", "actions");
   headerActions.append(renameBtn, cancelBtn);
   header.append(titleBox, headerActions);
+  const contextPanel = Object.assign(el("div", "context-panel"), {
+    id: "context-panel",
+    hidden: true,
+  });
+  const contextCount = Object.assign(el("span"), { id: "context-count" });
+  const contextBasis = Object.assign(el("span", "meta"), { id: "context-basis" });
+  const contextStatus = Object.assign(el("span", "meta"), { id: "context-status" });
+  const compactBtn = Object.assign(el("button", "", "Compact"), {
+    id: "compact",
+    type: "button",
+    hidden: true,
+    disabled: true,
+  });
+  contextPanel.append(contextCount, contextBasis, contextStatus, compactBtn);
   const approval = Object.assign(el("div", "approval"), { id: "approval", hidden: true });
   const approvalText = el("div", "approval-text");
   approval.append(approvalText);
-  for (const [outcome, label] of [["allow", "Allow"], ["deny", "Deny"], ["abort", "Stop turn"]]) {
+  for (const [outcome, label] of [
+    ["allow", "Allow"],
+    ["deny", "Deny"],
+    ["abort", "Stop turn"],
+  ]) {
     const b = el("button", outcome === "allow" ? "primary" : "", label);
     b.dataset.outcome = outcome;
     approval.append(b);
@@ -69,43 +101,96 @@
   const transcript = Object.assign(el("div", "transcript"), { id: "transcript" });
   transcript.append(el("p", "empty", "Create a session, or pick one from the list."));
   const composer = Object.assign(el("form", "composer"), { id: "composer" });
-  const promptInput = Object.assign(el("input"), { id: "prompt", placeholder: "Message the agent…", disabled: true, autocomplete: "off" });
-  const sendBtn = Object.assign(el("button", "primary", "Send"), { id: "send", type: "submit", disabled: true });
+  const promptInput = Object.assign(el("input"), {
+    id: "prompt",
+    placeholder: "Message the agent…",
+    disabled: true,
+    autocomplete: "off",
+  });
+  const sendBtn = Object.assign(el("button", "primary", "Send"), {
+    id: "send",
+    type: "submit",
+    disabled: true,
+  });
   composer.append(promptInput, sendBtn);
   const gitPanel = Object.assign(el("details", "git-panel"), { id: "git-panel", hidden: true });
   const gitSummary = Object.assign(el("summary", "", "Source control"), { id: "git-summary" });
   const gitToolbar = el("div", "git-toolbar");
-  const gitRefresh = Object.assign(el("button", "", "Refresh"), { id: "git-refresh", type: "button" });
-  const gitHistory = Object.assign(el("button", "", "Recent commits"), { id: "git-history", type: "button" });
+  const gitRefresh = Object.assign(el("button", "", "Refresh"), {
+    id: "git-refresh",
+    type: "button",
+  });
+  const gitHistory = Object.assign(el("button", "", "Recent commits"), {
+    id: "git-history",
+    type: "button",
+  });
   const gitRoot = Object.assign(el("span", "meta mono"), { id: "git-root" });
   gitToolbar.append(gitRefresh, gitHistory, gitRoot);
   const gitMessage = Object.assign(el("p", "status"), { id: "git-message" });
   const gitFiles = Object.assign(el("ul", "git-files list"), { id: "git-files" });
   const gitBranchRow = el("div", "git-toolbar");
   const gitBranches = Object.assign(el("select"), { id: "git-branch", title: "Local branch" });
-  const gitSwitch = Object.assign(el("button", "", "Switch branch"), { id: "git-switch", type: "button" });
-  const gitNewBranch = Object.assign(el("input"), { id: "git-new-branch", placeholder: "New branch name", autocomplete: "off" });
-  const gitCreateBranch = Object.assign(el("button", "", "Create branch"), { id: "git-create-branch", type: "button" });
+  const gitSwitch = Object.assign(el("button", "", "Switch branch"), {
+    id: "git-switch",
+    type: "button",
+  });
+  const gitNewBranch = Object.assign(el("input"), {
+    id: "git-new-branch",
+    placeholder: "New branch name",
+    autocomplete: "off",
+  });
+  const gitCreateBranch = Object.assign(el("button", "", "Create branch"), {
+    id: "git-create-branch",
+    type: "button",
+  });
   gitBranchRow.append(gitBranches, gitSwitch, gitNewBranch, gitCreateBranch);
   const gitCommitForm = Object.assign(el("form", "git-toolbar"), { id: "git-commit-form" });
-  const gitCommitMessage = Object.assign(el("input"), { id: "git-commit-message", placeholder: "Commit message (staged changes only)", autocomplete: "off" });
-  const gitCommit = Object.assign(el("button", "primary", "Commit staged"), { id: "git-commit", type: "submit" });
+  const gitCommitMessage = Object.assign(el("input"), {
+    id: "git-commit-message",
+    placeholder: "Commit message (staged changes only)",
+    autocomplete: "off",
+  });
+  const gitCommit = Object.assign(el("button", "primary", "Commit staged"), {
+    id: "git-commit",
+    type: "submit",
+  });
   gitCommitForm.append(gitCommitMessage, gitCommit);
   const gitRemoteRow = el("div", "git-toolbar");
-  const gitRemote = Object.assign(el("select"), { id: "git-remote", title: "Configured Git remote" });
-  const gitRemoteBranch = Object.assign(el("input"), { id: "git-remote-branch", placeholder: "Remote branch (optional)", autocomplete: "off" });
+  const gitRemote = Object.assign(el("select"), {
+    id: "git-remote",
+    title: "Configured Git remote",
+  });
+  const gitRemoteBranch = Object.assign(el("input"), {
+    id: "git-remote-branch",
+    placeholder: "Remote branch (optional)",
+    autocomplete: "off",
+  });
   const gitUpstreamLabel = el("label", "meta git-checkbox");
   const gitUpstream = Object.assign(el("input"), { id: "git-set-upstream", type: "checkbox" });
   gitUpstreamLabel.append(gitUpstream, "Set upstream on push");
   const gitFetch = Object.assign(el("button", "", "Fetch"), { id: "git-fetch", type: "button" });
-  const gitPull = Object.assign(el("button", "", "Pull (fast-forward)"), { id: "git-pull", type: "button" });
+  const gitPull = Object.assign(el("button", "", "Pull (fast-forward)"), {
+    id: "git-pull",
+    type: "button",
+  });
   const gitPush = Object.assign(el("button", "", "Push"), { id: "git-push", type: "button" });
   gitRemoteRow.append(gitRemote, gitRemoteBranch, gitUpstreamLabel, gitFetch, gitPull, gitPush);
   const gitDiffTitle = Object.assign(el("p", "meta"), { id: "git-diff-title" });
   const gitDiff = Object.assign(el("pre", "diff-output"), { id: "git-diff" });
   const gitDiffNote = Object.assign(el("p", "status"), { id: "git-diff-note" });
-  gitPanel.append(gitSummary, gitToolbar, gitMessage, gitFiles, gitBranchRow, gitCommitForm, gitRemoteRow, gitDiffTitle, gitDiffNote, gitDiff);
-  main.append(header, approval, gitPanel, transcript, composer);
+  gitPanel.append(
+    gitSummary,
+    gitToolbar,
+    gitMessage,
+    gitFiles,
+    gitBranchRow,
+    gitCommitForm,
+    gitRemoteRow,
+    gitDiffTitle,
+    gitDiffNote,
+    gitDiff,
+  );
+  main.append(header, contextPanel, approval, gitPanel, transcript, composer);
   document.body.append(sidebar, main);
 
   // ---- state ----------------------------------------------------------------
@@ -120,6 +205,12 @@
   let opening = null; // buffers live events while loading a transcript
   let openVersion = 0;
   let lastSeq = 0;
+  let contextUsage = null;
+  let contextSeq = 0;
+  let contextRevision = 0;
+  let contextRequest = 0;
+  let canCompact = false;
+  let contextAction = null;
   let gitStatus = null;
   let gitAvailable = false;
   let gitLoading = false;
@@ -132,8 +223,80 @@
     busy = b;
     cancelBtn.disabled = !b;
     sendBtn.disabled = b || !current;
-    promptInput.disabled = !current;
+    promptInput.disabled = !current || b;
+    cancelBtn.textContent =
+      current?.state === "compacting" || contextAction ? "Cancel compaction" : "Cancel turn";
+    drawContext();
     updateGitControls();
+  }
+
+  function drawContext() {
+    contextPanel.hidden = !current || typeof hk?.context !== "function";
+    const used = contextUsage?.usedTokens;
+    const capacity = contextUsage?.windowTokens;
+    const count = (n) => (n == null ? "unknown" : n.toLocaleString());
+    const percent =
+      used != null && capacity > 0 ? ` (${Math.round((used / capacity) * 100)}%)` : "";
+    contextCount.textContent = `Context: ${count(used)} / ${count(capacity)} tokens${percent}`;
+    contextBasis.textContent = `${{ reported: "runtime reported", last_request: "last model request", unknown: "usage unavailable" }[contextUsage?.basis] || "usage unavailable"}${contextUsage?.stale ? " · stale" : ""}`;
+    compactBtn.hidden = !canCompact || typeof hk?.compact !== "function";
+    compactBtn.disabled =
+      !canCompact || busy || Boolean(contextAction) || current?.state !== "idle";
+  }
+
+  function observeContext(usage, seq) {
+    if (!usage || seq < contextSeq) return;
+    contextUsage = usage;
+    contextSeq = seq;
+    contextRevision++;
+    drawContext();
+  }
+
+  async function refreshContext() {
+    if (!current || typeof hk.context !== "function") return;
+    const id = current.sessionId;
+    const version = openVersion;
+    const request = ++contextRequest;
+    const revision = contextRevision;
+    try {
+      const info = await hk.context(id);
+      if (current?.sessionId !== id || version !== openVersion || request !== contextRequest)
+        return;
+      canCompact = info.canCompact;
+      // A cached read can race with a newer live observation.
+      if (revision === contextRevision) {
+        contextUsage = info.usage;
+        contextRevision++;
+      }
+      drawContext();
+    } catch (error) {
+      if (current?.sessionId === id && version === openVersion && request === contextRequest) {
+        canCompact = false;
+        contextStatus.textContent = String(error?.message ?? error);
+        drawContext();
+      }
+    }
+  }
+
+  async function compactContext() {
+    if (compactBtn.disabled || !current) return;
+    const action = { id: current.sessionId, version: openVersion };
+    contextAction = action;
+    contextStatus.textContent = "Compacting…";
+    setBusy(true);
+    try {
+      await hk.compact(action.id);
+      if (action.version === openVersion) contextStatus.textContent = "Compaction complete";
+    } catch (error) {
+      if (action.version === openVersion)
+        contextStatus.textContent = String(error?.message ?? error);
+    } finally {
+      if (contextAction === action) {
+        contextAction = null;
+        setBusy(Boolean(current?.activeTurnId) || current?.state === "compacting");
+        void refreshContext();
+      }
+    }
   }
 
   // ---- sidebar --------------------------------------------------------------
@@ -147,8 +310,14 @@
     newRuntime.replaceChildren();
     for (const d of runtimes) {
       const li = el("li", d.ready ? "ok" : "off");
-      li.append(el("span", `dot ${d.ready ? "on" : ""}`), el("span", "name", d.runtime), el("span", "meta", d.version || ""));
-      const auth = d.auth?.method ? `${d.auth.state} (${d.auth.method}${d.auth.plan ? ", " + d.auth.plan : ""})` : d.auth?.state;
+      li.append(
+        el("span", `dot ${d.ready ? "on" : ""}`),
+        el("span", "name", d.runtime),
+        el("span", "meta", d.version || ""),
+      );
+      const auth = d.auth?.method
+        ? `${d.auth.state} (${d.auth.method}${d.auth.plan ? ", " + d.auth.plan : ""})`
+        : d.auth?.state;
       li.title = [auth, ...(d.problems || [])].filter(Boolean).join("\n");
       rl.append(li);
       if (d.ready) newRuntime.append(new Option(d.runtime, d.runtime));
@@ -178,17 +347,36 @@
       for (const e of mcp.servers) {
         const li = el("li", e.loaded ? "" : "off");
         const top = el("div");
-        top.append(el("span", "name mono", e.name), badge(e.source), badge(e.server.type === "http" || e.server.type === "streamable-http" ? "http" : "stdio"));
+        top.append(
+          el("span", "name mono", e.name),
+          badge(e.source),
+          badge(e.server.type === "http" || e.server.type === "streamable-http" ? "http" : "stdio"),
+        );
         if (!e.loaded) top.append(badge("untrusted", "warn"));
-        li.append(top, el("div", "meta mono", e.server.url || [e.server.command, ...(e.server.args || [])].join(" ")));
+        li.append(
+          top,
+          el(
+            "div",
+            "meta mono",
+            e.server.url || [e.server.command, ...(e.server.args || [])].join(" "),
+          ),
+        );
         if (e.note) li.title = e.note;
         ml.append(li);
       }
-      if (mcp.enabled && !mcp.servers.length) ml.append(el("li", "meta", "No kit servers (harness-kit mcp add …)"));
+      if (mcp.enabled && !mcp.servers.length)
+        ml.append(el("li", "meta", "No kit servers (harness-kit mcp add …)"));
       for (const n of mcp.native || []) {
-        if (n.supported) notes.push(`${n.runtime}'s own servers: ${n.servers.length ? n.servers.join(", ") : "none"}${n.error ? " (" + n.error + ")" : ""}`);
+        if (n.supported)
+          notes.push(
+            `${n.runtime}'s own servers: ${n.servers.length ? n.servers.join(", ") : "none"}${n.error ? " (" + n.error + ")" : ""}`,
+          );
       }
-      notes.push(mcp.inheritNative ? "Runtimes also load their own MCP servers." : "Runtimes' own MCP servers are off.");
+      notes.push(
+        mcp.inheritNative
+          ? "Runtimes also load their own MCP servers."
+          : "Runtimes' own MCP servers are off.",
+      );
     }
     note.replaceChildren(...notes.map((n) => el("span", "", n)));
   }
@@ -215,11 +403,16 @@
     const remoteDisabled = writesDisabled || !(gitStatus?.remotes || []).length;
     gitFetch.disabled = gitPull.disabled = gitPush.disabled = remoteDisabled;
     gitRemote.disabled = gitRemoteBranch.disabled = gitUpstream.disabled = remoteDisabled;
-    for (const { button, write } of gitFileActions) button.disabled = write ? writesDisabled : unavailable;
+    for (const { button, write } of gitFileActions)
+      button.disabled = write ? writesDisabled : unavailable;
   }
 
-  function hasIndexChange(file) { return Boolean(file.index && ![" ", ".", "?"].includes(file.index)); }
-  function hasWorktreeChange(file) { return Boolean(file.untracked || (file.worktree && ![" ", "."].includes(file.worktree))); }
+  function hasIndexChange(file) {
+    return Boolean(file.index && ![" ", ".", "?"].includes(file.index));
+  }
+  function hasWorktreeChange(file) {
+    return Boolean(file.untracked || (file.worktree && ![" ", "."].includes(file.worktree)));
+  }
   function gitNote(text, error = false) {
     gitMessage.textContent = text;
     gitMessage.className = "status" + (error ? " error" : "");
@@ -234,7 +427,11 @@
     gitFiles.replaceChildren();
     gitBranches.replaceChildren();
     gitRemote.replaceChildren();
-    gitRoot.textContent = gitDiff.textContent = gitDiffTitle.textContent = gitDiffNote.textContent = "";
+    gitRoot.textContent =
+      gitDiff.textContent =
+      gitDiffTitle.textContent =
+      gitDiffNote.textContent =
+        "";
     gitCommitMessage.value = gitNewBranch.value = gitRemoteBranch.value = "";
     gitUpstream.checked = false;
     gitSummary.textContent = "Source control";
@@ -244,7 +441,8 @@
 
   async function refreshGit() {
     if (!current || !gitAvailable) return false;
-    const id = current.sessionId, version = ++gitVersion;
+    const id = current.sessionId,
+      version = ++gitVersion;
     gitLoading = true;
     updateGitControls();
     try {
@@ -253,17 +451,25 @@
       gitStatus = status;
       gitRoot.textContent = status.root;
       gitSummary.textContent = `Source control · ${status.branch || (status.detached ? "detached HEAD" : "unborn branch")} · ${status.files.length} changed file(s)`;
-      const upstream = status.upstream ? ` · ${status.upstream}: ${status.ahead} ahead, ${status.behind} behind` : "";
-      gitNote(`${status.unborn ? "No commits yet" : status.head?.slice(0, 10) || "Repository"}${upstream}${status.truncated ? " · File list truncated by host limits" : ""}${branches.truncated ? " · Branch list truncated" : ""}`);
+      const upstream = status.upstream
+        ? ` · ${status.upstream}: ${status.ahead} ahead, ${status.behind} behind`
+        : "";
+      gitNote(
+        `${status.unborn ? "No commits yet" : status.head?.slice(0, 10) || "Repository"}${upstream}${status.truncated ? " · File list truncated by host limits" : ""}${branches.truncated ? " · Branch list truncated" : ""}`,
+      );
       gitBranches.replaceChildren();
-      if (!status.branch) gitBranches.append(Object.assign(el("option", "", "Select a local branch"), { value: "" }));
+      if (!status.branch)
+        gitBranches.append(Object.assign(el("option", "", "Select a local branch"), { value: "" }));
       for (const branch of branches.branches.filter((b) => !b.remote)) {
         gitBranches.append(Object.assign(el("option", "", branch.name), { value: branch.name }));
       }
       gitBranches.value = status.branch || "";
       const remote = gitRemote.value;
-      gitRemote.replaceChildren(Object.assign(el("option", "", "Configured upstream"), { value: "" }));
-      for (const entry of status.remotes) gitRemote.append(Object.assign(el("option", "", entry.name), { value: entry.name }));
+      gitRemote.replaceChildren(
+        Object.assign(el("option", "", "Configured upstream"), { value: "" }),
+      );
+      for (const entry of status.remotes)
+        gitRemote.append(Object.assign(el("option", "", entry.name), { value: entry.name }));
       gitRemote.value = status.remotes.some((r) => r.name === remote) ? remote : "";
       drawGitFiles(status.files);
       return true;
@@ -290,13 +496,29 @@
     for (const file of files) {
       const row = el("li", "git-file");
       row.dataset.path = file.path;
-      row.append(el("span", "mono git-file-name", file.originalPath ? `${file.originalPath} → ${file.path}` : file.path));
-      row.append(badge(file.conflicted ? "conflict" : file.untracked ? "untracked" : `${file.index || " "}${file.worktree || " "}`));
+      row.append(
+        el(
+          "span",
+          "mono git-file-name",
+          file.originalPath ? `${file.originalPath} → ${file.path}` : file.path,
+        ),
+      );
+      row.append(
+        badge(
+          file.conflicted
+            ? "conflict"
+            : file.untracked
+              ? "untracked"
+              : `${file.index || " "}${file.worktree || " "}`,
+        ),
+      );
       const paths = [...new Set([file.originalPath, file.path].filter(Boolean))];
       const action = (name, label, write, fn) => {
         const button = Object.assign(el("button", `git-${name}`, label), { type: "button" });
         button.dataset.path = file.path;
-        button.addEventListener("click", () => { if (!button.disabled) fn(); });
+        button.addEventListener("click", () => {
+          if (!button.disabled) fn();
+        });
         gitFileActions.push({ button, write });
         row.append(button);
       };
@@ -306,7 +528,9 @@
       }
       if (hasIndexChange(file)) {
         action("view-staged", "Staged diff", false, () => showGitDiff(file.path, true));
-        action("unstage", "Unstage", true, () => runGit("Unstage", (id) => hk.gitUnstage(id, paths)));
+        action("unstage", "Unstage", true, () =>
+          runGit("Unstage", (id) => hk.gitUnstage(id, paths)),
+        );
       }
       gitFiles.append(row);
     }
@@ -314,7 +538,8 @@
 
   async function showGitDiff(path, staged) {
     if (!current || gitLoading || gitAction) return;
-    const id = current.sessionId, version = ++gitDiffVersion;
+    const id = current.sessionId,
+      version = ++gitDiffVersion;
     gitDiffTitle.textContent = `${staged ? "Staged" : "Working"} · ${path}`;
     gitDiff.textContent = "Loading…";
     gitDiffNote.textContent = "";
@@ -322,7 +547,12 @@
       const diff = await hk.gitDiff(id, { path, staged, maxBytes: 131072 });
       if (version !== gitDiffVersion || current?.sessionId !== id) return;
       gitDiff.textContent = diff.patch || "No text changes to display.";
-      gitDiffNote.textContent = [diff.truncated ? "Diff truncated by the configured size limit." : "", diff.encodingLossy ? "Some bytes could not be displayed as text." : ""].filter(Boolean).join(" ");
+      gitDiffNote.textContent = [
+        diff.truncated ? "Diff truncated by the configured size limit." : "",
+        diff.encodingLossy ? "Some bytes could not be displayed as text." : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
     } catch (error) {
       if (version !== gitDiffVersion || current?.sessionId !== id) return;
       gitDiff.textContent = "";
@@ -332,15 +562,23 @@
 
   async function showGitHistory() {
     if (!current || gitHistory.disabled) return;
-    const id = current.sessionId, version = ++gitDiffVersion;
+    const id = current.sessionId,
+      version = ++gitDiffVersion;
     gitDiffTitle.textContent = "Recent commits";
     gitDiff.textContent = "Loading…";
     gitDiffNote.textContent = "";
     try {
       const result = await hk.gitLog(id, { limit: 20 });
       if (version !== gitDiffVersion || current?.sessionId !== id) return;
-      gitDiff.textContent = result.commits.map((commit) => `${commit.id.slice(0, 10)} ${commit.subject}\n  ${commit.authorName} · ${commit.time}`).join("\n");
-      gitDiffNote.textContent = result.truncated ? "More commits are available; this view is bounded." : "";
+      gitDiff.textContent = result.commits
+        .map(
+          (commit) =>
+            `${commit.id.slice(0, 10)} ${commit.subject}\n  ${commit.authorName} · ${commit.time}`,
+        )
+        .join("\n");
+      gitDiffNote.textContent = result.truncated
+        ? "More commits are available; this view is bounded."
+        : "";
     } catch (error) {
       if (version !== gitDiffVersion || current?.sessionId !== id) return;
       gitDiff.textContent = "";
@@ -363,8 +601,13 @@
       gitDiff.textContent = gitDiffTitle.textContent = gitDiffNote.textContent = "";
       const refreshed = await refreshGit();
       if (current?.sessionId !== id) return;
-      const note = result?.commit ? `Committed ${result.commit.slice(0, 10)}.` : result?.output || `${label} complete.`;
-      gitNote(`${note}${result?.truncated ? " (Output truncated.)" : ""}${refreshed ? "" : " Repository refresh failed: " + gitMessage.textContent}`, !refreshed);
+      const note = result?.commit
+        ? `Committed ${result.commit.slice(0, 10)}.`
+        : result?.output || `${label} complete.`;
+      gitNote(
+        `${note}${result?.truncated ? " (Output truncated.)" : ""}${refreshed ? "" : " Repository refresh failed: " + gitMessage.textContent}`,
+        !refreshed,
+      );
     } catch (error) {
       if (current?.sessionId === id) gitNote(String(error?.message ?? error), true);
     } finally {
@@ -383,8 +626,19 @@
   function updatedInfo(info, ev) {
     // These are complete mutable fields, so omitted fields clear old state.
     const d = ev.data;
-    return { ...info, ...d, pinned: Boolean(d.pinned), archived: Boolean(d.archived), forkPending: Boolean(d.forkPending), metadata: d.metadata, activeTurnId: d.activeTurnId, runtimeSessionId: d.runtimeSessionId,
-      lastStatus: d.lastStatus, error: d.error, lastSeq: ev.seq };
+    return {
+      ...info,
+      ...d,
+      pinned: Boolean(d.pinned),
+      archived: Boolean(d.archived),
+      forkPending: Boolean(d.forkPending),
+      metadata: d.metadata,
+      activeTurnId: d.activeTurnId,
+      runtimeSessionId: d.runtimeSessionId,
+      lastStatus: d.lastStatus,
+      error: d.error,
+      lastSeq: ev.seq,
+    };
   }
 
   function updateSession(ev) {
@@ -395,22 +649,33 @@
     if (info && ev.seq > info.lastSeq) sessions.set(ev.sessionId, updatedInfo(info, ev));
     if (current && current.sessionId === ev.sessionId && ev.seq > current.lastSeq) {
       current = updatedInfo(current, ev);
+      observeContext(ev.data.context, ev.seq);
       showSessionState();
+      if (!opening && current.state === "idle") void refreshContext();
     }
     drawSessions();
   }
 
   function drawSessions() {
-    const list = [...sessions.values()].sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+    const list = [...sessions.values()].sort((a, b) =>
+      (b.updatedAt || "").localeCompare(a.updatedAt || ""),
+    );
     const ul = $("#sessions");
     ul.replaceChildren();
     if (!list.length) ul.append(el("li", "meta", "No sessions yet"));
     for (const s of list) {
-      const li = el("li", "session" + (current && s.sessionId === current.sessionId ? " active" : ""));
+      const li = el(
+        "li",
+        "session" + (current && s.sessionId === current.sessionId ? " active" : ""),
+      );
       li.dataset.id = s.sessionId;
       li.append(
         el("div", "name", s.title || "Untitled session"),
-        el("div", "meta", `${s.runtime} · ${s.state} · ${s.turns || 0} turn${s.turns === 1 ? "" : "s"} · ${ago(s.updatedAt)}${s.lastStatus && s.lastStatus !== "completed" ? " · " + s.lastStatus : ""}`),
+        el(
+          "div",
+          "meta",
+          `${s.runtime} · ${s.state} · ${s.turns || 0} turn${s.turns === 1 ? "" : "s"} · ${ago(s.updatedAt)}${s.lastStatus && s.lastStatus !== "completed" ? " · " + s.lastStatus : ""}`,
+        ),
       );
       li.title = `${s.sessionId}\n${s.runtimeSessionId || ""}\n${s.cwd || ""}`;
       li.addEventListener("click", () => openSession(s.sessionId).catch(showError));
@@ -428,7 +693,9 @@
   function showSessionState() {
     $("#session-title").textContent = current.title || "New session";
     $("#session-meta").textContent = `${current.runtime} · ${current.sessionId} · ${current.state}`;
-    setBusy(Boolean(current.activeTurnId));
+    setBusy(
+      Boolean(current.activeTurnId) || current.state === "compacting" || Boolean(contextAction),
+    );
     if (!current.activeTurnId) {
       pending = null;
       approval.hidden = true;
@@ -437,6 +704,12 @@
 
   function showSession(info) {
     current = rememberSession(info);
+    contextUsage = current.context || null;
+    contextSeq = current.context ? current.lastSeq : 0;
+    contextRevision++;
+    canCompact = false;
+    contextAction = null;
+    contextStatus.textContent = "";
     lastSeq = 0;
     pending = null;
     approval.hidden = true;
@@ -457,7 +730,10 @@
     const version = ++openVersion;
     opening = null;
     const info = await hk.createSession(runtime);
-    if (version === openVersion) showSession(info);
+    if (version === openVersion) {
+      showSession(info);
+      void refreshContext();
+    }
   }
 
   async function openSession(id) {
@@ -472,17 +748,27 @@
       let history = Array.isArray(result) ? result : result.events;
       // A gap can arrive while the first read is in flight. Read again if
       // it extends beyond that snapshot; normal overlapping events dedupe below.
-      while (load.events.some((ev) => ev.type === "stream.gap" && ev.data.toSeq > (history.at(-1)?.seq || 0))) {
+      while (
+        load.events.some(
+          (ev) => ev.type === "stream.gap" && ev.data.toSeq > (history.at(-1)?.seq || 0),
+        )
+      ) {
         load.events = load.events.filter((ev) => ev.type !== "stream.gap");
         result = await hk.history(id);
         if (load.version !== openVersion) return;
         history = Array.isArray(result) ? result : result.events;
       }
-      const events = [...history, ...load.events].filter((ev) => ev.type !== "stream.gap").sort((a, b) => a.seq - b.seq);
-      const turns = new Set(events.filter((ev) => ev.type === "turn.started").map((ev) => ev.turnId));
+      const events = [...history, ...load.events]
+        .filter((ev) => ev.type !== "stream.gap")
+        .sort((a, b) => a.seq - b.seq);
+      const turns = new Set(
+        events.filter((ev) => ev.type === "turn.started").map((ev) => ev.turnId),
+      );
       const missing = Math.max(0, (current.turns || 0) - turns.size);
       if (missing) {
-        transcript.append(el("p", "status", `${missing} earlier turn(s) have no saved transcript in Harness Kit.`));
+        transcript.append(
+          el("p", "status", `${missing} earlier turn(s) have no saved transcript in Harness Kit.`),
+        );
       } else if (result.truncated) {
         transcript.append(el("p", "status", "Some earlier events are unavailable."));
       }
@@ -490,6 +776,7 @@
       // The fetched snapshot is authoritative for older lifecycle/approval
       // events (e.g. an interrupted session left by a process crash).
       showSessionState();
+      void refreshContext();
     } finally {
       if (opening === load) opening = null;
     }
@@ -508,7 +795,12 @@
     const id = current.sessionId;
     const was = current.title || "";
     const titleEl = $("#session-title");
-    const input = Object.assign(el("input", "rename-input"), { id: "rename-input", value: was, maxLength: 200, placeholder: "Session title" });
+    const input = Object.assign(el("input", "rename-input"), {
+      id: "rename-input",
+      value: was,
+      maxLength: 200,
+      placeholder: "Session title",
+    });
     titleEl.hidden = true;
     titleEl.after(input);
     input.focus();
@@ -552,13 +844,22 @@
     const itemKey = `${ev.turnId || ""}:${d.itemId || ""}`;
     const callKey = `${ev.turnId || ""}:${d.callId || ""}`;
     switch (ev.type) {
+      case "context.usage":
+        observeContext(d, ev.seq);
+        break;
+      case "context.compaction":
+        if (d.after) observeContext(d.after, ev.seq);
+        contextStatus.textContent =
+          d.status === "started" ? "Compacting…" : d.error?.message || `Compaction ${d.status}`;
+        break;
       case "session.updated":
         updateSession(ev);
         break;
       case "turn.started": {
         const prompt = el("div", "bubble user", d.text);
         for (const part of Array.isArray(d.input) ? d.input : []) {
-          if (part.type === "image") prompt.append(el("div", "attachment", `Image: ${part.path || "attachment"}`));
+          if (part.type === "image")
+            prompt.append(el("div", "attachment", `Image: ${part.path || "attachment"}`));
         }
         transcript.append(prompt);
         if (!current.title && d.text) {
@@ -594,7 +895,8 @@
         row.classList.add(d.status);
         row.append(el("span", "badge " + (d.status === "completed" ? "ok" : "warn"), d.status));
         const out = d.error || d.output;
-        if (out) row.append(el("pre", "tool-output", out.length > 600 ? out.slice(0, 600) + "…" : out));
+        if (out)
+          row.append(el("pre", "tool-output", out.length > 600 ? out.slice(0, 600) + "…" : out));
         break;
       }
       case "workspace.diff": {
@@ -603,9 +905,14 @@
         if (d.error || !d.complete) {
           changes.append(el("p", "status error", d.error || "The change snapshot is incomplete."));
         }
-        if (d.truncated) changes.append(el("p", "status", "Diff truncated by the configured size limit."));
-        if (d.encodingLossy) changes.append(el("p", "status", "Some file content could not be displayed as text."));
-        for (const [label, patch] of [["Working files", d.workingTree], ["Staged changes", d.index]]) {
+        if (d.truncated)
+          changes.append(el("p", "status", "Diff truncated by the configured size limit."));
+        if (d.encodingLossy)
+          changes.append(el("p", "status", "Some file content could not be displayed as text."));
+        for (const [label, patch] of [
+          ["Working files", d.workingTree],
+          ["Staged changes", d.index],
+        ]) {
           if (typeof patch !== "string" || !patch) continue;
           changes.append(el("p", "meta", label), el("pre", "diff-output", patch));
         }
@@ -617,7 +924,10 @@
       }
       case "approval.requested":
         pending = d;
-        approvalText.replaceChildren(el("strong", "", d.title), el("span", "meta", d.reason ? " " + d.reason : ""));
+        approvalText.replaceChildren(
+          el("strong", "", d.title),
+          el("span", "meta", d.reason ? " " + d.reason : ""),
+        );
         approval.hidden = false;
         break;
       case "approval.resolved":
@@ -625,10 +935,21 @@
           pending = null;
           approval.hidden = true;
         }
-        transcript.append(el("p", "status", `${d.decision.outcome === "allow" || d.decision.outcome === "allow_session" ? "✓ approved" : "✗ " + d.decision.outcome}${d.source !== "host" ? " (" + d.source + ")" : ""}`));
+        transcript.append(
+          el(
+            "p",
+            "status",
+            `${d.decision.outcome === "allow" || d.decision.outcome === "allow_session" ? "✓ approved" : "✗ " + d.decision.outcome}${d.source !== "host" ? " (" + d.source + ")" : ""}`,
+          ),
+        );
         break;
       case "runtime.status":
-        if (d.status === "warning" || d.status === "mcp" || d.status === "permission_denied" || d.status === "retrying") {
+        if (
+          d.status === "warning" ||
+          d.status === "mcp" ||
+          d.status === "permission_denied" ||
+          d.status === "retrying"
+        ) {
           transcript.append(el("p", "status", `${d.status}: ${d.message || ""}`));
         }
         break;
@@ -637,7 +958,8 @@
         break;
       case "turn.completed": {
         let line = d.status;
-        if (d.usage) line += ` · ${d.usage.inputTokens || 0} in / ${d.usage.outputTokens || 0} out tokens`;
+        if (d.usage)
+          line += ` · ${d.usage.inputTokens || 0} in / ${d.usage.outputTokens || 0} out tokens`;
         if (d.usage?.costUsd != null) line += ` · ~$${d.usage.costUsd.toFixed(4)}`;
         if (d.error) line += ` · ${d.error.message}`;
         transcript.append(el("p", "status turn-end " + d.status, line));
@@ -654,29 +976,66 @@
   }
 
   // ---- wiring ---------------------------------------------------------------
-  gitRefresh.addEventListener("click", () => { if (!gitRefresh.disabled) void refreshGit(); });
+  compactBtn.addEventListener("click", () => void compactContext());
+  gitRefresh.addEventListener("click", () => {
+    if (!gitRefresh.disabled) void refreshGit();
+  });
   gitHistory.addEventListener("click", () => void showGitHistory());
   gitBranches.addEventListener("change", updateGitControls);
   gitSwitch.addEventListener("click", () => {
-    if (!gitSwitch.disabled && gitBranches.value) void runGit("Switch branch", (id) => hk.gitCheckout(id, { branch: gitBranches.value }));
+    if (!gitSwitch.disabled && gitBranches.value)
+      void runGit("Switch branch", (id) => hk.gitCheckout(id, { branch: gitBranches.value }));
   });
   gitCreateBranch.addEventListener("click", () => {
     if (gitCreateBranch.disabled) return;
     const branch = gitNewBranch.value.trim();
-    if (!branch) { gitNote("Enter a branch name.", true); return; }
-    void runGit("Create branch", (id) => hk.gitCheckout(id, { branch, create: true }), () => { if (gitNewBranch.value.trim() === branch) gitNewBranch.value = ""; });
+    if (!branch) {
+      gitNote("Enter a branch name.", true);
+      return;
+    }
+    void runGit(
+      "Create branch",
+      (id) => hk.gitCheckout(id, { branch, create: true }),
+      () => {
+        if (gitNewBranch.value.trim() === branch) gitNewBranch.value = "";
+      },
+    );
   });
   gitCommitForm.addEventListener("submit", (event) => {
     event.preventDefault();
     if (gitCommit.disabled) return;
     const message = gitCommitMessage.value;
-    if (!message.trim()) { gitNote("Enter a commit message.", true); return; }
-    void runGit("Commit", (id) => hk.gitCommit(id, message), () => { if (gitCommitMessage.value === message) gitCommitMessage.value = ""; });
+    if (!message.trim()) {
+      gitNote("Enter a commit message.", true);
+      return;
+    }
+    void runGit(
+      "Commit",
+      (id) => hk.gitCommit(id, message),
+      () => {
+        if (gitCommitMessage.value === message) gitCommitMessage.value = "";
+      },
+    );
   });
-  const remoteOptions = () => ({ ...(gitRemote.value ? { remote: gitRemote.value } : {}), ...(gitRemoteBranch.value.trim() ? { branch: gitRemoteBranch.value.trim() } : {}) });
-  gitFetch.addEventListener("click", () => { if (!gitFetch.disabled) void runGit("Fetch", (id) => hk.gitFetch(id, remoteOptions())); });
-  gitPull.addEventListener("click", () => { if (!gitPull.disabled) void runGit("Pull", (id) => hk.gitPull(id, remoteOptions())); });
-  gitPush.addEventListener("click", () => { if (!gitPush.disabled) void runGit("Push", (id) => hk.gitPush(id, { ...remoteOptions(), ...(gitUpstream.checked ? { setUpstream: true } : {}) })); });
+  const remoteOptions = () => ({
+    ...(gitRemote.value ? { remote: gitRemote.value } : {}),
+    ...(gitRemoteBranch.value.trim() ? { branch: gitRemoteBranch.value.trim() } : {}),
+  });
+  gitFetch.addEventListener("click", () => {
+    if (!gitFetch.disabled) void runGit("Fetch", (id) => hk.gitFetch(id, remoteOptions()));
+  });
+  gitPull.addEventListener("click", () => {
+    if (!gitPull.disabled) void runGit("Pull", (id) => hk.gitPull(id, remoteOptions()));
+  });
+  gitPush.addEventListener("click", () => {
+    if (!gitPush.disabled)
+      void runGit("Push", (id) =>
+        hk.gitPush(id, {
+          ...remoteOptions(),
+          ...(gitUpstream.checked ? { setUpstream: true } : {}),
+        }),
+      );
+  });
   newBtn.addEventListener("click", () => newSession().catch(showError));
   renameBtn.addEventListener("click", startRename);
   $("#session-title").addEventListener("dblclick", startRename);
@@ -693,7 +1052,10 @@
       showError(err);
     }
   });
-  cancelBtn.addEventListener("click", () => current && hk.cancel(current.sessionId).catch(showError));
+  cancelBtn.addEventListener(
+    "click",
+    () => current && hk.cancel(current.sessionId).catch(showError),
+  );
   approval.addEventListener("click", (e) => {
     const outcome = e.target?.dataset?.outcome;
     if (!outcome || !pending) return;
@@ -702,7 +1064,8 @@
 
   async function init() {
     // The host may still be setting up (wails-bridge.js is a module).
-    for (let i = 0; i < 250 && !window.harnessKitReady && !window.harnessKit; i++) await new Promise((r) => setTimeout(r, 20));
+    for (let i = 0; i < 250 && !window.harnessKitReady && !window.harnessKit; i++)
+      await new Promise((r) => setTimeout(r, 20));
     hk = await (window.harnessKitReady || Promise.resolve(window.harnessKit));
     if (!hk) throw new Error("window.harnessKit is not available");
     hk.onEvent((ev) => {
@@ -717,7 +1080,10 @@
         openSession(ev.sessionId).catch(showError);
       } else {
         renderOrdered(ev);
-        if (ev.type === "turn.completed") void refreshGit();
+        if (ev.type === "turn.completed") {
+          void refreshGit();
+          void refreshContext();
+        }
       }
     });
     await Promise.all([refreshOverview(), refreshSessions()]);

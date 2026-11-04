@@ -6,6 +6,7 @@ import (
 	"github.com/tomanagle/harness-kit/core/agent"
 	"github.com/tomanagle/harness-kit/core/config"
 	"github.com/tomanagle/harness-kit/core/event"
+	"github.com/tomanagle/harness-kit/core/logging"
 	"github.com/tomanagle/harness-kit/core/mcp"
 	"github.com/tomanagle/harness-kit/core/permission"
 	"github.com/tomanagle/harness-kit/core/rpc/protocol"
@@ -44,11 +45,15 @@ func methods() []methodSpec {
 		method[protocol.SettingsGetParams, settings.Snapshot](protocol.MethodSettingsGet),
 		method[settings.ConfigureParams, settings.Snapshot](protocol.MethodSettingsConfigure),
 		method[any, session.ResourceStats](protocol.MethodSettingsStats),
+		method[protocol.Empty, protocol.Empty](protocol.MethodLogsSubscribe),
+		method[protocol.Empty, protocol.Empty](protocol.MethodLogsUnsubscribe),
 		method[any, protocol.RuntimeListResult](protocol.MethodRuntimeList),
 		method[protocol.RuntimeDiscoverParams, protocol.RuntimeDiscoverResult](protocol.MethodRuntimeDiscover),
 		method[protocol.RuntimeSessionsParams, protocol.RuntimeSessionsResult](protocol.MethodRuntimeSessions),
 		method[protocol.SessionCreateParams, protocol.SessionResult](protocol.MethodSessionCreate),
 		method[protocol.SessionIDParams, protocol.SessionResult](protocol.MethodSessionGet),
+		method[protocol.SessionIDParams, session.ContextInfo](protocol.MethodSessionContext),
+		method[protocol.SessionIDParams, session.ContextInfo](protocol.MethodSessionCompact),
 		method[protocol.SessionListParams, protocol.SessionListResult](protocol.MethodSessionList),
 		method[protocol.SessionPromptParams, protocol.SessionPromptResult](protocol.MethodSessionPrompt),
 		method[protocol.SessionIDParams, protocol.Empty](protocol.MethodSessionCancel),
@@ -80,6 +85,10 @@ func methods() []methodSpec {
 // Fields and their JSON names are always read from the server's real types.
 func publicNames() map[reflect.Type]string {
 	return map[reflect.Type]string{
+		reflect.TypeFor[logging.Record]():               "LogRecord",
+		reflect.TypeFor[logging.Notification]():         "LogNotification",
+		reflect.TypeFor[logging.Source]():               "LogSource",
+		reflect.TypeFor[logging.Gap]():                  "LogGap",
 		reflect.TypeFor[workspace.FileStatus]():         "GitFileStatus",
 		reflect.TypeFor[workspace.Remote]():             "GitRemote",
 		reflect.TypeFor[workspace.RepositoryStatus]():   "GitStatus",
@@ -102,6 +111,7 @@ func publicNames() map[reflect.Type]string {
 		reflect.TypeFor[config.Patch]():                 "ConfigPatch",
 		reflect.TypeFor[config.Support]():               "ConfigurationSupport",
 		reflect.TypeFor[session.Info]():                 "SessionInfo",
+		reflect.TypeFor[session.ContextInfo]():          "SessionContext",
 		reflect.TypeFor[session.State]():                "SessionState",
 		reflect.TypeFor[session.ListOptions]():          "ListSessionsOptions",
 		reflect.TypeFor[session.ForkParams]():           "ForkSessionOptions",

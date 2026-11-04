@@ -251,6 +251,54 @@ func fakeCodex() {
 			turnID := fmt.Sprintf("turn_%d", turnN)
 			reply(map[string]any{"turn": map[string]any{"id": turnID, "status": "inProgress", "items": []any{}}})
 			go runTurn(p.ThreadID, turnID, p.Input[0].Text)
+		case "thread/compact/start":
+			mode := os.Getenv("HK_FAKE_CODEX_COMPACT")
+			if mode == "unsupported" {
+				send(map[string]any{"id": *msg.ID, "error": map[string]any{"code": -32601, "message": "unknown thread/compact/start"}})
+				continue
+			}
+			var p struct{ ThreadID string }
+			json.Unmarshal(msg.Params, &p)
+			turnN++
+			turnID := fmt.Sprintf("compact_%d", turnN)
+			runCompact := func() {
+				if mode == "delayed-start" {
+					time.Sleep(100 * time.Millisecond)
+				}
+				notify("turn/started", map[string]any{"threadId": p.ThreadID, "turn": map[string]any{"id": turnID, "status": "inProgress"}})
+				notify("item/started", map[string]any{"threadId": p.ThreadID, "turnId": turnID, "item": map[string]any{"id": "compact-item", "type": "contextCompaction"}})
+				status := "completed"
+				if mode == "slow" || mode == "delayed-start" {
+					select {
+					case <-interrupted:
+						status = "interrupted"
+					case <-time.After(10 * time.Second):
+						status = "failed"
+					}
+				}
+				if mode == "fail" {
+					status = "failed"
+				}
+				if status == "completed" {
+					notify("thread/tokenUsage/updated", map[string]any{"threadId": p.ThreadID, "turnId": turnID, "tokenUsage": map[string]any{
+						"total": map[string]any{"inputTokens": 9000, "outputTokens": 2000, "totalTokens": 11000},
+						"last":  map[string]any{"inputTokens": 250, "outputTokens": 50, "totalTokens": 300}, "modelContextWindow": 200000,
+					}})
+					notify("item/completed", map[string]any{"threadId": p.ThreadID, "turnId": turnID, "item": map[string]any{"id": "compact-item", "type": "contextCompaction"}})
+				}
+				turn := map[string]any{"id": turnID, "status": status}
+				if status == "failed" {
+					turn["error"] = map[string]any{"message": "compaction failed"}
+				}
+				notify("turn/completed", map[string]any{"threadId": p.ThreadID, "turn": turn})
+			}
+			if mode == "before-ack" {
+				runCompact()
+				reply(map[string]any{})
+			} else {
+				reply(map[string]any{})
+				go runCompact()
+			}
 		case "config/read":
 			cfg := map[string]any{"mcp_servers": map[string]any{"native_a": map[string]any{"command": "a"}, "clash": map[string]any{"command": "c"}}}
 			if os.Getenv("HK_FAKE_CODEX_NO_DEFAULTS") == "" {

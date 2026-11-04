@@ -88,9 +88,10 @@ func (m *Manager) Configure(ctx context.Context, id string, patch agent.ConfigPa
 }
 
 type sessionChanges struct {
-	workspace *workspace.Settings
-	pin       *bool
-	budget    *config.BudgetLimits
+	compaction *config.CompactionSettings
+	workspace  *workspace.Settings
+	pin        *bool
+	budget     *config.BudgetLimits
 }
 
 func (m *Manager) configureLocked(ctx context.Context, id string, patch agent.ConfigPatch, changes sessionChanges) (Info, error) {
@@ -116,6 +117,11 @@ func (m *Manager) configureLocked(ctx context.Context, id string, patch agent.Co
 	}
 	if changes.budget != nil {
 		if err := validateBudgetPolicy(rt, *changes.budget); err != nil {
+			return Info{}, err
+		}
+	}
+	if changes.compaction != nil {
+		if err := validateCompaction(rt, *changes.compaction); err != nil {
 			return Info{}, err
 		}
 	}
@@ -159,13 +165,21 @@ func (m *Manager) configureLocked(ctx context.Context, id string, patch agent.Co
 		}
 	}
 	ms.mu.Lock()
-	if reflect.DeepEqual(base, next) && (pin == nil || *pin == ms.info.Pinned) && (changes.budget == nil || reflect.DeepEqual(*changes.budget, ms.info.Budget)) && (changes.workspace == nil || *changes.workspace == workspacePolicy(ms.info.WorkspaceSettings)) {
+	if reflect.DeepEqual(base, next) && (changes.compaction == nil || reflect.DeepEqual(*changes.compaction, compactionPolicy(ms.info.Compaction))) && (pin == nil || *pin == ms.info.Pinned) && (changes.budget == nil || reflect.DeepEqual(*changes.budget, ms.info.Budget)) && (changes.workspace == nil || *changes.workspace == workspacePolicy(ms.info.WorkspaceSettings)) {
 		ms.mu.Unlock()
 		return ms.snapshot(), nil
 	}
 	oldCfg, oldInfo := ms.cfg, ms.info
 	ms.info.SettingsRevision = max(uint64(1), ms.info.SettingsRevision) + 1
 	ms.cfg = candidate
+	if changes.compaction != nil {
+		ms.info.Compaction = changes.compaction.Clone()
+	}
+	if base.Model != next.Model && ms.info.Context != nil {
+		v := ms.info.Context.Clone()
+		v.Stale = true
+		ms.info.Context = &v
+	}
 	if changes.workspace != nil {
 		ms.info.WorkspaceSettings = *changes.workspace
 	}

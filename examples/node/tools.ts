@@ -14,9 +14,13 @@ import { createHarnessKit } from "../../packages/client-ts/src/index.ts";
 import { stdio } from "../../packages/client-ts/src/node.ts";
 
 const runtime = process.argv[2] ?? "fake";
-const bin = process.env.HARNESS_KIT_BIN ?? new URL("../../core/bin/harness-kit", import.meta.url).pathname;
+const bin =
+  process.env.HARNESS_KIT_BIN ?? new URL("../../core/bin/harness-kit", import.meta.url).pathname;
 const kit = await createHarnessKit({
-  transport: stdio({ command: bin, args: ["serve", "--fake-runtime", "--store", "memory", "--log-level", "warn"] }),
+  transport: stdio({
+    command: bin,
+    args: ["serve", "--fake-runtime", "--store", "memory", "--log-level", "warn"],
+  }),
 });
 const rl = createInterface({ input: process.stdin, output: process.stderr });
 
@@ -25,7 +29,11 @@ await kit.tools.register([
   {
     name: "order_status",
     description: "Look up the status of an order by ID",
-    inputSchema: { type: "object", properties: { id: { type: "string", description: "Order ID, e.g. A7" } }, required: ["id"] },
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "Order ID, e.g. A7" } },
+      required: ["id"],
+    },
     readOnly: true,
     handler: ({ id }: { id: string }) => {
       console.error(`  [handler] order_status(${id})`);
@@ -70,7 +78,10 @@ try {
         break;
       case "approval.requested": {
         const a = await rl.question(`⚠ ${ev.data.title} - allow? [y/N] `);
-        await kit.approvals.respond(ev.data.approvalId, a.trim().toLowerCase() === "y" ? "allow" : "deny");
+        await kit.approvals.respond(
+          ev.data.approvalId,
+          a.trim().toLowerCase() === "y" ? "allow" : "deny",
+        );
         break;
       }
       case "message.delta":

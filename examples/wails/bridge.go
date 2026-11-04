@@ -27,6 +27,7 @@ var allowed = map[string]bool{
 	"initialize": true, "shutdown": true,
 	"runtime.list": true, "runtime.discover": true, "runtime.sessions": true,
 	"session.create": true, "session.get": true, "session.list": true, "session.restore": true, "session.rename": true, "session.configure": true,
+	"session.context": true, "session.compact": true,
 	"session.prompt": true, "session.cancel": true, "session.close": true, "session.events": true,
 	"approval.respond": true, "approval.list": true,
 	"tools.register": true, "tools.unregister": true, "tools.list": true,

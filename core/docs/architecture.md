@@ -6,6 +6,8 @@ native, RPC and WebAssembly hosts share one core, and the trade-offs behind
 each decision. The protocol is specified in [protocol.md](protocol.md);
 runtime integrations and their usage policies are in
 [runtimes.md](runtimes.md).
+The reviewed replacement boundaries and dependency-injection contracts are
+documented in [Dependencies](dependencies.md).
 
 This document covers the standalone SDK: Go packages and local runtime support
 in `core/`, with clients in root `packages/`. Source paths below are relative to
@@ -30,13 +32,13 @@ The proposal lists runtime registry, tools, context manager, sessions,
 permissions and events as equal primitives. They are not equally
 applicable:
 
-| Primitive | Delegated runtime (Codex, Claude Code) | Your own agent loop |
-| --- | --- | --- |
-| Sessions, events, permissions | yes | yes |
-| Runtime registry | yes | n/a |
-| Tool registry | only via MCP (see 1.2) | yes |
-| Context manager | **no**: the runtime owns its context window | yes |
-| ModelProvider | **no**: the runtime owns model access | yes |
+| Primitive                     | Delegated runtime (Codex, Claude Code)      | Your own agent loop |
+| ----------------------------- | ------------------------------------------- | ------------------- |
+| Sessions, events, permissions | yes                                         | yes                 |
+| Runtime registry              | yes                                         | n/a                 |
+| Tool registry                 | only via MCP (see 1.2)                      | yes                 |
+| Context manager               | **no**: the runtime owns its context window | yes                 |
+| ModelProvider                 | **no**: the runtime owns model access       | yes                 |
 
 A context manager cannot compact a Codex conversation, and a tool registry
 cannot inject a Go function into Claude Code's tool loop directly. Harness
@@ -92,7 +94,7 @@ The `AgentRuntime` abstraction therefore lives in package **`agent`**
 ### 1.6 What WebAssembly can and cannot do
 
 Browsers and JavaScript hosts cannot spawn processes, so the Codex and
-Claude adapters can never run in WebAssembly. What *can* be portable is
+Claude adapters can never run in WebAssembly. What _can_ be portable is
 everything else: events, permissions, sessions, the protocol server, and
 runtimes whose transport is supplied by the JS host. The design enforces
 this today. The core packages never import `os/exec` or `process`, and
@@ -127,14 +129,14 @@ ordering, replay and cancellation are specified in
 
 ### 1.9 Prior art and reuse
 
-| Project | Decision |
-| --- | --- |
-| [Agent Client Protocol](https://agentclientprotocol.com) (ACP, JSON-RPC over stdio, editor ↔ agent) | Planned as a **generic runtime adapter**, so any ACP agent becomes a Harness Kit runtime. Not adopted as the sidecar protocol: ACP's client serves the agent (filesystem, terminal), and it has no runtime discovery, registry or event replay. |
-| Codex TypeScript SDK, Claude Agent SDK (TS/Python) | Not usable from Go. Harness Kit drives the documented interfaces underneath them: the Codex app-server and `claude -p` stream-json. Anthropic's Agent SDK docs name the CLI as the route for other languages. |
-| Official MCP Go SDK | To be used for MCP client support and for serving tools to runtimes. |
-| `google/jsonschema-go` | Candidate for tool schema inference and validation. |
-| `sourcegraph/jsonrpc2`, `vscode-jsonrpc` | Not used. NDJSON JSON-RPC is about 400 lines, keeps the core dependency-free, and matches the framing both runtimes use. `vscode-jsonrpc` uses LSP `Content-Length` framing. |
-| Terminal scrapers (PTY wrappers around interactive CLIs), reading `~/.codex/auth.json` or the Claude keychain, spoofing a CLI's client identity | Rejected: unofficial and fragile, and in the credential cases a policy violation. |
+| Project                                                                                                                                         | Decision                                                                                                                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Agent Client Protocol](https://agentclientprotocol.com) (ACP, JSON-RPC over stdio, editor ↔ agent)                                             | Planned as a **generic runtime adapter**, so any ACP agent becomes a Harness Kit runtime. Not adopted as the sidecar protocol: ACP's client serves the agent (filesystem, terminal), and it has no runtime discovery, registry or event replay. |
+| Codex TypeScript SDK, Claude Agent SDK (TS/Python)                                                                                              | Not usable from Go. Harness Kit drives the documented interfaces underneath them: the Codex app-server and `claude -p` stream-json. Anthropic's Agent SDK docs name the CLI as the route for other languages.                                   |
+| Official MCP Go SDK                                                                                                                             | To be used for MCP client support and for serving tools to runtimes.                                                                                                                                                                            |
+| `google/jsonschema-go`                                                                                                                          | Candidate for tool schema inference and validation.                                                                                                                                                                                             |
+| `sourcegraph/jsonrpc2`, `vscode-jsonrpc`                                                                                                        | Not used. NDJSON JSON-RPC is about 400 lines, keeps the core dependency-free, and matches the framing both runtimes use. `vscode-jsonrpc` uses LSP `Content-Length` framing.                                                                    |
+| Terminal scrapers (PTY wrappers around interactive CLIs), reading `~/.codex/auth.json` or the Claude keychain, spoofing a CLI's client identity | Rejected: unofficial and fragile, and in the credential cases a policy violation.                                                                                                                                                               |
 
 ## 2. Architecture
 
@@ -168,29 +170,29 @@ dependencies.
 
 ### 2.1 Packages
 
-| Package | Role |
-| --- | --- |
-| `config` | explicit settings, patches, inheritance and setting-lifetime capabilities |
-| `agent` | `Runtime`, `Session`, `Handler` interfaces; `Registry`; `Discovery`; `DecodeOptions`; the `Guarded` safety hook |
-| `event` | `Event` envelope, typed payloads, per-session `Log` (sequence numbers, replay), non-blocking `Bus` with gap markers |
-| `permission` | `Request`/`Decision` vocabulary, `Policy` (`Rules`, `Chain`), `Broker` that parks requests until resolved |
-| `session` | `Manager`: create/prompt/cancel/close, `Stream` iterator, approval routing, `Store` (`MemoryStore`, `FileStore`), `ToolServer` hook |
-| `mcp` | Portable MCP server config: layers, merge, `${VAR}` expansion, project trust ([mcp.md](mcp.md)) |
-| `tools` | Host tool registry: schemas, validation, execution ([tools.md](tools.md)) |
-| `toolhost` | Serves the registry (and Claude Code permission prompts) to runtimes as MCP over a private Unix socket |
-| `internal/process` | Private native implementation: binary lookup incl. GUI-app install dirs, process groups, SIGINT then kill, `Tail` |
-| `rpc/protocol` | Wire types, method names, error codes, protocol version |
-| `rpc/server` | Serves a `session.Manager` over any `io.Reader`/`io.Writer` |
-| `internal/rpcclient` | Private CLI client using core-domain types |
-| `runtimes/codex`, `runtimes/claude`, `runtimes/acp`, `runtimes/fake` | Adapters |
-| `model`, `model/contextwindow` | Portable raw inference contract and caller-owned context management |
-| `internal/budget` | Private observed-usage accounting; public policy is `config.BudgetLimits`, public usage and exceedance payloads live in `event` |
-| `workspace`, `workspace/git` | Portable workspace contract and optional native Git worktree/diff backend |
-| `providers/openai`, `providers/anthropic` | Separate modules using official provider SDKs |
-| `cmd/harness-kit` | The sidecar binary |
-| `../packages/client-ts` (repository-root clients) | `@tomanagle/harness-kit` (browser-safe) and `@tomanagle/harness-kit/node` (stdio transport) |
-| `../packages/client-go` | Standalone Go sidecar client; generated wire types and methods, standard-library transport |
-| `cmd/protocolgen`, `../protocol` | Extract the server contract into JSON Schema and generate both client contracts; CI rejects stale output |
+| Package                                                              | Role                                                                                                                                |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `config`                                                             | explicit settings, patches, inheritance and setting-lifetime capabilities                                                           |
+| `agent`                                                              | `Runtime`, `Session`, `Handler` interfaces; `Registry`; `Discovery`; `DecodeOptions`; the `Guarded` safety hook                     |
+| `event`                                                              | `Event` envelope, typed payloads, per-session `Log` (sequence numbers, replay), non-blocking `Bus` with gap markers                 |
+| `permission`                                                         | `Request`/`Decision` vocabulary, `Policy` (`Rules`, `Chain`), `Broker` that parks requests until resolved                           |
+| `session`                                                            | `Manager`: create/prompt/cancel/close, `Stream` iterator, approval routing, `Store` (`MemoryStore`, `FileStore`), `ToolServer` hook |
+| `mcp`                                                                | Portable MCP server config: layers, merge, `${VAR}` expansion, project trust ([mcp.md](mcp.md))                                     |
+| `tools`                                                              | Host tool registry: schemas, validation, execution ([tools.md](tools.md))                                                           |
+| `toolhost`                                                           | Serves the registry (and Claude Code permission prompts) to runtimes as MCP over a private Unix socket                              |
+| `internal/process`                                                   | Private native implementation: binary lookup incl. GUI-app install dirs, process groups, SIGINT then kill, `Tail`                   |
+| `rpc/protocol`                                                       | Wire types, method names, error codes, protocol version                                                                             |
+| `rpc/server`                                                         | Serves a `session.Manager` over any `io.Reader`/`io.Writer`                                                                         |
+| `internal/rpcclient`                                                 | Private CLI client using core-domain types                                                                                          |
+| `runtimes/codex`, `runtimes/claude`, `runtimes/acp`, `runtimes/fake` | Adapters                                                                                                                            |
+| `model`, `model/contextwindow`                                       | Portable raw inference contract and caller-owned context management                                                                 |
+| `internal/budget`                                                    | Private observed-usage accounting; public policy is `config.BudgetLimits`, public usage and exceedance payloads live in `event`     |
+| `workspace`, `workspace/git`                                         | Portable workspace contract and optional native Git worktree/diff backend                                                           |
+| `providers/openai`, `providers/anthropic`                            | Separate modules using official provider SDKs                                                                                       |
+| `cmd/harness-kit`                                                    | The sidecar binary                                                                                                                  |
+| `../packages/client-ts` (repository-root clients)                    | `@tomanagle/harness-kit` (browser-safe) and `@tomanagle/harness-kit/node` (stdio transport)                                         |
+| `../packages/client-go`                                              | Standalone Go sidecar client; generated wire types and methods, standard-library transport                                          |
+| `cmd/protocolgen`, `../protocol`                                     | Extract the server contract into JSON Schema and generate both client contracts; CI rejects stale output                            |
 
 The standalone clients use the same schema for requests, results, events,
 settings and error constants. The generator reads the Go server's wire/domain
@@ -265,11 +267,11 @@ approvals and context policy; see [Models and context](models.md).
 
 ### 2.3 One core, three hosts
 
-| Host | How it reaches the core | Status |
-| --- | --- | --- |
-| Go library (CLI, Wails backend, services) | imports `session`, `agent`, adapters | implemented |
-| Sidecar (Electron, Wails, anything with stdio) | `cmd/harness-kit` = `rpc/server` around the same `session.Manager` | implemented |
-| WebAssembly | the core packages compiled to WASM; runtimes provided by the JS host | core builds for `wasip1` and `js/wasm`; host shim not yet written |
+| Host                                           | How it reaches the core                                              | Status                                                            |
+| ---------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Go library (CLI, Wails backend, services)      | imports `session`, `agent`, adapters                                 | implemented                                                       |
+| Sidecar (Electron, Wails, anything with stdio) | `cmd/harness-kit` = `rpc/server` around the same `session.Manager`   | implemented                                                       |
+| WebAssembly                                    | the core packages compiled to WASM; runtimes provided by the JS host | core builds for `wasip1` and `js/wasm`; host shim not yet written |
 
 The RPC server translates transport requests to core methods. Every behaviour
 (ordering, approvals, replay, safety checks) lives in the core, so every
@@ -328,7 +330,6 @@ Runtimes still own the conversation used for native resume.
 exchange for zero dependencies, full control over ordering keys and
 cancellation, and one implementation shared by the server and the Codex
 client.
-
 
 ## Configuration lifetimes
 

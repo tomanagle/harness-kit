@@ -43,6 +43,8 @@ const (
 	MethodSettingsGet       = "settings.get"
 	MethodSettingsConfigure = "settings.configure"
 	MethodSettingsStats     = "settings.stats"
+	MethodLogsSubscribe     = "logs.subscribe"
+	MethodLogsUnsubscribe   = "logs.unsubscribe"
 	MethodSessionEventsPage = "session.eventsPage"
 	MethodSessionEvict      = "session.evict"
 	MethodSessionSuspend    = "session.suspend"
@@ -52,6 +54,8 @@ const (
 	MethodRuntimeSessions   = "runtime.sessions"
 	MethodSessionCreate     = "session.create"
 	MethodSessionGet        = "session.get"
+	MethodSessionContext    = "session.context"
+	MethodSessionCompact    = "session.compact"
 	MethodSessionDiff       = "session.diff"
 	MethodWorkspaceRemove   = "workspace.remove"
 	MethodSessionList       = "session.list"
@@ -82,6 +86,7 @@ const (
 	// NotificationEvent (server -> client) carries one event.Event.
 	NotificationEvent           = "event"
 	NotificationSettingsUpdated = "settings.updated"
+	NotificationLog             = "log"
 	// NotificationCancelRequest (client -> server) cancels an in-flight
 	// request: {"id": <request id>}.
 	NotificationCancelRequest = "$/cancelRequest"
@@ -170,6 +175,8 @@ type ServerInfo struct {
 
 // ServerCapabilities describe what the server offers.
 type ServerCapabilities struct {
+	// Logs advertises opt-in structured slog notifications.
+	Logs      bool         `json:"logs"`
 	Git       bool         `json:"git"`
 	Workspace bool         `json:"workspace"`
 	Runtimes  []agent.Info `json:"runtimes"`

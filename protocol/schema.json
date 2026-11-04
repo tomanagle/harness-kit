@@ -586,6 +586,13 @@
           "x-go-type": "bool",
           "x-go-json-tag": "cancel"
         },
+        "compaction": {
+          "type": "boolean",
+          "description": "Compaction means the adapter can request native compaction. Per-session\navailability is negotiated through Compactor.CanCompact.",
+          "x-go-name": "Compaction",
+          "x-go-type": "bool",
+          "x-go-json-tag": "compaction"
+        },
         "configuration": {
           "type": "object",
           "description": "Configuration advertises accepted settings and their lifetimes.",
@@ -596,6 +603,13 @@
           "x-go-name": "Configuration",
           "x-go-type": "map[string]ConfigurationSupport",
           "x-go-json-tag": "configuration,omitempty"
+        },
+        "contextUsage": {
+          "type": "boolean",
+          "description": "ContextUsage reports model-window observations separately from spend.",
+          "x-go-name": "ContextUsage",
+          "x-go-type": "bool",
+          "x-go-json-tag": "contextUsage"
         },
         "cost": {
           "type": "boolean",
@@ -662,6 +676,8 @@
       "required": [
         "approvals",
         "cancel",
+        "compaction",
+        "contextUsage",
         "cost",
         "fork",
         "images",
@@ -692,6 +708,92 @@
       "required": [
         "name"
       ]
+    },
+    "CompactionSettings": {
+      "type": "object",
+      "description": "CompactionSettings controls additional host-requested compaction before a\nprompt. Nil thresholds leave timing to the native runtime. Neither setting\ndisables a runtime's own automatic compaction. Either threshold can trigger.",
+      "properties": {
+        "autoAtPercent": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-go-type": "float64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "AutoAtPercent",
+          "x-go-type": "*float64",
+          "x-go-json-tag": "autoAtPercent"
+        },
+        "autoAtTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "AutoAtTokens",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "autoAtTokens"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "x-go-name": "TimeoutMs",
+          "x-go-type": "int64",
+          "x-go-json-tag": "timeoutMs"
+        }
+      },
+      "required": [
+        "autoAtPercent",
+        "autoAtTokens",
+        "timeoutMs"
+      ]
+    },
+    "CompactionSettingsPatch": {
+      "type": "object",
+      "description": "CompactionSettings controls additional host-requested compaction before a\nprompt. Nil thresholds leave timing to the native runtime. Neither setting\ndisables a runtime's own automatic compaction. Either threshold can trigger.",
+      "properties": {
+        "autoAtPercent": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-go-type": "float64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "AutoAtPercent",
+          "x-go-type": "*float64",
+          "x-go-json-tag": "autoAtPercent"
+        },
+        "autoAtTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "AutoAtTokens",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "autoAtTokens"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "x-go-name": "TimeoutMs",
+          "x-go-type": "int64",
+          "x-go-json-tag": "timeoutMs"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
     },
     "ConfigPatch": {
       "type": "object",
@@ -800,6 +902,122 @@
       },
       "required": [
         "patch"
+      ]
+    },
+    "ContextCompactionData": {
+      "type": "object",
+      "description": "ContextCompactionData reports manual, threshold-triggered, and observed native\ncompaction using one lifecycle. Runtime-specific details remain in runtime.status.",
+      "properties": {
+        "after": {
+          "$ref": "#/$defs/ContextUsageData",
+          "x-go-name": "After",
+          "x-go-type": "*ContextUsageData",
+          "x-go-json-tag": "after,omitempty"
+        },
+        "before": {
+          "$ref": "#/$defs/ContextUsageData",
+          "x-go-name": "Before",
+          "x-go-type": "ContextUsageData",
+          "x-go-json-tag": "before"
+        },
+        "error": {
+          "$ref": "#/$defs/ErrorInfo",
+          "x-go-name": "Error",
+          "x-go-type": "*ErrorInfo",
+          "x-go-json-tag": "error,omitempty"
+        },
+        "operationId": {
+          "type": "string",
+          "x-go-name": "OperationID",
+          "x-go-type": "string",
+          "x-go-json-tag": "operationId"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "manual",
+            "threshold",
+            "native"
+          ],
+          "x-go-name": "Reason",
+          "x-go-type": "string",
+          "x-go-json-tag": "reason"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "started",
+            "completed",
+            "failed",
+            "cancelled"
+          ],
+          "x-go-name": "Status",
+          "x-go-type": "string",
+          "x-go-json-tag": "status"
+        }
+      },
+      "required": [
+        "before",
+        "operationId",
+        "reason",
+        "status"
+      ]
+    },
+    "ContextUsageData": {
+      "type": "object",
+      "description": "ContextUsageData is the latest model-window observation, independent of\ncumulative token consumption. Nil counts are unknown; zero is a known zero.\nBasis is reported (native occupancy), last_request (the latest model request)\nor unknown. Stale observations must not be presented as current occupancy.",
+      "properties": {
+        "basis": {
+          "type": "string",
+          "enum": [
+            "reported",
+            "last_request",
+            "unknown"
+          ],
+          "x-go-name": "Basis",
+          "x-go-type": "string",
+          "x-go-json-tag": "basis"
+        },
+        "stale": {
+          "type": "boolean",
+          "x-go-name": "Stale",
+          "x-go-type": "bool",
+          "x-go-json-tag": "stale"
+        },
+        "usedTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "UsedTokens",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "usedTokens"
+        },
+        "windowTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "x-go-type": "int64"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-go-name": "WindowTokens",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "windowTokens"
+        }
+      },
+      "required": [
+        "basis",
+        "stale",
+        "usedTokens",
+        "windowTokens"
       ]
     },
     "CreateSessionParams": {
@@ -1120,6 +1338,8 @@
         "approval.requested",
         "approval.resolved",
         "budget.exceeded",
+        "context.compaction",
+        "context.usage",
         "error",
         "message.completed",
         "message.delta",
@@ -2162,6 +2382,94 @@
           "type": "object",
           "properties": {
             "data": {
+              "$ref": "#/$defs/ContextCompactionData",
+              "x-go-type": "ContextCompactionData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "context.compaction"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/ContextUsageData",
+              "x-go-type": "ContextUsageData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "context.usage"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
               "$ref": "#/$defs/ErrorInfo",
               "x-go-type": "ErrorInfo"
             },
@@ -2960,6 +3268,8 @@
                   "approval.requested",
                   "approval.resolved",
                   "budget.exceeded",
+                  "context.compaction",
+                  "context.usage",
                   "error",
                   "message.completed",
                   "message.delta",
@@ -3178,6 +3488,140 @@
         }
       }
     },
+    "LogGap": {
+      "type": "object",
+      "description": "Gap describes dropped live records. There is no retained history to replay.",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "x-go-name": "Count",
+          "x-go-type": "uint64",
+          "x-go-json-tag": "count"
+        },
+        "fromSeq": {
+          "type": "integer",
+          "x-go-name": "FromSeq",
+          "x-go-type": "uint64",
+          "x-go-json-tag": "fromSeq"
+        },
+        "toSeq": {
+          "type": "integer",
+          "x-go-name": "ToSeq",
+          "x-go-type": "uint64",
+          "x-go-json-tag": "toSeq"
+        }
+      },
+      "required": [
+        "count",
+        "fromSeq",
+        "toSeq"
+      ]
+    },
+    "LogNotification": {
+      "type": "object",
+      "description": "Notification carries exactly one record or dropped-record marker.",
+      "properties": {
+        "dropped": {
+          "$ref": "#/$defs/LogGap",
+          "x-go-name": "Dropped",
+          "x-go-type": "*LogGap",
+          "x-go-json-tag": "dropped,omitempty"
+        },
+        "record": {
+          "$ref": "#/$defs/LogRecord",
+          "x-go-name": "Record",
+          "x-go-type": "*LogRecord",
+          "x-go-json-tag": "record,omitempty"
+        }
+      }
+    },
+    "LogRecord": {
+      "type": "object",
+      "description": "Record is one normalized slog record. Attrs preserve nested groups and JSON\nvalue types; keys such as \"message\" in attrs cannot replace envelope fields.",
+      "properties": {
+        "attrs": {
+          "type": "object",
+          "additionalProperties": {
+            "x-go-type": "json.RawMessage"
+          },
+          "x-go-name": "Attrs",
+          "x-go-type": "map[string]json.RawMessage",
+          "x-go-json-tag": "attrs"
+        },
+        "level": {
+          "type": "string",
+          "x-go-name": "Level",
+          "x-go-type": "string",
+          "x-go-json-tag": "level"
+        },
+        "message": {
+          "type": "string",
+          "x-go-name": "Message",
+          "x-go-type": "string",
+          "x-go-json-tag": "message"
+        },
+        "seq": {
+          "type": "integer",
+          "x-go-name": "Seq",
+          "x-go-type": "uint64",
+          "x-go-json-tag": "seq"
+        },
+        "source": {
+          "$ref": "#/$defs/LogSource",
+          "x-go-name": "Source",
+          "x-go-type": "*LogSource",
+          "x-go-json-tag": "source,omitempty"
+        },
+        "time": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Time",
+          "x-go-type": "time.Time",
+          "x-go-json-tag": "time"
+        },
+        "truncated": {
+          "type": "boolean",
+          "x-go-name": "Truncated",
+          "x-go-type": "bool",
+          "x-go-json-tag": "truncated,omitempty"
+        }
+      },
+      "required": [
+        "attrs",
+        "level",
+        "message",
+        "seq",
+        "time"
+      ]
+    },
+    "LogSource": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "x-go-name": "File",
+          "x-go-type": "string",
+          "x-go-json-tag": "file"
+        },
+        "function": {
+          "type": "string",
+          "x-go-name": "Function",
+          "x-go-type": "string",
+          "x-go-json-tag": "function"
+        },
+        "line": {
+          "type": "integer",
+          "x-go-name": "Line",
+          "x-go-type": "int",
+          "x-go-json-tag": "line"
+        }
+      },
+      "required": [
+        "file",
+        "function",
+        "line"
+      ]
+    },
     "LoggingSettings": {
       "type": "object",
       "properties": {
@@ -3192,10 +3636,31 @@
           "x-go-name": "Level",
           "x-go-type": "string",
           "x-go-json-tag": "level"
+        },
+        "maxQueueBytes": {
+          "type": "integer",
+          "x-go-name": "MaxQueueBytes",
+          "x-go-type": "int64",
+          "x-go-json-tag": "maxQueueBytes"
+        },
+        "maxQueueRecords": {
+          "type": "integer",
+          "x-go-name": "MaxQueueRecords",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxQueueRecords"
+        },
+        "maxRecordBytes": {
+          "type": "integer",
+          "x-go-name": "MaxRecordBytes",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxRecordBytes"
         }
       },
       "required": [
-        "level"
+        "level",
+        "maxQueueBytes",
+        "maxQueueRecords",
+        "maxRecordBytes"
       ]
     },
     "LoggingSettingsPatch": {
@@ -3212,6 +3677,24 @@
           "x-go-name": "Level",
           "x-go-type": "string",
           "x-go-json-tag": "level"
+        },
+        "maxQueueBytes": {
+          "type": "integer",
+          "x-go-name": "MaxQueueBytes",
+          "x-go-type": "int64",
+          "x-go-json-tag": "maxQueueBytes"
+        },
+        "maxQueueRecords": {
+          "type": "integer",
+          "x-go-name": "MaxQueueRecords",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxQueueRecords"
+        },
+        "maxRecordBytes": {
+          "type": "integer",
+          "x-go-name": "MaxRecordBytes",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxRecordBytes"
         }
       },
       "x-go-type": "map[string]json.RawMessage"
@@ -4353,6 +4836,13 @@
           "x-go-type": "bool",
           "x-go-json-tag": "git"
         },
+        "logs": {
+          "type": "boolean",
+          "description": "Logs advertises opt-in structured slog notifications.",
+          "x-go-name": "Logs",
+          "x-go-type": "bool",
+          "x-go-json-tag": "logs"
+        },
         "runtimes": {
           "type": "array",
           "items": {
@@ -4388,6 +4878,7 @@
         "allowUnsafe",
         "eventLogSize",
         "git",
+        "logs",
         "runtimes",
         "settings",
         "tools",
@@ -4559,6 +5050,42 @@
         "sessionId"
       ]
     },
+    "SessionContext": {
+      "type": "object",
+      "description": "ContextInfo is a cached context observation. Reading it never starts a\nruntime or makes an inference request. CanCompact is live session availability.",
+      "properties": {
+        "canCompact": {
+          "type": "boolean",
+          "x-go-name": "CanCompact",
+          "x-go-type": "bool",
+          "x-go-json-tag": "canCompact"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        },
+        "state": {
+          "$ref": "#/$defs/SessionState",
+          "x-go-name": "State",
+          "x-go-type": "SessionState",
+          "x-go-json-tag": "state"
+        },
+        "usage": {
+          "$ref": "#/$defs/ContextUsageData",
+          "x-go-name": "Usage",
+          "x-go-type": "ContextUsageData",
+          "x-go-json-tag": "usage"
+        }
+      },
+      "required": [
+        "canCompact",
+        "sessionId",
+        "state",
+        "usage"
+      ]
+    },
     "SessionDiffParams": {
       "type": "object",
       "description": "SessionDiffParams reads a saved, bounded before/after turn diff.",
@@ -4678,12 +5205,24 @@
           "x-go-type": "BudgetLimits",
           "x-go-json-tag": "budget"
         },
+        "compaction": {
+          "$ref": "#/$defs/CompactionSettings",
+          "x-go-name": "Compaction",
+          "x-go-type": "CompactionSettings",
+          "x-go-json-tag": "compaction"
+        },
         "config": {
           "$ref": "#/$defs/TurnConfig",
           "description": "Config is the current selection inherited by subsequent turns.",
           "x-go-name": "Config",
           "x-go-type": "*TurnConfig",
           "x-go-json-tag": "config,omitempty"
+        },
+        "context": {
+          "$ref": "#/$defs/ContextUsageData",
+          "x-go-name": "Context",
+          "x-go-type": "*ContextUsageData",
+          "x-go-json-tag": "context,omitempty"
         },
         "createdAt": {
           "type": "string",
@@ -4837,6 +5376,7 @@
       },
       "required": [
         "budget",
+        "compaction",
         "createdAt",
         "lastSeq",
         "runtime",
@@ -5219,6 +5759,7 @@
       "enum": [
         "closed",
         "closing",
+        "compacting",
         "failed",
         "idle",
         "running",
@@ -5275,12 +5816,24 @@
           "x-go-type": "*BudgetLimits",
           "x-go-json-tag": "budget,omitempty"
         },
+        "compaction": {
+          "$ref": "#/$defs/CompactionSettings",
+          "x-go-name": "Compaction",
+          "x-go-type": "*CompactionSettings",
+          "x-go-json-tag": "compaction,omitempty"
+        },
         "config": {
           "$ref": "#/$defs/TurnConfig",
           "description": "Config contains current session defaults, never a one-turn override.",
           "x-go-name": "Config",
           "x-go-type": "*TurnConfig",
           "x-go-json-tag": "config,omitempty"
+        },
+        "context": {
+          "$ref": "#/$defs/ContextUsageData",
+          "x-go-name": "Context",
+          "x-go-type": "*ContextUsageData",
+          "x-go-json-tag": "context,omitempty"
         },
         "error": {
           "$ref": "#/$defs/ErrorInfo",
@@ -5448,6 +6001,9 @@
         "budget": {
           "$ref": "#/$defs/BudgetLimitsPatch"
         },
+        "compaction": {
+          "$ref": "#/$defs/CompactionSettingsPatch"
+        },
         "git": {
           "$ref": "#/$defs/GitSettingsPatch"
         },
@@ -5557,6 +6113,12 @@
           "x-go-type": "BudgetLimits",
           "x-go-json-tag": "budget"
         },
+        "compaction": {
+          "$ref": "#/$defs/CompactionSettings",
+          "x-go-name": "Compaction",
+          "x-go-type": "CompactionSettings",
+          "x-go-json-tag": "compaction"
+        },
         "git": {
           "$ref": "#/$defs/GitSettings",
           "x-go-name": "Git",
@@ -5609,6 +6171,7 @@
       "required": [
         "approvals",
         "budget",
+        "compaction",
         "git",
         "history",
         "logging",
@@ -6677,6 +7240,8 @@
     "MethodGitStatus": "git.status",
     "MethodGitUnstage": "git.unstage",
     "MethodInitialize": "initialize",
+    "MethodLogsSubscribe": "logs.subscribe",
+    "MethodLogsUnsubscribe": "logs.unsubscribe",
     "MethodMCPList": "mcp.list",
     "MethodRuntimeDiscover": "runtime.discover",
     "MethodRuntimeList": "runtime.list",
@@ -6684,7 +7249,9 @@
     "MethodSessionArchive": "session.archive",
     "MethodSessionCancel": "session.cancel",
     "MethodSessionClose": "session.close",
+    "MethodSessionCompact": "session.compact",
     "MethodSessionConfigure": "session.configure",
+    "MethodSessionContext": "session.context",
     "MethodSessionCreate": "session.create",
     "MethodSessionDelete": "session.delete",
     "MethodSessionDiff": "session.diff",
@@ -6710,6 +7277,7 @@
     "MethodWorkspaceRemove": "workspace.remove",
     "NotificationCancelRequest": "$/cancelRequest",
     "NotificationEvent": "event",
+    "NotificationLog": "log",
     "NotificationSettingsUpdated": "settings.updated",
     "ReasonApprovalNotFound": "approval_not_found",
     "ReasonBudgetExceeded": "budget_exceeded",
@@ -6892,6 +7460,28 @@
         "x-go-type": "InitializeResult"
       }
     },
+    "logs.subscribe": {
+      "x-go-name": "LogsSubscribe",
+      "params": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "logs.unsubscribe": {
+      "x-go-name": "LogsUnsubscribe",
+      "params": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
     "mcp.list": {
       "x-go-name": "McpList",
       "params": {
@@ -6965,6 +7555,17 @@
         "x-go-type": "Empty"
       }
     },
+    "session.compact": {
+      "x-go-name": "SessionCompact",
+      "params": {
+        "$ref": "#/$defs/SessionIDParams",
+        "x-go-type": "SessionIDParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SessionContext",
+        "x-go-type": "SessionContext"
+      }
+    },
     "session.configure": {
       "x-go-name": "SessionConfigure",
       "params": {
@@ -6974,6 +7575,17 @@
       "result": {
         "$ref": "#/$defs/SessionResult",
         "x-go-type": "SessionResult"
+      }
+    },
+    "session.context": {
+      "x-go-name": "SessionContext",
+      "params": {
+        "$ref": "#/$defs/SessionIDParams",
+        "x-go-type": "SessionIDParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SessionContext",
+        "x-go-type": "SessionContext"
       }
     },
     "session.create": {
@@ -7254,6 +7866,10 @@
       "$ref": "#/$defs/HarnessEvent",
       "x-go-type": "HarnessEvent"
     },
+    "log": {
+      "$ref": "#/$defs/LogNotification",
+      "x-go-type": "LogNotification"
+    },
     "settings.updated": {
       "$ref": "#/$defs/SettingsSnapshot",
       "x-go-type": "SettingsSnapshot"
@@ -7271,6 +7887,14 @@
     "budget.exceeded": {
       "$ref": "#/$defs/BudgetExceeded",
       "x-go-type": "BudgetExceeded"
+    },
+    "context.compaction": {
+      "$ref": "#/$defs/ContextCompactionData",
+      "x-go-type": "ContextCompactionData"
+    },
+    "context.usage": {
+      "$ref": "#/$defs/ContextUsageData",
+      "x-go-type": "ContextUsageData"
     },
     "error": {
       "$ref": "#/$defs/ErrorInfo",

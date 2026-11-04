@@ -118,6 +118,15 @@ func writeAtomic(path string, b []byte) error {
 // it again, so a pulled commit cannot silently add a server.
 type TrustStore struct{ Path string }
 
+// TrustChecker decides whether a project configuration's exact content may be
+// loaded. Implementations can use application policy, a database, or TrustStore.
+// A changed file must be evaluated again; trusting only its path is insufficient.
+type TrustChecker interface {
+	Trusted(file string, content []byte) bool
+}
+
+var _ TrustChecker = TrustStore{}
+
 type trustFile struct {
 	Projects map[string]string `json:"projects"` // abs path -> sha256 of content
 }
@@ -192,9 +201,9 @@ type Resolver struct {
 	UserFile string
 	// Project enables looking for harness-kit.json from the session cwd up.
 	Project bool
-	// Trust decides whether project servers may load. A zero TrustStore
-	// trusts nothing.
-	Trust TrustStore
+	// Trust decides whether project servers may load. Nil or a zero TrustStore
+	// trusts nothing. File discovery/loading remains the resolver's concern.
+	Trust TrustChecker
 }
 
 // Resolution is the result of Resolve.
@@ -231,7 +240,7 @@ func (r Resolver) Resolve(cwd, runtime string, session Config) (Resolution, erro
 				return res, err
 			}
 			res.ProjectFile = p
-			res.ProjectTrusted = r.Trust.Trusted(p, content)
+			res.ProjectTrusted = r.Trust != nil && r.Trust.Trusted(p, content)
 			if !res.ProjectTrusted && len(c.Servers) > 0 {
 				res.Warnings = append(res.Warnings, fmt.Sprintf(
 					"skipped %d MCP server(s) from untrusted %s; review it, then run `harness-kit mcp trust`", len(c.Servers), p))

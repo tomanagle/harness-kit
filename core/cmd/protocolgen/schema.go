@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tomanagle/harness-kit/core/event"
+	"github.com/tomanagle/harness-kit/core/logging"
 	"github.com/tomanagle/harness-kit/core/rpc/protocol"
 	"github.com/tomanagle/harness-kit/core/settings"
 	"github.com/tomanagle/harness-kit/core/tools"
@@ -73,7 +74,7 @@ type sourceInfo struct {
 
 func readSource(root string) (*sourceInfo, error) {
 	s := &sourceInfo{map[string]string{}, map[string][]sourceConstant{}}
-	for _, dir := range []string{"agent", "config", "event", "mcp", "permission", "rpc/protocol", "settings", "session", "tools", "workspace", "internal/jsonrpc"} {
+	for _, dir := range []string{"agent", "config", "event", "logging", "mcp", "permission", "rpc/protocol", "settings", "session", "tools", "workspace", "internal/jsonrpc"} {
 		files, err := os.ReadDir(filepath.Join(root, "core", dir))
 		if err != nil {
 			return nil, err
@@ -262,6 +263,7 @@ func buildSchema(root string) (*Document, error) {
 	d.Requests[protocol.RequestToolCall] = Method{"ToolCall", b.schema(reflect.TypeFor[protocol.ToolCallParams]()), b.schema(reflect.TypeFor[tools.Result]())}
 	d.Notifications[protocol.NotificationEvent] = b.schema(reflect.TypeFor[event.Event]())
 	d.Notifications[protocol.NotificationSettingsUpdated] = b.schema(reflect.TypeFor[settings.Snapshot]())
+	d.Notifications[protocol.NotificationLog] = b.schema(reflect.TypeFor[logging.Notification]())
 	d.Notifications[protocol.NotificationCancelRequest] = &Schema{Type: "object", Properties: map[string]*Schema{"id": {AnyOf: []*Schema{{Type: "integer"}, {Type: "string"}}}}, Required: []string{"id"}}
 	var reasons []string
 	for name, value := range d.Constants {
@@ -416,9 +418,12 @@ func (b *builder) shape(t reflect.Type) *Schema {
 func applyFieldConstraints(t reflect.Type, f reflect.StructField, p *Schema) {
 	key := strings.TrimPrefix(t.PkgPath(), module) + "." + t.Name() + "." + f.Name
 	choices := map[string][]string{
-		"workspace.GitSettings.Hooks":   {"inherit", "disabled"},
-		"workspace.GitSettings.Signing": {"inherit", "disabled", "enabled"},
-		"event.InputPart.Type":          {"text", "image"}, "event.UsageData.Mode": {"snapshot", "delta"},
+		"event.ContextUsageData.Basis":       {"reported", "last_request", "unknown"},
+		"event.ContextCompactionData.Reason": {"manual", "threshold", "native"},
+		"event.ContextCompactionData.Status": {"started", "completed", "failed", "cancelled"},
+		"workspace.GitSettings.Hooks":        {"inherit", "disabled"},
+		"workspace.GitSettings.Signing":      {"inherit", "disabled", "enabled"},
+		"event.InputPart.Type":               {"text", "image"}, "event.UsageData.Mode": {"snapshot", "delta"},
 		"event.UsageData.Scope": {"turn", "session"}, "event.BudgetExceededData.Scope": {"session", "turn"},
 		"event.BudgetExceededData.Metric": {"tokens", "costUsd"}, "workspace.Settings.Mode": {"existing", "worktree"},
 		"settings.Logging.Level": {"debug", "info", "warn", "error"}, "mcp.Server.Type": {"stdio", "http", "streamable-http"},

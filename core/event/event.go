@@ -25,6 +25,8 @@ type Type string
 
 const (
 	SessionStarted     Type = "session.started"
+	ContextUsage       Type = "context.usage"
+	ContextCompaction  Type = "context.compaction"
 	WorkspaceDiff      Type = "workspace.diff"
 	SessionUpdated     Type = "session.updated"
 	SessionClosed      Type = "session.closed"
@@ -100,6 +102,8 @@ func decodeAs[T any](b json.RawMessage) (any, error) {
 }
 
 var payloadTypes = map[Type]func(json.RawMessage) (any, error){
+	ContextUsage:       decodeAs[ContextUsageData],
+	ContextCompaction:  decodeAs[ContextCompactionData],
 	WorkspaceDiff:      decodeAs[workspace.Diff],
 	SessionStarted:     decodeAs[SessionStartedData],
 	SessionUpdated:     decodeAs[SessionUpdatedData],
@@ -143,11 +147,13 @@ type SessionStartedData struct {
 // fields that are absent have been cleared, rather than left unchanged.
 // State uses the session lifecycle names (idle, running, closing, ...).
 type SessionUpdatedData struct {
-	Budget      *config.BudgetLimits `json:"budget,omitempty"`
-	Usage       *BudgetUsage         `json:"usage,omitempty"`
-	Archived    bool                 `json:"archived,omitempty"`
-	Metadata    map[string]string    `json:"metadata,omitempty"`
-	ForkPending bool                 `json:"forkPending,omitempty"`
+	Context     *ContextUsageData          `json:"context,omitempty"`
+	Compaction  *config.CompactionSettings `json:"compaction,omitempty"`
+	Budget      *config.BudgetLimits       `json:"budget,omitempty"`
+	Usage       *BudgetUsage               `json:"usage,omitempty"`
+	Archived    bool                       `json:"archived,omitempty"`
+	Metadata    map[string]string          `json:"metadata,omitempty"`
+	ForkPending bool                       `json:"forkPending,omitempty"`
 	// SettingsRevision changes only when session settings or pinning change.
 	SettingsRevision uint64 `json:"settingsRevision,omitempty"`
 	Pinned           bool   `json:"pinned,omitempty"`

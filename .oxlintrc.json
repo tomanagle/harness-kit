@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "error"
+  },
+  "env": {
+    "node": true
+  },
+  "ignorePatterns": ["packages/client-ts/src/protocol.ts", "**/*.gen.ts"],
+  "overrides": [
+    {
+      "files": ["examples/ui/**/*.js"],
+      "env": {
+        "browser": true
+      }
+    }
+  ]
+}

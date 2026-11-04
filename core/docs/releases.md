@@ -18,13 +18,13 @@ is a placeholder for a future coordination server. Workflows stay at the
 repository root under `.github/workflows/`. The server has no release or deployment
 artifact yet, and applications can use the kit independently.
 
-| Component | Current source/module | Future tag example |
-| --- | --- | --- |
-| Go core and local sidecar | `github.com/tomanagle/harness-kit/core` | `core/v0.3.0` |
-| OpenAI SDK adapter | `github.com/tomanagle/harness-kit/core/providers/openai` | `core/providers/openai/v0.3.0` |
-| Anthropic SDK adapter | `github.com/tomanagle/harness-kit/core/providers/anthropic` | `core/providers/anthropic/v0.3.0` |
-| Go sidecar client | `github.com/tomanagle/harness-kit/packages/client-go` | `packages/client-go/v0.1.0` |
-| TypeScript client | `packages/client-ts`, npm `@tomanagle/harness-kit` | `npm-v0.3.0` |
+| Component                 | Current source/module                                       | Future tag example                |
+| ------------------------- | ----------------------------------------------------------- | --------------------------------- |
+| Go core and local sidecar | `github.com/tomanagle/harness-kit/core`                     | `core/v0.3.0`                     |
+| OpenAI SDK adapter        | `github.com/tomanagle/harness-kit/core/providers/openai`    | `core/providers/openai/v0.3.0`    |
+| Anthropic SDK adapter     | `github.com/tomanagle/harness-kit/core/providers/anthropic` | `core/providers/anthropic/v0.3.0` |
+| Go sidecar client         | `github.com/tomanagle/harness-kit/packages/client-go`       | `packages/client-go/v0.1.0`       |
+| TypeScript client         | `packages/client-ts`, npm `@tomanagle/harness-kit`          | `npm-v0.3.0`                      |
 
 The new Go module paths have **not been tagged**. The tag names above describe
 future releases, not versions available to install now. In particular, do not
@@ -112,13 +112,13 @@ change or version bump is needed for a version that was never staged or publishe
 After the first publish, open the package's **Settings → Trusted publishing** on
 npm and add a GitHub Actions publisher:
 
-| Field | Value |
-| --- | --- |
-| Organization or user | `tomanagle` |
-| Repository | `harness-kit` |
-| Workflow filename | `publish-npm.yml` |
-| Environment name | Leave empty |
-| Allowed actions | Enable direct publishing with `npm publish` |
+| Field                | Value                                       |
+| -------------------- | ------------------------------------------- |
+| Organization or user | `tomanagle`                                 |
+| Repository           | `harness-kit`                               |
+| Workflow filename    | `publish-npm.yml`                           |
+| Environment name     | Leave empty                                 |
+| Allowed actions      | Enable direct publishing with `npm publish` |
 
 Normal runs use GitHub OIDC with `id-token: write`, so they do not need
 `NPM_TOKEN`. The workflow uses a GitHub-hosted runner, Node 24, npm 11, and public

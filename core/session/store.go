@@ -39,6 +39,7 @@ const (
 	StateSuspending State = "suspending"
 	StateSuspended  State = "suspended"
 	StateRunning    State = "running"
+	StateCompacting State = "compacting"
 	StateClosing    State = "closing"
 	StateClosed     State = "closed"
 	StateFailed     State = "failed"
@@ -49,10 +50,12 @@ func (s State) Terminal() bool { return s == StateClosed || s == StateFailed }
 
 // Info describes a session.
 type Info struct {
-	Workspace         *workspace.Binding  `json:"workspace,omitempty"`
-	WorkspaceSettings workspace.Settings  `json:"workspaceSettings"`
-	Budget            config.BudgetLimits `json:"budget"`
-	Usage             event.BudgetUsage   `json:"usage"`
+	Context           *event.ContextUsageData   `json:"context,omitempty"`
+	Compaction        config.CompactionSettings `json:"compaction"`
+	Workspace         *workspace.Binding        `json:"workspace,omitempty"`
+	WorkspaceSettings workspace.Settings        `json:"workspaceSettings"`
+	Budget            config.BudgetLimits       `json:"budget"`
+	Usage             event.BudgetUsage         `json:"usage"`
 	// Archived hides a conversation only when a caller requests that filter.
 	// It is independent of runtime lifecycle and never cancels work.
 	Archived       bool   `json:"archived,omitempty"`
@@ -89,7 +92,8 @@ type Info struct {
 
 // Record is what a Store persists.
 type Record struct {
-	InitialWorkspace *workspace.Settings `json:"initialWorkspace,omitempty"`
+	InitialCompaction *config.CompactionSettings `json:"initialCompaction,omitempty"`
+	InitialWorkspace  *workspace.Settings        `json:"initialWorkspace,omitempty"`
 	// Accounting is the kit's opaque checkpoint. Custom stores preserve these
 	// bytes as JSON; accounting implementation types are intentionally private.
 	Accounting    json.RawMessage      `json:"accounting,omitempty"`
@@ -140,6 +144,15 @@ func NewMemoryStore() *MemoryStore { return &MemoryStore{recs: make(map[string]R
 // cloneRecord prevents callers from modifying the creation parent, native
 // defaults or current selections through a store snapshot.
 func cloneRecord(rec Record) (Record, error) {
+	rec.Info.Compaction = compactionPolicy(rec.Info.Compaction)
+	if rec.Info.Context != nil {
+		v := rec.Info.Context.Clone()
+		rec.Info.Context = &v
+	}
+	if rec.InitialCompaction != nil {
+		v := rec.InitialCompaction.Clone()
+		rec.InitialCompaction = &v
+	}
 	if rec.Info.Workspace != nil {
 		v := *rec.Info.Workspace
 		rec.Info.Workspace = &v

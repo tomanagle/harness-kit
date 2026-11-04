@@ -9,10 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
+	"math"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/tomanagle/harness-kit/core/internal/jsonrpc"
 	"github.com/tomanagle/harness-kit/core/internal/process"
 	"github.com/tomanagle/harness-kit/core/mcp"
+	"github.com/tomanagle/harness-kit/core/runtimes/transport"
 )
 
 const ProtocolVersion = 1
@@ -37,6 +39,26 @@ type ClientInfo struct {
 }
 
 type Option func(*Runtime)
+
+// WithLauncher injects executable discovery and process execution for sessions
+// and discovery probes. Nil retains the native OS implementation.
+func WithLauncher(launcher transport.Launcher) Option {
+	return func(r *Runtime) {
+		if launcher != nil {
+			r.launcher = launcher
+		}
+	}
+}
+
+// WithInputFiles supplies image attachments from a host filesystem. It is
+// separate from WithFileSystem, which handles agent-requested text operations.
+func WithInputFiles(files agent.InputFileOpener) Option {
+	return func(r *Runtime) {
+		if files != nil {
+			r.inputFiles = files
+		}
+	}
+}
 
 func WithName(name string) Option    { return func(r *Runtime) { r.name = name } }
 func WithArgs(args ...string) Option { return func(r *Runtime) { r.args = slices.Clone(args) } }
@@ -62,6 +84,8 @@ func WithMaxRetainedOutput(n int) Option { return func(r *Runtime) { r.maxRetain
 
 // Runtime launches a separate ACP process for every live session.
 type Runtime struct {
+	launcher                          transport.Launcher
+	inputFiles                        agent.InputFileOpener
 	command, name                     string
 	args                              []string
 	env                               map[string]string
@@ -76,7 +100,7 @@ type Runtime struct {
 }
 
 func New(command string, options ...Option) *Runtime {
-	r := &Runtime{command: command, name: "acp", startTimeout: 30 * time.Second, cancelTimeout: 5 * time.Second,
+	r := &Runtime{launcher: process.OSLauncher{}, inputFiles: osInputFiles{}, command: command, name: "acp", startTimeout: 30 * time.Second, cancelTimeout: 5 * time.Second,
 		clientInfo: ClientInfo{Name: "harness-kit", Version: "0.1.0"}, maxMessageSize: 32 << 20, maxImageBytes: 16 << 20, maxRetainedOutput: 8 << 20}
 	for _, option := range options {
 		option(r)
@@ -90,7 +114,7 @@ func (r *Runtime) Info() agent.Info {
 	r.mu.RUnlock()
 	return agent.Info{Name: r.name, DisplayName: r.name, Description: "Agent Client Protocol v1 over stdio",
 		Capabilities: agent.Capabilities{Streaming: true, Approvals: true, Cancel: true, MCP: true, Images: caps.Prompt.Image,
-			Resume: caps.LoadSession || caps.session("resume"), Usage: false, Cost: true,
+			Resume: caps.LoadSession || caps.session("resume"), Usage: false, Cost: true, ContextUsage: true, Compaction: true,
 			Configuration: map[string]config.Support{
 				"model": {Startup: true, Session: true, Turn: true}, "effort": {Startup: true, Session: true, Turn: true},
 				"options.config":     {Startup: true, Session: true, Turn: true},
@@ -100,7 +124,7 @@ func (r *Runtime) Info() agent.Info {
 
 func (r *Runtime) Discover(ctx context.Context) (agent.Discovery, error) {
 	d := agent.Discovery{Runtime: r.name, Auth: agent.AuthStatus{State: agent.AuthUnknown}, Capabilities: r.Info().Capabilities}
-	path, err := process.LookPath(r.command, process.LookOptions{})
+	path, err := r.launcher.LookPath(r.command, transport.LookupOptions{})
 	if err != nil {
 		d.Problems = []string{err.Error()}
 		return d, nil
@@ -210,6 +234,9 @@ func (r *Runtime) Start(ctx context.Context, cfg agent.SessionConfig, h agent.Ha
 	if err = s.applyConfig(ctx, selected); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	s.replaying = false
+	s.mu.Unlock()
 	ok = true
 	return s, nil
 }
@@ -220,7 +247,7 @@ func (r *Runtime) launch(ctx context.Context, cfg agent.SessionConfig, h agent.H
 	}
 	ctx, cancel := context.WithTimeout(ctx, r.startTimeout)
 	defer cancel()
-	path, err := process.LookPath(r.command, process.LookOptions{})
+	path, err := r.launcher.LookPath(r.command, transport.LookupOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", agent.ErrNotInstalled, err)
 	}
@@ -235,9 +262,7 @@ func (r *Runtime) launch(ctx context.Context, cfg agent.SessionConfig, h agent.H
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(path, r.args...)
-	cmd.Dir = cwd
-	cmd.Env = os.Environ()
+	var env []string
 	for _, key := range slices.Sorted(maps.Keys(r.env)) {
 		if key == "" || strings.ContainsAny(key, "=\x00") {
 			return nil, fmt.Errorf("%w: invalid environment key", agent.ErrInvalidConfig)
@@ -246,36 +271,19 @@ func (r *Runtime) launch(ctx context.Context, cfg agent.SessionConfig, h agent.H
 		if e != nil {
 			return nil, e
 		}
-		cmd.Env = append(cmd.Env, key+"="+value)
+		env = append(env, key+"="+value)
 	}
-	process.Configure(cmd)
-	stdin, err := cmd.StdinPipe()
+	child, err := r.launcher.Start(ctx, transport.Command{Path: path, Args: r.args, Dir: cwd, Env: env, Stderr: process.NewTail(16 << 10)})
 	if err != nil {
 		return nil, err
 	}
-	// Own stdout's pipe so cmd.Wait cannot close it before the reader drains
-	// the final response from an agent that exits immediately afterward.
-	stdout, stdoutWriter, err := os.Pipe()
-	if err != nil {
-		_ = stdin.Close()
-		return nil, err
-	}
-	cmd.Stdout = stdoutWriter
-	s := &Session{rt: r, cfg: cfg, h: h, cwd: cwd, cmd: cmd, stdin: stdin, stdout: stdout, exited: make(chan struct{}), readerDone: make(chan struct{}), requests: map[string]context.CancelFunc{}}
+	stdin, stdout := child.Stdin(), child.Stdout()
+	s := &Session{rt: r, cfg: cfg, h: h, cwd: cwd, cmd: child, env: env, stdin: stdin, stdout: stdout, exited: make(chan struct{}), readerDone: make(chan struct{}), requests: map[string]context.CancelFunc{}, replaying: true}
 	s.life, s.stop = context.WithCancel(context.Background())
-	cmd.Stderr = process.NewTail(16 << 10)
 	s.conn = jsonrpc.NewConn(stdout, stdin, s, jsonrpc.Options{MaxMessageSize: r.maxMessageSize})
-	if err = cmd.Start(); err != nil {
-		_ = stdin.Close()
-		_ = stdout.Close()
-		_ = stdoutWriter.Close()
-		s.stop()
-		return nil, err
-	}
-	_ = stdoutWriter.Close()
 	go func() { _ = s.conn.Run(s.life); close(s.readerDone) }()
-	go func() { _ = cmd.Wait(); close(s.exited) }()
-	clientCaps := map[string]any{"session": map[string]any{"configOptions": map[string]any{"boolean": map[string]any{}}}}
+	go func() { _ = child.Wait(); close(s.exited) }()
+	clientCaps := map[string]any{"session": map[string]any{"configOptions": map[string]any{"boolean": map[string]any{}}, "compaction": map[string]any{}}}
 	if r.fs.ReadTextFile != nil || r.fs.WriteTextFile != nil {
 		clientCaps["fs"] = map[string]bool{"readTextFile": r.fs.ReadTextFile != nil, "writeTextFile": r.fs.WriteTextFile != nil}
 	}
@@ -298,26 +306,34 @@ func (r *Runtime) launch(ctx context.Context, cfg agent.SessionConfig, h agent.H
 
 // Session holds one process and one negotiated ACP session.
 type Session struct {
-	rt                 *Runtime
-	cfg                agent.SessionConfig
-	opts               Options
-	h                  agent.Handler
-	cwd, id            string
-	cmd                *exec.Cmd
-	stdin              io.WriteCloser
-	stdout             io.ReadCloser
-	conn               *jsonrpc.Conn
-	life               context.Context
-	stop               context.CancelFunc
-	exited, readerDone chan struct{}
-	closeOnce          sync.Once
-	init               initializeResponse
-	mu                 sync.Mutex
-	active             *turnState
-	configOptions      []ConfigOption
-	native             agent.TurnConfig
-	requests           map[string]context.CancelFunc
-	turnMu             sync.Mutex
+	rt                   *Runtime
+	cfg                  agent.SessionConfig
+	opts                 Options
+	h                    agent.Handler
+	cwd, id              string
+	cmd                  transport.Child
+	env                  []string
+	stdin                io.WriteCloser
+	stdout               io.ReadCloser
+	conn                 *jsonrpc.Conn
+	life                 context.Context
+	stop                 context.CancelFunc
+	exited, readerDone   chan struct{}
+	closeOnce            sync.Once
+	init                 initializeResponse
+	mu                   sync.Mutex
+	eventMu              sync.Mutex
+	pendingEvents        []event.Event
+	active               *turnState
+	configOptions        []ConfigOption
+	native               agent.TurnConfig
+	requests             map[string]context.CancelFunc
+	turnMu               sync.Mutex
+	compactCommand       bool
+	commandSessionID     string
+	replaying            bool
+	lastCompactionID     string
+	lastCompactionStatus string
 }
 
 func (s *Session) RuntimeSessionID() string { s.mu.Lock(); defer s.mu.Unlock(); return s.id }
@@ -336,9 +352,9 @@ func (s *Session) Close(ctx context.Context) error {
 		select {
 		case <-s.exited:
 		case <-ctx.Done():
-			_ = process.Kill(s.cmd)
+			_ = s.cmd.Kill()
 		case <-timer.C:
-			_ = process.Kill(s.cmd)
+			_ = s.cmd.Kill()
 		}
 		_ = s.stdout.Close()
 		if s.rt.terminal != nil && s.id != "" {
@@ -352,26 +368,69 @@ func (s *Session) Close(ctx context.Context) error {
 }
 
 func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult, error) {
+	return s.prompt(ctx, turn, false)
+}
+
+var _ agent.Compactor = (*Session)(nil)
+
+// CanCompact reflects the latest commands advertised by this particular agent
+// session. ACP has no universal compact RPC.
+// https://agentclientprotocol.com/protocol/v1/slash-commands
+func (s *Session) CanCompact() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.compactCommand && s.commandSessionID == s.id && s.id != ""
+}
+
+// Compact invokes an advertised native slash command and waits for both the
+// compaction confirmation and the prompt response, including on cancellation.
+func (s *Session) Compact(ctx context.Context) error {
+	result, err := s.prompt(ctx, agent.Turn{Input: []agent.InputPart{{Type: "text", Text: "/compact"}}}, true)
+	if err != nil {
+		return err
+	}
+	if result.Status == event.TurnStatusCancelled {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return context.Canceled
+	}
+	if result.Status != event.TurnStatusCompleted {
+		if result.Error != nil {
+			return fmt.Errorf("acp compact: %s", result.Error.Message)
+		}
+		return fmt.Errorf("acp compact did not complete")
+	}
+	return nil
+}
+
+func (s *Session) prompt(ctx context.Context, turn agent.Turn, compact bool) (agent.TurnResult, error) {
 	if !s.turnMu.TryLock() {
 		return agent.TurnResult{}, fmt.Errorf("acp: a turn is already running")
 	}
 	defer s.turnMu.Unlock()
+	if compact && !s.CanCompact() {
+		return agent.TurnResult{}, fmt.Errorf("%w: ACP session has not advertised a compact command", agent.ErrUnsupported)
+	}
 	if err := s.live(); err != nil {
 		return agent.TurnResult{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return agent.TurnResult{Status: event.TurnStatusCancelled}, nil
 	}
-	selected := s.initialConfig()
-	if turn.Config != nil {
-		selected = turn.Config.Clone()
-	}
-	selected, err := s.PrepareTurn(ctx, selected)
-	if err != nil {
-		return agent.TurnResult{}, err
-	}
-	if err = s.applyConfig(ctx, selected); err != nil {
-		return agent.TurnResult{}, err
+	var err error
+	if !compact {
+		selected := s.initialConfig()
+		if turn.Config != nil {
+			selected = turn.Config.Clone()
+		}
+		selected, err := s.PrepareTurn(ctx, selected)
+		if err != nil {
+			return agent.TurnResult{}, err
+		}
+		if err = s.applyConfig(ctx, selected); err != nil {
+			return agent.TurnResult{}, err
+		}
 	}
 	content, err := s.content(turn.Input)
 	if err != nil {
@@ -379,11 +438,11 @@ func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult
 	}
 	turnCtx, turnCancel := context.WithCancel(ctx)
 	defer turnCancel()
-	state := &turnState{id: turn.ID, ctx: turnCtx, cancel: turnCancel, tools: map[string]*toolState{}}
+	state := &turnState{id: turn.ID, ctx: turnCtx, cancel: turnCancel, tools: map[string]*toolState{}, compact: compact}
 	s.mu.Lock()
 	s.active = state
 	s.mu.Unlock()
-	defer func() { s.mu.Lock(); s.finishTextLocked(); s.active = nil; s.mu.Unlock() }()
+	defer func() { s.lockEvents(); s.finishTextLocked(); s.active = nil; s.unlockEvents() }()
 	callCtx, callCancel := context.WithCancel(s.life)
 	defer callCancel()
 	type outcome struct {
@@ -422,7 +481,7 @@ func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult
 				}
 			case <-timer.C:
 				callCancel()
-				_ = process.Kill(s.cmd)
+				_ = s.cmd.Kill()
 				_ = s.Close(context.Background())
 				return agent.TurnResult{Status: event.TurnStatusCancelled}, fmt.Errorf("%w: ACP agent did not acknowledge cancellation", agent.ErrSessionDead)
 			}
@@ -450,6 +509,20 @@ func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult
 	}
 	if cancelled {
 		result.Status = event.TurnStatusCancelled
+	}
+	if compact && result.Status == event.TurnStatusCompleted {
+		s.mu.Lock()
+		confirmed, compactionCancelled, failure := state.compactionConfirmed, state.compactionCancelled, state.compactionFailure
+		s.mu.Unlock()
+		if compactionCancelled {
+			return agent.TurnResult{Status: event.TurnStatusCancelled}, nil
+		}
+		if failure != "" {
+			return agent.TurnResult{}, fmt.Errorf("acp compact: %s", failure)
+		}
+		if !confirmed {
+			return agent.TurnResult{}, fmt.Errorf("acp compact: command completed without a compaction confirmation")
+		}
 	}
 	return result, nil
 }
@@ -496,6 +569,10 @@ func (s *Session) rpc(ctx context.Context, method string, params, result any) er
 	}
 }
 
+type osInputFiles struct{}
+
+func (osInputFiles) Open(path string) (fs.File, error) { return os.Open(path) }
+
 func (s *Session) content(parts []agent.InputPart) ([]any, error) {
 	out := make([]any, 0, len(parts))
 	for _, part := range parts {
@@ -510,11 +587,24 @@ func (s *Session) content(parts []agent.InputPart) ([]any, error) {
 			if !filepath.IsAbs(path) {
 				path = filepath.Join(s.cwd, path)
 			}
-			file, err := os.Open(path)
+			file, err := s.rt.inputFiles.Open(path)
 			if err != nil {
 				return nil, err
 			}
-			data, err := io.ReadAll(io.LimitReader(file, s.rt.maxImageBytes+1))
+			stat, err := file.Stat()
+			if err != nil {
+				_ = file.Close()
+				return nil, err
+			}
+			if !stat.Mode().IsRegular() || stat.Size() > s.rt.maxImageBytes {
+				_ = file.Close()
+				return nil, fmt.Errorf("%w: image must be a regular file within maxImageBytes", agent.ErrInvalidConfig)
+			}
+			var reader io.Reader = file
+			if s.rt.maxImageBytes < math.MaxInt64 {
+				reader = io.LimitReader(file, s.rt.maxImageBytes+1)
+			}
+			data, err := io.ReadAll(reader)
 			_ = file.Close()
 			if err != nil {
 				return nil, err
@@ -551,7 +641,7 @@ func (s *Session) mcpServers(cfg *mcp.Config) ([]any, error) {
 			return nil, fmt.Errorf("%w: ACP MCP server %q cannot apply cwd, tool filters, approval policy or timeouts", agent.ErrUnsupported, name)
 		}
 		var err error
-		server, err = server.Expanded(mcp.LookupWith(os.LookupEnv, s.cmd.Env))
+		server, err = server.Expanded(mcp.LookupWith(os.LookupEnv, s.env))
 		if err != nil {
 			return nil, err
 		}

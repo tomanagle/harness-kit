@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/tomanagle/harness-kit/core/agent"
+	"github.com/tomanagle/harness-kit/core/logging"
 	"github.com/tomanagle/harness-kit/core/mcp"
 	mcpclient "github.com/tomanagle/harness-kit/core/mcp/client"
 	"github.com/tomanagle/harness-kit/core/rpc/server"
@@ -316,7 +317,11 @@ func serve(args []string) error {
 	}
 	logLevelVar := new(slog.LevelVar)
 	logLevelVar.Set(level)
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevelVar}))
+	logs := logging.New(logLevelVar, slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevelVar}), logging.Config{
+		MaxQueueRecords: initial.Logging.MaxQueueRecords, MaxQueueBytes: initial.Logging.MaxQueueBytes, MaxRecordBytes: initial.Logging.MaxRecordBytes,
+	})
+	defer logs.Close()
+	log := slog.New(logs)
 
 	reg, err := rf.registry()
 	if err != nil {
@@ -333,7 +338,7 @@ func serve(args []string) error {
 	host := toolhost.New(toolhost.Options{Registry: registry, Version: buildVersion(), Logger: log})
 	defer host.Close()
 	var prepare func(context.Context, *session.CreateParams) ([]string, error)
-	var resolver *mcp.Resolver
+	var resolver server.MCPResolver
 	if *kitMCP {
 		r, err := kitResolver()
 		if err != nil {
@@ -351,6 +356,7 @@ func serve(args []string) error {
 		EventLogSize:    *logSize,
 		Logger:          log,
 		LogLevel:        logLevelVar,
+		Logs:            logs,
 	})
 	if err := mgr.InitializeSettings(context.Background(), initial); err != nil {
 		return err

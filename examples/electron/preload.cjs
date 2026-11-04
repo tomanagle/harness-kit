@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("harnessKit", {
   renameSession: call("renameSession"),
   openSession: call("openSession"),
   history: call("history"),
+  context: call("context"),
+  compact: call("compact"),
   gitStatus: call("gitStatus"),
   gitDiff: call("gitDiff"),
   gitBranches: call("gitBranches"),

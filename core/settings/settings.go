@@ -30,16 +30,17 @@ var (
 // limit; a zero cache budget retains no cached events. These are data budgets,
 // not limits on process RSS or memory owned by child processes.
 type Values struct {
-	Git       workspace.GitSettings `json:"git"`
-	Workspace workspace.Settings    `json:"workspace"`
-	Budget    config.BudgetLimits   `json:"budget"`
-	Process   Process               `json:"process"`
-	Logging   Logging               `json:"logging"`
-	Approvals Approvals             `json:"approvals"`
-	Memory    Memory                `json:"memory"`
-	History   History               `json:"history"`
-	Streams   Streams               `json:"streams"`
-	Session   Session               `json:"session"`
+	Compaction config.CompactionSettings `json:"compaction"`
+	Git        workspace.GitSettings     `json:"git"`
+	Workspace  workspace.Settings        `json:"workspace"`
+	Budget     config.BudgetLimits       `json:"budget"`
+	Process    Process                   `json:"process"`
+	Logging    Logging                   `json:"logging"`
+	Approvals  Approvals                 `json:"approvals"`
+	Memory     Memory                    `json:"memory"`
+	History    History                   `json:"history"`
+	Streams    Streams                   `json:"streams"`
+	Session    Session                   `json:"session"`
 }
 
 type Process struct {
@@ -55,7 +56,10 @@ type Process struct {
 	ShutdownTimeoutMs int64                 `json:"shutdownTimeoutMs"`
 }
 type Logging struct {
-	Level string `json:"level"`
+	Level           string `json:"level"`
+	MaxQueueRecords int    `json:"maxQueueRecords"`
+	MaxQueueBytes   int64  `json:"maxQueueBytes"`
+	MaxRecordBytes  int    `json:"maxRecordBytes"`
 }
 type Approvals struct {
 	TimeoutMs int64 `json:"timeoutMs"`
@@ -138,13 +142,14 @@ type Snapshot struct {
 func Defaults() Values {
 	pageBytes := int64(1024 * 1024)
 	return Values{
-		Git:       workspace.GitDefaults(),
-		Workspace: workspace.Defaults(),
-		Process:   Process{Store: "memory", Runtimes: []string{}, ShutdownTimeoutMs: 10000},
-		Logging:   Logging{Level: "info"},
-		Memory:    Memory{EventLogSize: 2048, MaxClosedSessions: 64},
-		History:   History{MaxPageEvents: 200, MaxPageBytes: &pageBytes},
-		Streams:   Streams{MaxQueueEvents: 4096},
+		Compaction: config.CompactionDefaults(),
+		Git:        workspace.GitDefaults(),
+		Workspace:  workspace.Defaults(),
+		Process:    Process{Store: "memory", Runtimes: []string{}, ShutdownTimeoutMs: 10000},
+		Logging:    Logging{Level: "info", MaxQueueRecords: 256, MaxQueueBytes: 1048576, MaxRecordBytes: 65536},
+		Memory:     Memory{EventLogSize: 2048, MaxClosedSessions: 64},
+		History:    History{MaxPageEvents: 200, MaxPageBytes: &pageBytes},
+		Streams:    Streams{MaxQueueEvents: 4096},
 	}
 }
 
@@ -154,6 +159,9 @@ func Describe() map[string]Field {
 		out[path] = Field{Type: typ, Unit: unit, When: when, Nullable: nullable, Minimum: min, Writable: when != "restart", Scopes: scopes}
 	}
 	zero, one := int64(0), int64(1)
+	add("compaction.autoAtTokens", "integer", "tokens", "newSession", true, &one, "global", "session", "turn")
+	add("compaction.autoAtPercent", "number", "percent", "newSession", true, &zero, "global", "session", "turn")
+	add("compaction.timeoutMs", "integer", "milliseconds", "newSession", false, &one, "global", "session", "turn")
 	for _, p := range []string{"readOnly", "allowRemote", "allowDuringTurn"} {
 		add("git."+p, "boolean", "", "nextOperation", false, nil, "global")
 	}
@@ -184,6 +192,9 @@ func Describe() map[string]Field {
 		add("process."+p, "boolean", "", "restart", false, nil, "global")
 	}
 	add("logging.level", "string", "", "live", false, nil, "global")
+	add("logging.maxQueueRecords", "integer", "records", "live", false, &one, "global")
+	add("logging.maxQueueBytes", "integer", "bytes", "live", false, &one, "global")
+	add("logging.maxRecordBytes", "integer", "bytes", "live", false, &one, "global")
 	add("approvals.timeoutMs", "integer", "milliseconds", "nextApproval", false, &zero, "global")
 	for _, p := range []string{"maxCacheBytes", "maxSessionCacheBytes"} {
 		add("memory."+p, "integer", "bytes", "live", true, &zero, "global")
@@ -406,6 +417,9 @@ func Apply(base Values, patch Patch, reset []string, defaults Values) (Values, [
 }
 
 func Validate(v Values) error {
+	if err := v.Compaction.Validate(); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
 	if err := workspace.Validate(v.Workspace); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalid, err)
 	}

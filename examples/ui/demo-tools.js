@@ -8,7 +8,11 @@ export const demoTools = [
   {
     name: "order_status",
     description: "Look up the status of an order by ID (try A7, B2 or C9)",
-    inputSchema: { type: "object", properties: { id: { type: "string", description: "Order ID" } }, required: ["id"] },
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "Order ID" } },
+      required: ["id"],
+    },
     readOnly: true,
     handler: ({ id }) => ({ id, status: orders[id] ?? "unknown" }),
   },

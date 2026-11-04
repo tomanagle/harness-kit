@@ -1,9 +1,12 @@
 # Harness Kit developer tasks.
 GO      ?= go
+BUN     ?= bun
+# Plain Wails backend checks do not use its dev/production desktop build tags.
+GO_MODULES := . providers/openai providers/anthropic ../packages/client-go ../examples/cli ../examples/model ../examples/wails
 BIN     := bin/harness-kit
 VERSION ?= $(patsubst core/%,%,$(shell git describe --tags --match 'core/v[0-9]*' --always --dirty 2>/dev/null || echo dev))
 
-.PHONY: all build install run generate check-generated test test-go test-ts test-client-go test-clients test-providers test-examples test-live lint wasm-check cross client-ts clean
+.PHONY: all build install run generate check-generated test test-go test-ts test-client-go test-clients test-providers test-examples test-live setup format fmt format-go format-web format-check lint lint-go lint-ts hooks wasm-check cross client-ts clean
 
 # Where `make install` puts the binary (must be on your PATH).
 INSTALL_DIR ?= $(HOME)/.local/bin
@@ -57,13 +60,38 @@ test-clients: test-ts test-client-go
 test-live:
 	HARNESS_KIT_LIVE=1 $(GO) test -count=1 -run TestLive -v ./runtimes/...
 
-lint:
-	@test -z "$$(gofmt -l . ../examples ../packages/client-go)" || (gofmt -l . ../examples ../packages/client-go && echo "run gofmt -w on the listed files" && exit 1)
-	$(GO) vet ./...
+# Repository tooling uses Bun 1.4.4+ (native formatter) and pinned dev dependencies.
+setup:
+	cd .. && $(BUN) install --frozen-lockfile
+
+hooks:
+	cd .. && $(BUN) run hooks:install
+
+format: format-go format-web
+
+fmt: format
+
+format-go:
+	cd .. && $(BUN) scripts/format-go.ts
+
+format-web:
+	cd .. && $(BUN) fmt --no-script
+
+format-check:
+	cd .. && $(BUN) scripts/format-go.ts --check
+	cd .. && $(BUN) fmt --no-script --check
+
+lint: format-check lint-go lint-ts
+
+lint-go:
+	@for module in $(GO_MODULES); do $(GO) -C "$$module" vet ./... || exit 1; done
+
+lint-ts:
+	cd .. && $(BUN) lint
 
 # The transport-neutral core must build for WebAssembly and must never
 # import process-spawning code.
-CORE := ./config ./internal/budget ./workspace ./settings ./event ./permission ./mcp ./tools ./model ./model/contextwindow ./agent ./session ./runtimes/fake ./rpc/protocol ./rpc/server
+CORE := ./config ./internal/budget ./workspace ./settings ./logging ./event ./permission ./mcp ./tools ./model ./model/contextwindow ./agent ./session ./runtimes/transport ./runtimes/fake ./rpc/protocol ./rpc/server
 wasm-check:
 	GOOS=wasip1 GOARCH=wasm $(GO) build $(CORE)
 	GOOS=js GOARCH=wasm $(GO) build $(CORE)

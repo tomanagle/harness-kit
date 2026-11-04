@@ -28,6 +28,7 @@ type Metric struct {
 	Incomplete     bool    `json:"incomplete"`
 	Base           float64 `json:"base"`
 	Turn           float64 `json:"turn"`
+	SegmentOffset  float64 `json:"segmentOffset,omitempty"`
 	TurnKnown      bool    `json:"turnKnown"`
 	NativeStart    float64 `json:"nativeStart"`
 	NativeObserved bool    `json:"nativeObserved"`
@@ -52,6 +53,7 @@ func (l *Ledger) Begin() { l.Active = true; l.Tokens.begin(); l.Cost.begin() }
 func (m *Metric) begin() {
 	m.Base = m.Total
 	m.Turn = 0
+	m.SegmentOffset = 0
 	m.TurnKnown = false
 	m.NativeStart = m.Total
 	m.NativeObserved = false
@@ -101,7 +103,7 @@ func (m *Metric) observe(value float64, scope, mode string, active bool) {
 		m.TurnKnown = true
 	}
 	if active {
-		m.Total = math.Max(m.Base+m.Turn, m.Native)
+		m.Total = math.Max(m.Base+m.SegmentOffset+m.Turn, m.Native)
 	} else {
 		m.Total = math.Max(m.Total, m.Native)
 	}
@@ -143,7 +145,28 @@ func tokens(n float64) int64 {
 	}
 	return int64(n)
 }
-func (m Metric) turnUsage() float64 { return math.Max(m.Turn, math.Max(0, m.Native-m.NativeStart)) }
+func (m Metric) turnUsage() float64 {
+	return math.Max(m.SegmentOffset+m.Turn, math.Max(0, m.Native-m.NativeStart))
+}
+
+// NextSegment starts another native invocation inside the same kit turn. Each
+// invocation's turn snapshots begin at zero; session snapshots remain cumulative.
+func (l *Ledger) NextSegment() {
+	if !l.Active {
+		return
+	}
+	if !l.Tokens.TurnKnown && !l.Tokens.NativeObserved {
+		l.Tokens.Incomplete = true
+	}
+	if !l.Cost.TurnKnown && !l.Cost.NativeObserved {
+		l.Cost.Incomplete = true
+	}
+	l.Tokens.SegmentOffset = l.Tokens.turnUsage()
+	l.Cost.SegmentOffset = l.Cost.turnUsage()
+	l.Tokens.Turn, l.Cost.Turn = 0, 0
+	l.Tokens.TurnKnown, l.Cost.TurnKnown = false, false
+	l.Tokens.NativeObserved, l.Cost.NativeObserved = false, false
+}
 
 // Check compares usage with limits. Admission uses zero turn usage and still
 // rejects an explicit zero, even if a runtime cannot report that metric.

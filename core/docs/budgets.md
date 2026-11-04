@@ -6,12 +6,16 @@ further work is admitted. Negative values are rejected. Token limits are integer
 cost limits are nonnegative USD numbers.
 
 ```ts
-await kit.settings.configure({ patch: { budget: {
-  maxSessionTokens: 100_000,
-  maxSessionCostUsd: 5,
-  maxTurnTokens: 20_000,
-  maxTurnCostUsd: 1,
-} } });
+await kit.settings.configure({
+  patch: {
+    budget: {
+      maxSessionTokens: 100_000,
+      maxSessionCostUsd: 5,
+      maxTurnTokens: 20_000,
+      maxTurnCostUsd: 1,
+    },
+  },
+});
 const session = await kit.sessions.create({ runtime: "claude" });
 
 // Update this session immediately, including an active turn's inherited limits.

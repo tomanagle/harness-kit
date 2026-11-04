@@ -9,14 +9,19 @@ interface. The optional CLI/MCP configuration loaders remain host conveniences.
 
 The `settings` package is the shared configuration contract for Go hosts, the
 sidecar and clients. The document has `process`, `logging`, `approvals`,
-`memory`, `history`, `streams`, `budget`, `workspace`, `git`, and `session` sections. The same validated
+`memory`, `history`, `streams`, `budget`, `compaction`, `workspace`, `git`, and `session` sections. The same validated
 document initializes the sidecar and supplies runtime patches. The kit does
 not write application preferences to a second settings store.
 
 ```json
 {
   "process": { "store": "./sessions", "runtimes": ["codex", "claude"] },
-  "logging": { "level": "info" },
+  "logging": {
+    "level": "info",
+    "maxQueueRecords": 256,
+    "maxQueueBytes": 1048576,
+    "maxRecordBytes": 65536
+  },
   "approvals": { "timeoutMs": 0 },
   "memory": {
     "maxCacheBytes": 67108864,
@@ -28,7 +33,12 @@ not write application preferences to a second settings store.
   },
   "history": { "maxPageEvents": 200, "maxPageBytes": 1048576 },
   "streams": { "maxQueueEvents": 4096, "maxQueueBytes": 2097152 },
-  "budget": { "maxSessionTokens": null, "maxSessionCostUsd": null, "maxTurnTokens": null, "maxTurnCostUsd": null },
+  "budget": {
+    "maxSessionTokens": null,
+    "maxSessionCostUsd": null,
+    "maxTurnTokens": null,
+    "maxTurnCostUsd": null
+  },
   "workspace": { "mode": "existing", "captureDiff": false },
   "git": { "readOnly": false, "allowRemote": true, "allowDuringTurn": false },
   "session": { "model": "", "effort": "" }
@@ -38,6 +48,10 @@ not write application preferences to a second settings store.
 These are example policy values. Automatic eviction and suspension are off
 unless the host supplies a timeout or cache budget. `process.store` selects
 durable storage; the sidecar otherwise uses an in-memory store.
+
+`logging.level` and its positive queue/record limits apply live to the
+[structured slog stream](logging.md). They are global host policy; clients
+subscribe explicitly and choose how to display or retain their own log history.
 
 ```sh
 harness-kit serve --settings ./settings.json

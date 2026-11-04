@@ -107,13 +107,13 @@ func TestImageValidationAndTurnLimit(t *testing.T) {
 		{{Type: "image", Path: bad}},
 		{{Type: "unknown", Text: "hello"}},
 	} {
-		if _, _, err := encodeInput(context.Background(), in, "", nil); !errors.Is(err, agent.ErrInvalidConfig) {
+		if _, _, err := encodeInput(context.Background(), osInputFiles{}, in, "", nil); !errors.Is(err, agent.ErrInvalidConfig) {
 			t.Fatalf("invalid input %+v: %v", in, err)
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, _, err := encodeInput(ctx, []agent.InputPart{{Type: "image", Path: path}}, "", nil); !errors.Is(err, context.Canceled) {
+	if _, _, err := encodeInput(ctx, osInputFiles{}, []agent.InputPart{{Type: "image", Path: path}}, "", nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled image input: %v", err)
 	}
 	zero := int64(0)

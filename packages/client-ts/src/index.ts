@@ -29,6 +29,8 @@ import {
   type RuntimeSession,
   type RpcMethods,
   type SessionInfo,
+  type SessionContext,
+  type LogNotification,
   type ToolCallParams,
   type ToolResult,
   type ToolSpec,
@@ -37,7 +39,14 @@ import {
 
 export * from "./protocol.ts";
 export { ProtocolClient } from "./methods.gen.ts";
-export { ConnectionClosedError, HarnessKitError, JsonRpcConnection, LineDecoder, type Transport } from "./rpc.ts";
+export {
+  ConnectionClosedError,
+  HarnessKitError,
+  JsonRpcConnection,
+  LineDecoder,
+  type RequestOptions,
+  type Transport,
+} from "./rpc.ts";
 
 export interface HarnessKitOptions {
   transport: Transport;
@@ -72,7 +81,10 @@ function toToolResult(v: unknown): ToolResult {
   if (v === undefined || v === null) return { content: [] };
   if (typeof v === "object" && Array.isArray((v as ToolResult).content)) return v as ToolResult;
   const text = JSON.stringify(v);
-  return { content: [{ type: "text", text }], ...(typeof v === "object" && !Array.isArray(v) ? { structuredContent: v } : {}) };
+  return {
+    content: [{ type: "text", text }],
+    ...(typeof v === "object" && !Array.isArray(v) ? { structuredContent: v } : {}),
+  };
 }
 
 /** Connects to a Harness Kit server and performs the initialize handshake. */
@@ -80,7 +92,8 @@ export async function createHarnessKit(options: HarnessKitOptions): Promise<Harn
   const kit = new HarnessKit(options.transport);
   try {
     await kit._initialize(options.clientInfo ?? { name: "@tomanagle/harness-kit" });
-    if (options.initialSettings !== undefined) await kit.settings.configure({ patch: options.initialSettings });
+    if (options.initialSettings !== undefined)
+      await kit.settings.configure({ patch: options.initialSettings });
     return kit;
   } catch (error) {
     await options.transport.close();
@@ -96,6 +109,7 @@ export class HarnessKit {
   readonly #transport: Transport;
   readonly #listeners = new Set<EventListener>();
   readonly #settingsListeners = new Set<(snapshot: SettingsSnapshot) => void>();
+  readonly #logListeners = new Set<(notification: LogNotification) => void>();
   readonly #settingsRevisions = new Map<string, number>();
   readonly #tools = new Map<string, ToolDefinition>();
   #server: InitializeResult | undefined;
@@ -104,12 +118,26 @@ export class HarnessKit {
   constructor(transport: Transport) {
     this.#transport = transport;
     this.#rpc = new JsonRpcConnection(transport, (method, params) => {
+      if (method === "log") {
+        // oxlint-disable-next-line unicorn/no-useless-spread -- Snapshot subscriptions before callbacks can change them.
+        for (const listener of [...this.#logListeners]) {
+          try {
+            listener(params as LogNotification);
+          } catch (error) {
+            queueMicrotask(() => {
+              throw error;
+            });
+          }
+        }
+        return;
+      }
       if (method === "settings.updated") {
         this.#settingsChanged(params as SettingsSnapshot);
         return;
       }
       if (method !== "event") return;
       const ev = params as HarnessEvent;
+      // oxlint-disable-next-line unicorn/no-useless-spread -- Snapshot subscriptions before callbacks can change them.
       for (const l of [...this.#listeners]) {
         try {
           l(ev);
@@ -120,23 +148,45 @@ export class HarnessKit {
         }
       }
     });
-    this.protocol = new ProtocolClient((method, params, opts) => this.#rpc.request(method, params, opts));
+    this.protocol = new ProtocolClient((method, params, opts) =>
+      this.#rpc.request(method, params, opts),
+    );
     this.#rpc.setRequestHandler(async (method, params, signal) => {
-      if (method !== "tool.call") throw Object.assign(new Error("method not found: " + method), { code: ErrorCodes.MethodNotFound });
+      if (method !== "tool.call")
+        throw Object.assign(new Error("method not found: " + method), {
+          code: ErrorCodes.MethodNotFound,
+        });
       const p = params as ToolCallParams;
       const def = this.#tools.get(p.name);
-      if (!def) return toToolResult({ content: [{ type: "text", text: `tool ${p.name} is not registered` }], isError: true });
+      if (!def)
+        return toToolResult({
+          content: [{ type: "text", text: `tool ${p.name} is not registered` }],
+          isError: true,
+        });
       try {
-        return toToolResult(await def.handler(p.arguments, { sessionId: p.sessionId, turnId: p.turnId, name: p.name, signal }));
+        return toToolResult(
+          await def.handler(p.arguments, {
+            sessionId: p.sessionId,
+            turnId: p.turnId,
+            name: p.name,
+            signal,
+          }),
+        );
       } catch (e) {
-        return { content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }], isError: true } satisfies ToolResult;
+        return {
+          content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],
+          isError: true,
+        } satisfies ToolResult;
       }
     });
   }
 
   /** @internal */
   async _initialize(clientInfo: { name: string; version?: string }): Promise<void> {
-    this.#server = await this.protocol.initialize({ protocolVersion: PROTOCOL_VERSION, clientInfo });
+    this.#server = await this.protocol.initialize({
+      protocolVersion: PROTOCOL_VERSION,
+      clientInfo,
+    });
   }
 
   /** The server's initialize result: version, runtimes and limits. */
@@ -168,17 +218,63 @@ export class HarnessKit {
 
   #settingsChanged(snapshot: SettingsSnapshot): void {
     const target = snapshot.target?.sessionId ?? "";
-    if (!snapshot.resync && snapshot.revision <= (this.#settingsRevisions.get(target) ?? -1)) return;
-    this.#settingsRevisions.set(target, Math.max(snapshot.revision, this.#settingsRevisions.get(target) ?? -1));
+    if (!snapshot.resync && snapshot.revision <= (this.#settingsRevisions.get(target) ?? -1))
+      return;
+    this.#settingsRevisions.set(
+      target,
+      Math.max(snapshot.revision, this.#settingsRevisions.get(target) ?? -1),
+    );
+    // oxlint-disable-next-line unicorn/no-useless-spread -- Snapshot subscriptions before callbacks can change them.
     for (const listener of [...this.#settingsListeners]) {
-      try { listener(snapshot); }
-      catch (error) { queueMicrotask(() => { throw error; }); }
+      try {
+        listener(snapshot);
+      } catch (error) {
+        queueMicrotask(() => {
+          throw error;
+        });
+      }
     }
   }
 
+  /** Live diagnostics from the host's slog stream. No history is retained. */
+  readonly logs = {
+    /** Installs the listener before enabling delivery. Await this before producing
+     * logs you need to observe. Each listener is independent; closing the last
+     * subscription stops server delivery. Slow readers receive dropped markers. */
+    subscribe: async (
+      listener: (notification: LogNotification) => void,
+      options?: RequestOptions,
+    ): Promise<() => Promise<void>> => {
+      options?.signal?.throwIfAborted();
+      const subscription = (notification: LogNotification) => listener(notification);
+      this.#logListeners.add(subscription);
+      try {
+        await this.protocol.logsSubscribe({}, options);
+      } catch (error) {
+        this.#logListeners.delete(subscription);
+        if (this.#logListeners.size === 0) {
+          // Setup cancellation must reject immediately even if the peer stopped
+          // responding. Bound cleanup so it cannot leave a pending RPC forever.
+          void this.protocol
+            .logsUnsubscribe({}, { signal: AbortSignal.timeout(1000) })
+            .catch(() => {});
+        }
+        throw error;
+      }
+      let closed = false;
+      return async () => {
+        if (closed) return;
+        closed = true;
+        this.#logListeners.delete(subscription);
+        if (this.#logListeners.size === 0) await this.protocol.logsUnsubscribe({});
+      };
+    },
+  };
+
   /** One settings surface for host policy, session defaults and scoped changes. */
   readonly settings = {
-    get: (target: SettingsTarget = {}): Promise<SettingsSnapshot> => this.protocol.settingsGet({ target }),
+    get: (target: SettingsTarget = {}): Promise<SettingsSnapshot> =>
+      this.protocol.settingsGet({ target }),
     configure: async (params: ConfigureSettingsParams): Promise<SettingsSnapshot> => {
       const snapshot = await this.protocol.settingsConfigure(params);
       this.#settingsChanged(snapshot);
@@ -196,51 +292,85 @@ export class HarnessKit {
   /** Optional Git operations on a session's repository. These methods never
    * stage, commit or contact remotes implicitly. Host policy uses settings.git. */
   readonly git = {
-    status: (sessionId: string, opts?: RequestOptions) => this.protocol.gitStatus({ sessionId }, opts),
-    diff: (sessionId: string, params: Omit<RpcMethods["git.diff"]["params"], "sessionId"> = {}, opts?: RequestOptions) =>
-      this.protocol.gitDiff({ sessionId, ...params }, opts),
-    branches: (sessionId: string, opts?: RequestOptions) => this.protocol.gitBranches({ sessionId }, opts),
-    log: (sessionId: string, params: Omit<RpcMethods["git.log"]["params"], "sessionId"> = {}, opts?: RequestOptions) =>
-      this.protocol.gitLog({ sessionId, ...params }, opts),
+    status: (sessionId: string, opts?: RequestOptions) =>
+      this.protocol.gitStatus({ sessionId }, opts),
+    diff: (
+      sessionId: string,
+      params: Omit<RpcMethods["git.diff"]["params"], "sessionId"> = {},
+      opts?: RequestOptions,
+    ) => this.protocol.gitDiff({ sessionId, ...params }, opts),
+    branches: (sessionId: string, opts?: RequestOptions) =>
+      this.protocol.gitBranches({ sessionId }, opts),
+    log: (
+      sessionId: string,
+      params: Omit<RpcMethods["git.log"]["params"], "sessionId"> = {},
+      opts?: RequestOptions,
+    ) => this.protocol.gitLog({ sessionId, ...params }, opts),
     stage: async (sessionId: string, paths: string[], opts?: RequestOptions): Promise<void> => {
       await this.protocol.gitStage({ sessionId, paths }, opts);
     },
     unstage: async (sessionId: string, paths: string[], opts?: RequestOptions): Promise<void> => {
       await this.protocol.gitUnstage({ sessionId, paths }, opts);
     },
-    commit: (sessionId: string, message: string, opts?: RequestOptions) => this.protocol.gitCommit({ sessionId, message }, opts),
-    checkout: async (sessionId: string, params: Omit<RpcMethods["git.checkout"]["params"], "sessionId">, opts?: RequestOptions): Promise<void> => {
+    commit: (sessionId: string, message: string, opts?: RequestOptions) =>
+      this.protocol.gitCommit({ sessionId, message }, opts),
+    checkout: async (
+      sessionId: string,
+      params: Omit<RpcMethods["git.checkout"]["params"], "sessionId">,
+      opts?: RequestOptions,
+    ): Promise<void> => {
       await this.protocol.gitCheckout({ sessionId, ...params }, opts);
     },
-    fetch: (sessionId: string, params: Omit<RpcMethods["git.fetch"]["params"], "sessionId"> = {}, opts?: RequestOptions) =>
-      this.protocol.gitFetch({ sessionId, ...params }, opts),
-    pull: (sessionId: string, params: Omit<RpcMethods["git.pull"]["params"], "sessionId"> = {}, opts?: RequestOptions) =>
-      this.protocol.gitPull({ sessionId, ...params }, opts),
-    push: (sessionId: string, params: Omit<RpcMethods["git.push"]["params"], "sessionId"> = {}, opts?: RequestOptions) =>
-      this.protocol.gitPush({ sessionId, ...params }, opts),
+    fetch: (
+      sessionId: string,
+      params: Omit<RpcMethods["git.fetch"]["params"], "sessionId"> = {},
+      opts?: RequestOptions,
+    ) => this.protocol.gitFetch({ sessionId, ...params }, opts),
+    pull: (
+      sessionId: string,
+      params: Omit<RpcMethods["git.pull"]["params"], "sessionId"> = {},
+      opts?: RequestOptions,
+    ) => this.protocol.gitPull({ sessionId, ...params }, opts),
+    push: (
+      sessionId: string,
+      params: Omit<RpcMethods["git.push"]["params"], "sessionId"> = {},
+      opts?: RequestOptions,
+    ) => this.protocol.gitPush({ sessionId, ...params }, opts),
   };
 
   readonly runtimes = {
     /** Registered runtimes (no probing). */
     list: async (): Promise<RuntimeInfo[]> => (await this.protocol.runtimeList()).runtimes,
     /** Probes installation, version and sign-in status. */
-    discover: async (opts: { runtimes?: string[]; signal?: AbortSignal } = {}): Promise<Discovery[]> =>
-      (await this.protocol.runtimeDiscover({ runtimes: opts.runtimes }, { signal: opts.signal })).runtimes,
+    discover: async (
+      opts: { runtimes?: string[]; signal?: AbortSignal } = {},
+    ): Promise<Discovery[]> =>
+      (await this.protocol.runtimeDiscover({ runtimes: opts.runtimes }, { signal: opts.signal }))
+        .runtimes,
     /**
      * Lists a runtime's own stored sessions, including ones started outside
      * Harness Kit, newest first. Fails with reason "unsupported" for
      * runtimes without `capabilities.listSessions`.
      */
-    sessions: async (runtime: string, opts: { cwd?: string; limit?: number } = {}): Promise<RuntimeSession[]> =>
+    sessions: async (
+      runtime: string,
+      opts: { cwd?: string; limit?: number } = {},
+    ): Promise<RuntimeSession[]> =>
       (await this.protocol.runtimeSessions({ runtime, ...opts })).sessions,
   };
 
   readonly sessions = {
-	/** Reads a saved turn-boundary diff without starting an agent or running Git. */
-	diff: (sessionId: string, turnId: string, options: { maxBytes?: number } = {}): Promise<import("./protocol.ts").WorkspaceDiff> =>
-	  this.protocol.sessionDiff({sessionId, turnId, ...options}),
-	/** Explicitly removes only a clean owned worktree; first close/suspend its runtime. */
-	removeWorkspace: async (sessionId: string): Promise<void> => { await this.protocol.workspaceRemove({sessionId}); },
+    /** Reads a saved turn-boundary diff without starting an agent or running Git. */
+    diff: (
+      sessionId: string,
+      turnId: string,
+      options: { maxBytes?: number } = {},
+    ): Promise<import("./protocol.ts").WorkspaceDiff> =>
+      this.protocol.sessionDiff({ sessionId, turnId, ...options }),
+    /** Explicitly removes only a clean owned worktree; first close/suspend its runtime. */
+    removeWorkspace: async (sessionId: string): Promise<void> => {
+      await this.protocol.workspaceRemove({ sessionId });
+    },
     /** Starts a session (or resumes `resumeId`). */
     create: async (params: CreateSessionParams): Promise<Session> => {
       const { session } = await this.protocol.sessionCreate(params);
@@ -248,24 +378,45 @@ export class HarnessKit {
     },
     get: async (sessionId: string): Promise<SessionInfo> =>
       (await this.protocol.sessionGet({ sessionId })).session,
-    list: async (options: import("./protocol.js").ListSessionsOptions = {}): Promise<SessionInfo[]> => (await this.protocol.sessionList(options)).sessions,
+    /** Reads the latest context observation without starting the runtime or making a model request. */
+    context: (sessionId: string, options?: RequestOptions): Promise<SessionContext> =>
+      this.protocol.sessionContext({ sessionId }, options),
+    /** Compacts an idle live session and waits for native completion. Await the previous turn first. */
+    compact: (sessionId: string, options?: RequestOptions): Promise<SessionContext> =>
+      this.protocol.sessionCompact({ sessionId }, options),
+    list: async (
+      options: import("./protocol.js").ListSessionsOptions = {},
+    ): Promise<SessionInfo[]> => (await this.protocol.sessionList(options)).sessions,
     /** Branches the whole conversation; forkPending means native materialization waits for the first prompt. */
-    fork: async (sessionId: string, options: import("./protocol.js").ForkSessionOptions = {}): Promise<Session> => {
-      const {session} = await this.protocol.sessionFork({sessionId, ...options});
+    fork: async (
+      sessionId: string,
+      options: import("./protocol.js").ForkSessionOptions = {},
+    ): Promise<Session> => {
+      const { session } = await this.protocol.sessionFork({ sessionId, ...options });
       return new Session(this, session);
     },
     archive: async (sessionId: string, archived = true): Promise<SessionInfo> =>
-      (await this.protocol.sessionArchive({sessionId, archived})).session,
+      (await this.protocol.sessionArchive({ sessionId, archived })).session,
     setTags: async (sessionId: string, tags: string[]): Promise<SessionInfo> =>
-      (await this.protocol.sessionTags({sessionId, tags})).session,
+      (await this.protocol.sessionTags({ sessionId, tags })).session,
     /** Reads one bounded page without starting the runtime. Use nextSeq while hasMore. */
-    eventsPage: async (sessionId: string, opts: { afterSeq?: number; limit?: number } = {}): Promise<EventPage> => {
+    eventsPage: async (
+      sessionId: string,
+      opts: { afterSeq?: number; limit?: number } = {},
+    ): Promise<EventPage> => {
       const page = await this.protocol.sessionEvents({ sessionId, ...opts });
-      return { ...page, nextSeq: page.nextSeq ?? page.events.at(-1)?.seq ?? opts.afterSeq ?? 0, hasMore: page.hasMore ?? false };
+      return {
+        ...page,
+        nextSeq: page.nextSeq ?? page.events.at(-1)?.seq ?? opts.afterSeq ?? 0,
+        hasMore: page.hasMore ?? false,
+      };
     },
     /** Reads saved history in bounded RPC pages and collects it in the caller.
      * Use eventsPage to bound the application's memory as well. */
-    events: async (sessionId: string, opts: { afterSeq?: number; limit?: number } = {}): Promise<{ events: HarnessEvent[]; truncated: boolean }> => {
+    events: async (
+      sessionId: string,
+      opts: { afterSeq?: number; limit?: number } = {},
+    ): Promise<{ events: HarnessEvent[]; truncated: boolean }> => {
       const events: HarnessEvent[] = [];
       let afterSeq = opts.afterSeq ?? 0;
       let truncated = false;
@@ -282,16 +433,21 @@ export class HarnessKit {
       return { events, truncated };
     },
     /** Releases cached transcript data while retaining durable history. */
-    evict: async (sessionId: string): Promise<void> => { await this.protocol.sessionEvict({ sessionId }); },
+    evict: async (sessionId: string): Promise<void> => {
+      await this.protocol.sessionEvict({ sessionId });
+    },
     /** Stops an idle runtime; a subsequent restore can resume the conversation. */
-    suspend: async (sessionId: string): Promise<void> => { await this.protocol.sessionSuspend({ sessionId }); },
+    suspend: async (sessionId: string): Promise<void> => {
+      await this.protocol.sessionSuspend({ sessionId });
+    },
     /** Convenience for the same setting available at settings.configure(memory.pinned). */
     pin: async (sessionId: string, pinned = true): Promise<SessionInfo> => {
       await this.settings.configure({ target: { sessionId }, patch: { memory: { pinned } } });
       return this.sessions.get(sessionId);
     },
     /** Returns a handle on an existing session, e.g. after a UI reload. */
-    attach: async (sessionId: string): Promise<Session> => new Session(this, await this.sessions.get(sessionId)),
+    attach: async (sessionId: string): Promise<Session> =>
+      new Session(this, await this.sessions.get(sessionId)),
     /**
      * Restarts a stored session under the same ID, resuming the runtime's
      * conversation (the sidecar needs `--store` for sessions from earlier runs).
@@ -349,7 +505,8 @@ export class HarnessKit {
      * The kit MCP servers (user and project files; needs `serve --kit-mcp`)
      * and, for `runtimes`, the servers configured in each runtime itself.
      */
-    list: (opts: { cwd?: string; runtimes?: string[] } = {}): Promise<McpListResult> => this.protocol.mcpList(opts),
+    list: (opts: { cwd?: string; runtimes?: string[] } = {}): Promise<McpListResult> =>
+      this.protocol.mcpList(opts),
   };
 
   readonly approvals = {
@@ -402,6 +559,16 @@ export class Session {
     return this.#info;
   }
 
+  /** Reads the current context observation; unknown counts remain null. */
+  context(options?: RequestOptions): Promise<SessionContext> {
+    return this.#kit.sessions.context(this.id, options);
+  }
+
+  /** Waits for native compaction. Abort the signal or call cancel() to interrupt it. */
+  compact(options?: RequestOptions): Promise<SessionContext> {
+    return this.#kit.sessions.compact(this.id, options);
+  }
+
   /** Sets the session's title. */
   async rename(title: string): Promise<SessionInfo> {
     this.#info = await this.#kit.sessions.rename(this.id, title);
@@ -419,12 +586,28 @@ export class Session {
    * turn.completed), or await `turn.done`. Aborting `signal` cancels the
    * turn.
    */
-  prompt(input: string | InputPart[], opts: { signal?: AbortSignal; turnId?: string; config?: ConfigPatch; settings?: SettingsPatch } = {}): Turn {
+  prompt(
+    input: string | InputPart[],
+    opts: {
+      signal?: AbortSignal;
+      turnId?: string;
+      config?: ConfigPatch;
+      settings?: SettingsPatch;
+    } = {},
+  ): Turn {
     const parts: InputPart[] = typeof input === "string" ? [{ type: "text", text: input }] : input;
-    return new Turn(this.#kit, this.id, opts.turnId ?? newId(), parts, opts.signal, opts.config, opts.settings);
+    return new Turn(
+      this.#kit,
+      this.id,
+      opts.turnId ?? newId(),
+      parts,
+      opts.signal,
+      opts.config,
+      opts.settings,
+    );
   }
 
-  /** Interrupts the active turn, if any. */
+  /** Interrupts the active turn or manual compaction, if any. */
   async cancel(): Promise<void> {
     await this.#kit.protocol.sessionCancel({ sessionId: this.id });
   }
@@ -435,7 +618,9 @@ export class Session {
   }
 
   /** Fetches retained events with seq > afterSeq (for replay or gap recovery). */
-  async events(opts: { afterSeq?: number; limit?: number } = {}): Promise<{ events: HarnessEvent[]; truncated: boolean }> {
+  async events(
+    opts: { afterSeq?: number; limit?: number } = {},
+  ): Promise<{ events: HarnessEvent[]; truncated: boolean }> {
     return this.#kit.sessions.events(this.id, opts);
   }
 
@@ -475,7 +660,15 @@ export class Turn implements AsyncIterable<HarnessEvent> {
   #resolve!: (d: TurnCompletedData) => void;
   #reject!: (e: unknown) => void;
 
-  constructor(kit: HarnessKit, sessionId: string, turnId: string, input: InputPart[], signal?: AbortSignal, config?: ConfigPatch, settings?: SettingsPatch) {
+  constructor(
+    kit: HarnessKit,
+    sessionId: string,
+    turnId: string,
+    input: InputPart[],
+    signal?: AbortSignal,
+    config?: ConfigPatch,
+    settings?: SettingsPatch,
+  ) {
     this.#kit = kit;
     this.id = turnId;
     this.sessionId = sessionId;
@@ -486,7 +679,9 @@ export class Turn implements AsyncIterable<HarnessEvent> {
     this.done.catch(() => {}); // avoid unhandled rejection if only iterated
     // Subscribe before sending the prompt so no event can be missed.
     this.#unsubscribeEvents = kit.onEvent((ev) => this.#ingest(ev));
-    this.#unsubscribeClose = kit.onClose((err) => this.#fail(err ?? new Error("connection closed")));
+    this.#unsubscribeClose = kit.onClose((err) =>
+      this.#fail(err ?? new Error("connection closed")),
+    );
 
     const onAbort = () => void kit.protocol.sessionCancel({ sessionId }).catch(() => {});
     if (signal) {
@@ -494,7 +689,9 @@ export class Turn implements AsyncIterable<HarnessEvent> {
       else signal.addEventListener("abort", onAbort, { once: true });
       void this.done.finally(() => signal.removeEventListener("abort", onAbort)).catch(() => {});
     }
-    kit.protocol.sessionPrompt({ sessionId, turnId, input, config, settings }).catch((e) => this.#fail(e));
+    kit.protocol
+      .sessionPrompt({ sessionId, turnId, input, config, settings })
+      .catch((e) => this.#fail(e));
   }
 
   /** Interrupts this turn. */
@@ -519,7 +716,8 @@ export class Turn implements AsyncIterable<HarnessEvent> {
         const page = await this.#kit.sessions.eventsPage(this.sessionId, { afterSeq: cursor });
         for (const ev of page.events) if (ev.turnId === this.id) this.#accept(ev);
         if (this.#finished || !page.hasMore) break;
-        if (page.nextSeq <= cursor) throw new Error("history page did not advance during gap recovery");
+        if (page.nextSeq <= cursor)
+          throw new Error("history page did not advance during gap recovery");
         cursor = page.nextSeq;
       }
     } catch (e) {

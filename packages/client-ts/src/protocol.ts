@@ -165,8 +165,13 @@ export interface Capabilities {
   approvals: boolean;
   // Cancel: an in-progress turn can be interrupted gracefully.
   cancel: boolean;
+  // Compaction means the adapter can request native compaction. Per-session
+  // availability is negotiated through Compactor.CanCompact.
+  compaction: boolean;
   // Configuration advertises accepted settings and their lifetimes.
   configuration?: Record<string, ConfigurationSupport>;
+  // ContextUsage reports model-window observations separately from spend.
+  contextUsage: boolean;
   // Cost: reports an estimated cost.
   cost: boolean;
   fork: boolean;
@@ -190,6 +195,24 @@ export interface Capabilities {
 export interface ClientInfo {
   name: string;
   version?: string;
+}
+
+// CompactionSettings controls additional host-requested compaction before a
+// prompt. Nil thresholds leave timing to the native runtime. Neither setting
+// disables a runtime's own automatic compaction. Either threshold can trigger.
+export interface CompactionSettings {
+  autoAtPercent: number | null;
+  autoAtTokens: number | null;
+  timeoutMs: number;
+}
+
+// CompactionSettings controls additional host-requested compaction before a
+// prompt. Nil thresholds leave timing to the native runtime. Neither setting
+// disables a runtime's own automatic compaction. Either threshold can trigger.
+export interface CompactionSettingsPatch {
+  autoAtPercent?: number | null;
+  autoAtTokens?: number | null;
+  timeoutMs?: number;
 }
 
 // Patch changes only supplied fields. Empty strings explicitly clear portable
@@ -219,6 +242,28 @@ export interface ConfigureSettingsParams {
   patch: SettingsPatch;
   reset?: Array<string>;
   target?: SettingsTarget;
+}
+
+// ContextCompactionData reports manual, threshold-triggered, and observed native
+// compaction using one lifecycle. Runtime-specific details remain in runtime.status.
+export interface ContextCompactionData {
+  after?: ContextUsageData;
+  before: ContextUsageData;
+  error?: ErrorInfo;
+  operationId: string;
+  reason: "manual" | "threshold" | "native";
+  status: "started" | "completed" | "failed" | "cancelled";
+}
+
+// ContextUsageData is the latest model-window observation, independent of
+// cumulative token consumption. Nil counts are unknown; zero is a known zero.
+// Basis is reported (native occupancy), last_request (the latest model request)
+// or unknown. Stale observations must not be presented as current occupancy.
+export interface ContextUsageData {
+  basis: "reported" | "last_request" | "unknown";
+  stale: boolean;
+  usedTokens: number | null;
+  windowTokens: number | null;
 }
 
 // SessionCreateParams are the params of "session.create".
@@ -298,7 +343,7 @@ export interface EventPage {
 }
 
 // Type identifies an event.
-export type EventType = "approval.requested" | "approval.resolved" | "budget.exceeded" | "error" | "message.completed" | "message.delta" | "reasoning.completed" | "reasoning.delta" | "runtime.raw" | "runtime.status" | "session.closed" | "session.started" | "session.updated" | "stream.gap" | "tool.completed" | "tool.output" | "tool.started" | "turn.completed" | "turn.started" | "usage" | "workspace.diff";
+export type EventType = "approval.requested" | "approval.resolved" | "budget.exceeded" | "context.compaction" | "context.usage" | "error" | "message.completed" | "message.delta" | "reasoning.completed" | "reasoning.delta" | "runtime.raw" | "runtime.status" | "session.closed" | "session.started" | "session.updated" | "stream.gap" | "tool.completed" | "tool.output" | "tool.started" | "turn.completed" | "turn.started" | "usage" | "workspace.diff";
 
 // ForkParams branch the complete conversation. Arbitrary turn cutoffs are not
 // portable across runtimes. Settings use the same envelope as session creation.
@@ -488,6 +533,8 @@ export type HarnessEvent =
   | { "data": ApprovalRequest; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "approval.requested" }
   | { "data": ApprovalResolvedData; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "approval.resolved" }
   | { "data": BudgetExceeded; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "budget.exceeded" }
+  | { "data": ContextCompactionData; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "context.compaction" }
+  | { "data": ContextUsageData; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "context.usage" }
   | { "data": ErrorInfo; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "error" }
   | { "data": MessageCompletedData; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "message.completed" }
   | { "data": MessageDeltaData; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "message.delta" }
@@ -552,12 +599,49 @@ export interface ListSessionsOptions {
   tags?: Array<string>;
 }
 
+// Gap describes dropped live records. There is no retained history to replay.
+export interface LogGap {
+  count: number;
+  fromSeq: number;
+  toSeq: number;
+}
+
+// Notification carries exactly one record or dropped-record marker.
+export interface LogNotification {
+  dropped?: LogGap;
+  record?: LogRecord;
+}
+
+// Record is one normalized slog record. Attrs preserve nested groups and JSON
+// value types; keys such as "message" in attrs cannot replace envelope fields.
+export interface LogRecord {
+  attrs: Record<string, unknown>;
+  level: string;
+  message: string;
+  seq: number;
+  source?: LogSource;
+  time: string;
+  truncated?: boolean;
+}
+
+export interface LogSource {
+  file: string;
+  function: string;
+  line: number;
+}
+
 export interface LoggingSettings {
   level: "debug" | "info" | "warn" | "error";
+  maxQueueBytes: number;
+  maxQueueRecords: number;
+  maxRecordBytes: number;
 }
 
 export interface LoggingSettingsPatch {
   level?: "debug" | "info" | "warn" | "error";
+  maxQueueBytes?: number;
+  maxQueueRecords?: number;
+  maxRecordBytes?: number;
 }
 
 // Approval says whether a server's tools need the host's approval.
@@ -805,6 +889,8 @@ export interface ServerCapabilities {
   // EventLogSize is the per-session replay window.
   eventLogSize: number;
   git: boolean;
+  // Logs advertises opt-in structured slog notifications.
+  logs: boolean;
   runtimes: Array<RuntimeInfo>;
   // Settings advertises the unified live settings API.
   settings: boolean;
@@ -873,6 +959,15 @@ export interface SessionConfigureParams {
   sessionId: string;
 }
 
+// ContextInfo is a cached context observation. Reading it never starts a
+// runtime or makes an inference request. CanCompact is live session availability.
+export interface SessionContext {
+  canCompact: boolean;
+  sessionId: string;
+  state: SessionState;
+  usage: ContextUsageData;
+}
+
 // SessionDiffParams reads a saved, bounded before/after turn diff.
 export interface SessionDiffParams {
   maxBytes?: number;
@@ -905,8 +1000,10 @@ export interface SessionInfo {
   // It is independent of runtime lifecycle and never cancels work.
   archived?: boolean;
   budget: BudgetLimits;
+  compaction: CompactionSettings;
   // Config is the current selection inherited by subsequent turns.
   config?: TurnConfig;
+  context?: ContextUsageData;
   createdAt: string;
   cwd?: string;
   error?: ErrorInfo;
@@ -1054,7 +1151,7 @@ export interface SessionStartedData {
 // 	starting -> idle <-> running
 // 	idle|running -> closing -> closed
 // 	starting|idle|running -> failed   (the runtime died)
-export type SessionState = "closed" | "closing" | "failed" | "idle" | "running" | "starting" | "suspended" | "suspending";
+export type SessionState = "closed" | "closing" | "compacting" | "failed" | "idle" | "running" | "starting" | "suspended" | "suspending";
 
 export interface SessionTagsParams {
   sessionId: string;
@@ -1068,8 +1165,10 @@ export interface SessionUpdatedData {
   activeTurnId?: string;
   archived?: boolean;
   budget?: BudgetLimits;
+  compaction?: CompactionSettings;
   // Config contains current session defaults, never a one-turn override.
   config?: TurnConfig;
+  context?: ContextUsageData;
   error?: ErrorInfo;
   forkPending?: boolean;
   lastStatus?: TurnStatus;
@@ -1106,6 +1205,7 @@ export interface SettingsGetParams {
 export interface SettingsPatch {
   approvals?: ApprovalSettingsPatch;
   budget?: BudgetLimitsPatch;
+  compaction?: CompactionSettingsPatch;
   git?: GitSettingsPatch;
   history?: HistorySettingsPatch;
   logging?: LoggingSettingsPatch;
@@ -1139,6 +1239,7 @@ export interface SettingsTarget {
 export interface SettingsValues {
   approvals: ApprovalSettings;
   budget: BudgetLimits;
+  compaction: CompactionSettings;
   git: GitSettings;
   history: HistorySettings;
   logging: LoggingSettings;
@@ -1407,6 +1508,8 @@ export interface RpcMethods {
   "git.status": { params: SessionIDParams; result: GitStatus };
   "git.unstage": { params: GitPathsParams; result: Empty };
   "initialize": { params: InitializeParams; result: InitializeResult };
+  "logs.subscribe": { params: Empty; result: Empty };
+  "logs.unsubscribe": { params: Empty; result: Empty };
   "mcp.list": { params: McpListParams; result: McpListResult };
   "runtime.discover": { params: RuntimeDiscoverParams; result: RuntimeDiscoverResult };
   "runtime.list": { params: undefined; result: RuntimeListResult };
@@ -1414,7 +1517,9 @@ export interface RpcMethods {
   "session.archive": { params: SessionArchiveParams; result: SessionResult };
   "session.cancel": { params: SessionIDParams; result: Empty };
   "session.close": { params: SessionIDParams; result: Empty };
+  "session.compact": { params: SessionIDParams; result: SessionContext };
   "session.configure": { params: SessionConfigureParams; result: SessionResult };
+  "session.context": { params: SessionIDParams; result: SessionContext };
   "session.create": { params: CreateSessionParams; result: SessionResult };
   "session.delete": { params: SessionIDParams; result: Empty };
   "session.diff": { params: SessionDiffParams; result: WorkspaceDiff };
@@ -1448,5 +1553,6 @@ export interface ServerRequests {
 export interface Notifications {
   "$/cancelRequest": { "id": number | string };
   "event": HarnessEvent;
+  "log": LogNotification;
   "settings.updated": SettingsSnapshot;
 }

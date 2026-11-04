@@ -1,0 +1,10 @@
+[fmt]
+printWidth = 100
+# Generated protocol artifacts must remain byte-for-byte reproducible.
+ignorePatterns = [
+  "protocol/schema.json",
+  "packages/client-ts/src/protocol.ts",
+  "**/*.gen.ts",
+  "**/package-lock.json",
+  "bun.lock",
+]

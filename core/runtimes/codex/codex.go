@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"slices"
 	"strings"
 	"sync"
@@ -31,6 +30,7 @@ import (
 	"github.com/tomanagle/harness-kit/core/internal/process"
 	"github.com/tomanagle/harness-kit/core/mcp"
 	"github.com/tomanagle/harness-kit/core/permission"
+	"github.com/tomanagle/harness-kit/core/runtimes/transport"
 )
 
 // Name is the runtime name.
@@ -42,6 +42,7 @@ const TestedVersion = "0.166.0"
 
 // Runtime is the Codex adapter.
 type Runtime struct {
+	launcher     transport.Launcher
 	path         string
 	args         []string
 	env          []string
@@ -59,6 +60,16 @@ type ClientInfo struct {
 
 // Option configures the adapter.
 type Option func(*Runtime)
+
+// WithLauncher injects executable discovery and process execution for sessions
+// and probes. Nil retains the native OS implementation.
+func WithLauncher(launcher transport.Launcher) Option {
+	return func(r *Runtime) {
+		if launcher != nil {
+			r.launcher = launcher
+		}
+	}
+}
 
 // WithPath sets the codex binary path (default: HARNESS_KIT_CODEX_PATH,
 // then PATH and well-known install directories).
@@ -79,6 +90,7 @@ func WithStartTimeout(d time.Duration) Option { return func(r *Runtime) { r.star
 // New returns a Codex adapter.
 func New(opts ...Option) *Runtime {
 	r := &Runtime{
+		launcher:     process.OSLauncher{},
 		clientInfo:   ClientInfo{Name: "harness_kit", Title: "Harness Kit", Version: "0.1.0"},
 		startTimeout: 30 * time.Second,
 	}
@@ -136,6 +148,7 @@ func (r *Runtime) Info() agent.Info {
 		Description: "Codex CLI via the official app-server protocol.",
 		Capabilities: agent.Capabilities{
 			Streaming: true, Approvals: true, Resume: true, Fork: true, Cancel: true, Usage: true, ListSessions: true, MCP: true, Images: true,
+			ContextUsage: true, Compaction: true,
 			Configuration: map[string]config.Support{
 				"cwd": {Startup: true}, "instructions": {Startup: true}, "rawEvents": {Startup: true},
 				"mcp": {Startup: true}, "hostTools": {Startup: true}, "disableHostTools": {Startup: true},
@@ -169,7 +182,7 @@ func (r *Runtime) Unsafe(cfg agent.SessionConfig) string {
 }
 
 func (r *Runtime) lookPath() (string, error) {
-	return process.LookPath("codex", process.LookOptions{Path: r.path, EnvVar: "HARNESS_KIT_CODEX_PATH"})
+	return r.launcher.LookPath("codex", transport.LookupOptions{Path: r.path, EnvVar: "HARNESS_KIT_CODEX_PATH"})
 }
 
 // Discover implements agent.Runtime.
@@ -181,7 +194,7 @@ func (r *Runtime) Discover(ctx context.Context) (agent.Discovery, error) {
 		return d, nil
 	}
 	d.Installed, d.Path = true, path
-	if v, err := process.Version(ctx, path, r.env); err == nil {
+	if v, err := process.VersionWith(ctx, r.launcher, path, r.env); err == nil {
 		d.Version = v
 	} else {
 		d.Problems = append(d.Problems, err.Error())
@@ -583,42 +596,27 @@ func (r *Runtime) mcpServers(ctx context.Context, s *Session, cfg agent.SessionC
 
 // spawn starts `codex app-server` and completes the initialize handshake.
 func (r *Runtime) spawn(ctx context.Context, path, cwd string, h agent.Handler) (*Session, error) {
-	cmd := exec.Command(path, append([]string{"app-server"}, r.args...)...)
-	process.Configure(cmd)
-	cmd.Dir = cwd
-	if len(r.env) > 0 {
-		cmd.Env = append(os.Environ(), r.env...)
-	}
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, err
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
+	hctx, cancel := context.WithTimeout(ctx, r.startTimeout)
+	defer cancel()
 	s := &Session{
 		rt:     r,
 		h:      h,
-		cmd:    cmd,
-		stdin:  stdin,
 		exited: make(chan struct{}),
 		stderr: process.NewTail(16 << 10),
 		items:  make(map[string][]string),
 	}
-	cmd.Stderr = s.stderr
-	if err := cmd.Start(); err != nil {
+	child, err := r.launcher.Start(hctx, transport.Command{Path: path, Args: append([]string{"app-server"}, r.args...), Dir: cwd, Env: r.env, Stderr: s.stderr})
+	if err != nil {
 		return nil, fmt.Errorf("codex: start app-server: %w", err)
 	}
+	s.cmd, s.stdin, s.stdout = child, child.Stdin(), child.Stdout()
 	go func() {
-		s.waitErr = cmd.Wait()
+		s.waitErr = child.Wait()
 		close(s.exited)
 	}()
-	s.conn = jsonrpc.NewConn(stdout, stdin, s, jsonrpc.Options{OmitVersion: true})
+	s.conn = jsonrpc.NewConn(s.stdout, s.stdin, s, jsonrpc.Options{OmitVersion: true})
 	go s.conn.Run(context.Background())
 
-	hctx, cancel := context.WithTimeout(ctx, r.startTimeout)
-	defer cancel()
 	err = s.conn.Call(hctx, "initialize", map[string]any{"clientInfo": r.clientInfo}, nil)
 	if err == nil {
 		err = s.conn.Notify(hctx, "initialized", nil)
@@ -637,8 +635,9 @@ type Session struct {
 	cfg  agent.SessionConfig
 	opts Options
 
-	cmd     *exec.Cmd
+	cmd     transport.Child
 	stdin   io.WriteCloser
+	stdout  io.ReadCloser
 	conn    *jsonrpc.Conn
 	exited  chan struct{}
 	waitErr error
@@ -651,20 +650,25 @@ type Session struct {
 	modelEfforts     map[string]string
 	supportedEfforts map[string][]string
 
-	mu        sync.Mutex
-	active    *activeTurn
-	items     map[string][]string // fileChange item id -> paths
-	lastTotal *tokenBreakdown
-	closeOnce sync.Once
+	mu                 sync.Mutex
+	active             *activeTurn
+	items              map[string][]string // fileChange item id -> paths
+	lastTotal          *tokenBreakdown
+	windowTokens       *int64
+	compactUnsupported bool
+	closeOnce          sync.Once
 }
 
 type activeTurn struct {
-	ctx     context.Context
-	id      string
-	codexID string
-	start   *tokenBreakdown
-	done    chan turnOutcome
-	once    sync.Once
+	ctx            context.Context
+	id             string
+	codexID        string
+	start          *tokenBreakdown
+	done           chan turnOutcome
+	once           sync.Once
+	started        chan struct{}
+	startOnce      sync.Once
+	compactionSeen bool
 }
 
 type turnOutcome struct {
@@ -680,6 +684,17 @@ type turnError struct {
 }
 
 func (t *activeTurn) finish(o turnOutcome) { t.once.Do(func() { t.done <- o }) }
+
+// Called while the session mutex is held. A compact/start acknowledgement does
+// not contain a turn ID, so cancellation can need to wait for turn/started.
+func (t *activeTurn) nativeStarted(id string) {
+	if t.codexID == "" && id != "" {
+		t.codexID = id
+		if t.started != nil {
+			t.startOnce.Do(func() { close(t.started) })
+		}
+	}
+}
 
 // RuntimeSessionID implements agent.Session (the Codex thread ID).
 func (s *Session) RuntimeSessionID() string { return s.threadID }
@@ -701,6 +716,10 @@ func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult
 	}
 	at := &activeTurn{ctx: ctx, id: turn.ID, done: make(chan turnOutcome, 1)}
 	s.mu.Lock()
+	if s.active != nil {
+		s.mu.Unlock()
+		return agent.TurnResult{}, fmt.Errorf("codex: an operation is already active")
+	}
 	if s.lastTotal != nil {
 		cp := *s.lastTotal
 		at.start = &cp
@@ -752,9 +771,7 @@ func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult
 		return agent.TurnResult{}, fmt.Errorf("codex: turn/start: %w", err)
 	}
 	s.mu.Lock()
-	if at.codexID == "" {
-		at.codexID = res.Turn.ID
-	}
+	at.nativeStarted(res.Turn.ID)
 	s.mu.Unlock()
 
 	select {
@@ -816,9 +833,10 @@ func (s *Session) Close(context.Context) error {
 		select {
 		case <-s.exited:
 		case <-time.After(3 * time.Second):
-			_ = process.Kill(s.cmd)
+			_ = s.cmd.Kill()
 			<-s.exited
 		}
+		_ = s.stdout.Close()
 	})
 	return nil
 }
@@ -960,16 +978,41 @@ func (s *Session) onNotification(method string, params json.RawMessage) {
 	case "thread/tokenUsage/updated":
 		var p struct {
 			TokenUsage struct {
-				Total              tokenBreakdown `json:"total"`
-				ModelContextWindow int64          `json:"modelContextWindow"`
+				Total *tokenBreakdown `json:"total"`
+				Last  *struct {
+					TotalTokens *int64 `json:"totalTokens"`
+				} `json:"last"`
+				ModelContextWindow *int64 `json:"modelContextWindow"`
 			} `json:"tokenUsage"`
 		}
 		if json.Unmarshal(params, &p) == nil {
+			usage := event.ContextUsageData{Basis: "unknown"}
+			if p.TokenUsage.ModelContextWindow != nil && *p.TokenUsage.ModelContextWindow > 0 {
+				usage.WindowTokens = p.TokenUsage.ModelContextWindow
+			}
+			if p.TokenUsage.Last != nil && p.TokenUsage.Last.TotalTokens != nil && *p.TokenUsage.Last.TotalTokens >= 0 {
+				used := *p.TokenUsage.Last.TotalTokens
+				usage.UsedTokens, usage.Basis = &used, "last_request"
+			}
 			s.mu.Lock()
 			total := p.TokenUsage.Total
-			s.lastTotal = &total
+			if total != nil {
+				s.lastTotal = total
+			}
+			s.windowTokens = nil
+			if usage.WindowTokens != nil {
+				window := *usage.WindowTokens
+				s.windowTokens = &window
+			}
 			s.mu.Unlock()
-			s.emit(turnID, event.Usage, total.usage("session", p.TokenUsage.ModelContextWindow))
+			if total != nil {
+				window := int64(0)
+				if usage.WindowTokens != nil {
+					window = *usage.WindowTokens
+				}
+				s.emit(turnID, event.Usage, total.usage("session", window))
+			}
+			s.emit(turnID, event.ContextUsage, usage)
 		}
 	case "turn/started":
 		var p struct {
@@ -979,9 +1022,7 @@ func (s *Session) onNotification(method string, params json.RawMessage) {
 		}
 		if json.Unmarshal(params, &p) == nil && at != nil {
 			s.mu.Lock()
-			if at.codexID == "" {
-				at.codexID = p.Turn.ID
-			}
+			at.nativeStarted(p.Turn.ID)
 			s.mu.Unlock()
 		}
 	case "turn/completed":
@@ -1025,6 +1066,7 @@ func (s *Session) onNotification(method string, params json.RawMessage) {
 	case "model/rerouted":
 		s.emit(turnID, event.RuntimeStatus, event.RuntimeStatusData{Status: "model_rerouted", Detail: params})
 	case "thread/compacted":
+		s.compactionBoundary(turnID, false)
 		s.emit(turnID, event.RuntimeStatus, event.RuntimeStatusData{Status: "compacted"})
 	default:
 		s.raw(turnID, method, params)
@@ -1039,6 +1081,8 @@ func (s *Session) raw(turnID, method string, params json.RawMessage) {
 
 func (s *Session) itemStarted(turnID string, it threadItem) {
 	switch it.Type {
+	case "contextCompaction":
+		s.compactionBoundary(turnID, true)
 	case "commandExecution":
 		input, _ := json.Marshal(map[string]string{"command": it.Command, "cwd": it.Cwd})
 		s.emit(turnID, event.ToolStarted, event.ToolStartedData{CallID: it.ID, Name: "command", Kind: event.ToolKindCommand, Title: it.Command, Input: input})
@@ -1098,6 +1142,7 @@ func (s *Session) itemCompleted(turnID string, it threadItem) {
 	case "webSearch":
 		s.emit(turnID, event.ToolCompleted, event.ToolCompletedData{CallID: it.ID, Name: "web_search", Status: event.ToolStatusCompleted})
 	case "contextCompaction":
+		s.compactionBoundary(turnID, false)
 		s.emit(turnID, event.RuntimeStatus, event.RuntimeStatusData{Status: "compacted"})
 	}
 }

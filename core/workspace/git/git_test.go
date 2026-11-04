@@ -15,7 +15,8 @@ import (
 
 func gitCommand(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	// Fixture commits must not invoke the developer's signing agent or hooks.
+	cmd := exec.Command("git", append([]string{"-c", "commit.gpgsign=false", "-c", "core.hooksPath=", "-C", dir}, args...)...)
 	data, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, data)

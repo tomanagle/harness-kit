@@ -121,6 +121,45 @@ startup-only session changes return `new_session_required` (-32016).
 Changes requiring restart are not automatically applied after a restart: the
 owner updates its saved preferences and supplies the new startup document.
 
+### `logs.subscribe`, `logs.unsubscribe`
+
+`{}` → `{}`. `initialize.capabilities.logs` advertises structured diagnostic
+streaming. Subscribe explicitly; ordinary initialization does not enable logs.
+Await the subscribe response before starting work to observe it. These methods
+are idempotent and ordered per connection, and unsubscribe or connection close
+releases that connection's queue without affecting other subscribers.
+
+Notifications use method `log`, separately from session `event` notifications:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "log",
+  "params": {
+    "record": {
+      "seq": 7,
+      "time": "2026-11-04T00:00:00Z",
+      "level": "INFO",
+      "message": "session started",
+      "attrs": { "sessionId": "ses_example", "runtime": "fake" }
+    }
+  }
+}
+```
+
+`record.source?` is `{function,file,line}` and `record.truncated?` marks an
+oversized normalized record. Standard slog groups live inside `attrs`. Each
+notification has either `record` or `dropped: {fromSeq,toSeq,count}`, reporting
+queue overflow or an envelope too large for the configured limit. Sequences
+belong to the log stream and reset after restart. Logs are future-only and not
+persisted or replayed through `session.events`.
+
+The unified global `logging` settings apply live: `level` (default `info`),
+positive `maxQueueRecords` (256), `maxQueueBytes` (1048576), and `maxRecordBytes`
+(65536). Limits apply independently to each subscriber, plus one in-flight
+delivery and a constant-size loss marker. See [logging](logging.md) for handler
+composition, client examples, and retention semantics.
+
 ### `runtime.list`
 
 `{}` → `{"runtimes": [RuntimeInfo]}`. This does no probing.
@@ -128,7 +167,7 @@ owner updates its saved preferences and supplies the new startup document.
 ```json
 RuntimeInfo = {"name": "codex", "displayName": "OpenAI Codex",
   "capabilities": {"streaming": true, "approvals": true, "resume": true, "cancel": true, "usage": true, "cost": false,
-                   "listSessions": true, "mcp": true,
+                   "listSessions": true, "mcp": true, "contextUsage": true, "compaction": true,
                    "configuration": {
                      "model": {"startup": true, "session": true, "turn": true, "live": false},
                      "effort": {"startup": true, "session": true, "turn": true, "live": false},
@@ -172,7 +211,7 @@ data such as email addresses is never included.
 ### `runtime.sessions`
 
 `{"runtime": "codex", "cwd"?: "/abs", "limit"?: 50}` →
-`{"sessions": [RuntimeSession]}`. Lists the runtime's *own* stored sessions,
+`{"sessions": [RuntimeSession]}`. Lists the runtime's _own_ stored sessions,
 newest first, including ones started outside Harness Kit (for Codex: in the
 Codex CLI, IDE extension or `codex exec`). It is only available for runtimes
 with `capabilities.listSessions`. Other runtimes fail with `-32012
@@ -221,7 +260,9 @@ SessionInfo = {"sessionId": "ses_…", "runtime": "codex", "runtimeSessionId": "
   "state": "idle", "activeTurnId"?: "…", "cwd": "…", "model": "…", "metadata": {},
   "createdAt": "RFC3339", "updatedAt": "RFC3339", "lastSeq": 1, "error"?: ErrorInfo,
   "title"?: "Refactor auth", "turns": 2, "lastStatus"?: "completed",
-  "config": {"model": "...", "effort": "high", "options": {...}}}
+  "config": {"model": "...", "effort": "high", "options": {...}},
+  "context"?: ContextUsage,
+  "compaction": {"autoAtTokens": null, "autoAtPercent": null, "timeoutMs": 120000}}
 ```
 
 `SessionInfo.config` is the current selection for future turns, including
@@ -234,7 +275,9 @@ Session states:
 
 ```text
 starting ──► idle ◄──► running
-idle | running ──► closing ──► closed
+             idle ◄──► compacting
+             idle ◄──► suspended  (restore restarts the runtime)
+idle | running | compacting ──► closing ──► closed
 any ──► failed            (the runtime died; see session.closed)
 ```
 
@@ -248,6 +291,40 @@ transcripts (`<id>.events.jsonl`) across restarts, or `--store default` to
 share the `harness-kit` CLI's history. Stored sessions without a runtime in
 this manager report `closed` (or `failed`) with no active turn, including
 sessions interrupted by a process crash. Resume them with `session.restore`.
+
+### `session.context`, `session.compact`
+
+Both accept `{"sessionId"}` and return the same context snapshot:
+
+```json
+{
+  "sessionId": "ses_…",
+  "state": "idle",
+  "canCompact": true,
+  "usage": { "usedTokens": 48000, "windowTokens": 200000, "basis": "last_request", "stale": false }
+}
+```
+
+`session.context` is a cached read: it does not start a runtime or issue a model
+request. Each usage count is required but nullable. `null` means unknown; zero
+means measured zero. `basis` is `reported` for native context occupancy,
+`last_request` for the latest relevant model request's token count, or `unknown`.
+`stale` marks an observation that should not be presented as current occupancy.
+The same usage object appears in `SessionInfo.context`, `session.updated`, and
+`context.usage` events. Cumulative usage never substitutes for context occupancy.
+
+`session.compact` invokes native compaction and responds only after completion.
+It requires an idle live session with `canCompact: true`; restore inactive
+sessions explicitly first. Runtime capabilities `contextUsage` and `compaction`
+describe potential support, while `canCompact` reflects current per-session
+availability. Unsupported operations return `unsupported` without submitting
+an ordinary prompt. The operation can make model requests and incur usage.
+
+Await the preceding turn, then await compaction before prompting again. During
+manual compaction, state is `compacting`; competing prompts/compactions return
+`session_busy`. `session.cancel`, `session.close`, and `$/cancelRequest` can
+interrupt it. The session remains reserved until native work stops. No saved
+transcript events are deleted. See [context usage and compaction](context.md).
 
 ### `session.restore`
 
@@ -344,21 +421,23 @@ selection the adapter resolves. Later session changes cannot mutate it,
 and this turn's overrides never become subsequent defaults. Rejected
 configuration produces no `turn.started` event.
 
-Only one turn runs per session. Prompting a running session fails with
+Only one turn or compaction runs per session. Prompting a running or compacting session fails with
 `-32005 session_busy`. `image` input parts take an absolute `path`; not
 every runtime supports them.
 
 ### `session.cancel`
 
-`{"sessionId"}` → `{}`. Interrupts the active turn. The call is idempotent
-and returns immediately; the turn then ends with `turn.completed`
+`{"sessionId"}` → `{}`. Interrupts the active turn or manual compaction. The call is idempotent
+and returns immediately; an interrupted turn then ends with `turn.completed`
 `{"status": "cancelled"}`. Pending approvals for the turn are resolved with
 source `cancelled`. Runtimes get a graceful interrupt first, then their
 process tree is killed after a grace period.
+Manual compaction ends with `context.compaction` status `cancelled`; it does not
+create a user turn or `turn.completed` event.
 
 ### `session.close`
 
-`{"sessionId"}` → `{}`. Cancels any active turn, releases the runtime and
+`{"sessionId"}` → `{}`. Cancels any active turn or compaction, releases the runtime and
 emits `session.closed`. Closing a closed session succeeds.
 
 ### `session.events`, `session.eventsPage`
@@ -395,7 +474,7 @@ One active writer per session is required across processes/store instances.
 
 `{"sessionId": "ses_…"}` → `{}`. Eviction releases an idle session's cached
 transcript; suspension also releases its runtime. Both require a durable event
-store and protect pinned sessions, active turns and unsaved events. Suspension
+store and protect pinned sessions, active turns/compactions and unsaved events. Suspension
 preserves the conversation ID and produces `suspending` then `suspended` state
 updates. `session.restore` resumes it; `memory.resumeOnPrompt` enables automatic
 resume when the next prompt arrives. Closing a suspended session disables that
@@ -481,43 +560,57 @@ pending requests, useful for rebuilding a UI.
 ### Request cancellation
 
 `$/cancelRequest` `{"id": <request id>}` (a notification) cancels an
-in-flight request such as a slow `runtime.discover`. The request fails with
-`-32800`. This is unrelated to `session.cancel`, which cancels a turn.
+in-flight request such as a slow `runtime.discover` or `session.compact`. The
+request fails with `-32800`; compaction cancellation also interrupts the native
+operation. Cancelling a `session.prompt` request after it accepted a turn does
+not interrupt that turn; use `session.cancel`, which can cancel either a turn
+or manual compaction.
 
 ## Events
 
 The server sends every session event as an `event` notification:
 
 ```json
-{"jsonrpc": "2.0", "method": "event", "params": {
-  "seq": 42, "sessionId": "ses_…", "turnId": "…", "type": "message.delta",
-  "time": "2026-11-03T10:00:00.123Z", "data": {"itemId": "…", "text": "Hel"}}}
+{
+  "jsonrpc": "2.0",
+  "method": "event",
+  "params": {
+    "seq": 42,
+    "sessionId": "ses_…",
+    "turnId": "…",
+    "type": "message.delta",
+    "time": "2026-11-03T10:00:00.123Z",
+    "data": { "itemId": "…", "text": "Hel" }
+  }
+}
 ```
 
-| type | data |
-| --- | --- |
-| `session.started` | `runtime`, `runtimeSessionId`, `resumed`, `model` |
-| `session.updated` | `title`, `state`, `turns`, `updatedAt`, `activeTurnId?`, `runtimeSessionId?`, `lastStatus?`, `error?`, `config?` (current defaults) |
-| `session.closed` | `reason` (`closed`, `failed`, `shutdown`), `error?` |
-| `turn.started` | `text`, `input?` (ordered text and local image references), `config?` (accepted effective configuration) |
-| `turn.completed` | `status` (`completed`, `cancelled`, `failed`), `error?`, `usage?`, `runtimeTurnId?` |
-| `message.delta` | `itemId`, `text`, `parentCallId?` (subagents) |
-| `message.completed` | `itemId`, `role`, `text`, `parentCallId?` |
-| `reasoning.delta`, `reasoning.completed` | `itemId`, `text` |
-| `tool.started` | `callId`, `name`, `kind` (`command`, `file_change`, `file_read`, `search`, `web_search`, `mcp`, `subagent`, `other`), `title?`, `input?`, `parentCallId?` |
-| `tool.output` | `callId`, `output` (incremental) |
-| `tool.completed` | `callId`, `name?`, `status` (`completed`, `failed`, `declined`), `output?`, `exitCode?`, `error?` |
-| `approval.requested` | ApprovalRequest: `approvalId`, `kind`, `title`, `command?`, `cwd?`, `paths?`, `reason?`, `tool?`, `input?`, `outcomes?` |
-| `approval.resolved` | `approvalId`, `decision`, `source` (`host`, `policy`, `timeout`, `cancelled`), `request?` (included when a policy decided without asking) |
-| `usage` | `scope` (`turn`, `session`), token counts, `contextWindow?`, `costUsd?` (the runtime's estimate) |
-| `runtime.status` | `status` (`ready`, `retrying`, `rate_limited`, `warning`, `permission_denied`, `compacted`, …), `message?`, `detail?` |
-| `error` | `code`, `message`, `retryable?` (non-fatal; fatal errors end the turn) |
-| `runtime.raw` | `runtime`, `kind`, `payload` (only with `rawEvents: true`) |
-| `stream.gap` | `fromSeq`, `toSeq` (delivery marker, see below) |
+| type                                     | data                                                                                                                                                                           |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `session.started`                        | `runtime`, `runtimeSessionId`, `resumed`, `model`                                                                                                                              |
+| `session.updated`                        | `title`, `state`, `turns`, `updatedAt`, `activeTurnId?`, `runtimeSessionId?`, `lastStatus?`, `error?`, `config?` (current defaults), `context?`, `compaction?`                 |
+| `session.closed`                         | `reason` (`closed`, `failed`, `shutdown`), `error?`                                                                                                                            |
+| `turn.started`                           | `text`, `input?` (ordered text and local image references), `config?` (accepted effective configuration)                                                                       |
+| `turn.completed`                         | `status` (`completed`, `cancelled`, `failed`), `error?`, `usage?`, `runtimeTurnId?`                                                                                            |
+| `message.delta`                          | `itemId`, `text`, `parentCallId?` (subagents)                                                                                                                                  |
+| `message.completed`                      | `itemId`, `role`, `text`, `parentCallId?`                                                                                                                                      |
+| `reasoning.delta`, `reasoning.completed` | `itemId`, `text`                                                                                                                                                               |
+| `tool.started`                           | `callId`, `name`, `kind` (`command`, `file_change`, `file_read`, `search`, `web_search`, `mcp`, `subagent`, `other`), `title?`, `input?`, `parentCallId?`                      |
+| `tool.output`                            | `callId`, `output` (incremental)                                                                                                                                               |
+| `tool.completed`                         | `callId`, `name?`, `status` (`completed`, `failed`, `declined`), `output?`, `exitCode?`, `error?`                                                                              |
+| `approval.requested`                     | ApprovalRequest: `approvalId`, `kind`, `title`, `command?`, `cwd?`, `paths?`, `reason?`, `tool?`, `input?`, `outcomes?`                                                        |
+| `approval.resolved`                      | `approvalId`, `decision`, `source` (`host`, `policy`, `timeout`, `cancelled`), `request?` (included when a policy decided without asking)                                      |
+| `usage`                                  | `scope` (`turn`, `session`), token counts, `contextWindow?`, `costUsd?` (the runtime's estimate)                                                                               |
+| `context.usage`                          | `usedTokens` and `windowTokens` (required nullable counts), `basis` (`reported`, `last_request`, `unknown`), `stale`                                                           |
+| `context.compaction`                     | `operationId`, `reason` (`manual`, `threshold`, `native`), `status` (`started`, `completed`, `failed`, `cancelled`), `before`, `after?` (context usage observations), `error?` |
+| `runtime.status`                         | `status` (`ready`, `retrying`, `rate_limited`, `warning`, `permission_denied`, `compacted`, …), `message?`, `detail?`                                                          |
+| `error`                                  | `code`, `message`, `retryable?` (non-fatal; fatal errors end the turn)                                                                                                         |
+| `runtime.raw`                            | `runtime`, `kind`, `payload` (only with `rawEvents: true`)                                                                                                                     |
+| `stream.gap`                             | `fromSeq`, `toSeq` (delivery marker, see below)                                                                                                                                |
 
 `session.updated` contains a full snapshot of the mutable fields above:
 an absent optional field has been cleared. It is emitted on startup,
-rename, configuration changes, turn start/completion, and closing. Its
+rename, configuration changes, turn/compaction start and completion, and closing. Its
 envelope supplies the session ID and sequence number. Clients can update title and state without
 fetching the record again. Turn lifecycle updates carry that turn's ID;
 independent rename/configure updates are session events. Historical events
@@ -542,6 +635,13 @@ written before configuration snapshots were introduced may omit `config`.
   `approval.respond`. A `session.configure` sent before `session.prompt`
   takes effect for that prompt, even if the client pipelines both requests.
   A configure request after prompt acceptance affects later turns.
+- `session.compact` runs outside that request queue so cancellation and closing
+  remain available while it awaits the runtime. The manager reserves the session
+  synchronously at admission. Callers must await the preceding turn and the
+  compaction response; pipelining these operations does not establish their order.
+  A kit threshold compaction runs within its accepted turn, before sending the
+  prompt to the runtime, and emits events with that turn's ID. Manual compaction
+  has no turn ID. Context events use the same ordered stream and replay rules.
 
 ### Backpressure and gap recovery
 
@@ -549,7 +649,7 @@ The server never blocks a runtime because a client reads slowly. Each
 client connection has a bounded event queue (`--event-buffer`, default
 4096):
 
-1. When the queue is full, the client enters a *lagging* state. Further
+1. When the queue is full, the client enters a _lagging_ state. Further
    events are dropped for it, and only for it; they remain in the session's
    event log.
 2. When the queue has drained, the client receives one `stream.gap` event
@@ -569,28 +669,28 @@ unavailable. A `stream.gap` event is never stored, so it never appears in
 Every Harness Kit error has `error.data.reason`, a stable string. Switch on
 it rather than on the message.
 
-| code | reason | meaning |
-| --- | --- | --- |
-| -32700 | | parse error (bad JSON, oversized line) |
-| -32600 | | invalid request (batch, double initialize) |
-| -32601 | | method not found |
-| -32602 | `invalid_params`, `duplicate_turn` | malformed params, invalid configuration values, or reused turn ID |
-| -32002 | `not_initialized` | `initialize` first |
-| -32800 | | request cancelled via `$/cancelRequest` |
-| -32001 | `session_not_found` | |
-| -32003 | `runtime_not_found` | not registered with this sidecar |
-| -32004 | `runtime_unavailable` | not installed |
-| -32005 | `session_busy` | a turn or conflicting Git operation is running |
-| -32006 | `session_closed` | |
-| -32007 | `approval_not_found` | unknown or already resolved |
-| -32008 | `unsupported_version` | see `data.supportedVersions` |
-| -32009 | `policy_violation` | unsafe options without `--allow-unsafe`, or writes/remotes disabled by Git policy |
-| -32010 | `invalid_decision` | outcome not supported by the request |
-| -32011 | `runtime_error` | the runtime failed (start, bad options, …) |
-| -32012 | `unsupported` | runtime does not support the operation, setting lifetime, or native-default selection |
-| -32013 | `not_resumable` | the stored session never started, so there is nothing to resume |
-| -32020 | `git_error` | native Git operation failed |
-| -32021 | `git_conflict` | operation conflicts with repository state |
+| code   | reason                             | meaning                                                                               |
+| ------ | ---------------------------------- | ------------------------------------------------------------------------------------- |
+| -32700 |                                    | parse error (bad JSON, oversized line)                                                |
+| -32600 |                                    | invalid request (batch, double initialize)                                            |
+| -32601 |                                    | method not found                                                                      |
+| -32602 | `invalid_params`, `duplicate_turn` | malformed params, invalid configuration values, or reused turn ID                     |
+| -32002 | `not_initialized`                  | `initialize` first                                                                    |
+| -32800 |                                    | request cancelled via `$/cancelRequest`                                               |
+| -32001 | `session_not_found`                |                                                                                       |
+| -32003 | `runtime_not_found`                | not registered with this sidecar                                                      |
+| -32004 | `runtime_unavailable`              | not installed                                                                         |
+| -32005 | `session_busy`                     | a turn, compaction, or conflicting Git operation is running                           |
+| -32006 | `session_closed`                   |                                                                                       |
+| -32007 | `approval_not_found`               | unknown or already resolved                                                           |
+| -32008 | `unsupported_version`              | see `data.supportedVersions`                                                          |
+| -32009 | `policy_violation`                 | unsafe options without `--allow-unsafe`, or writes/remotes disabled by Git policy     |
+| -32010 | `invalid_decision`                 | outcome not supported by the request                                                  |
+| -32011 | `runtime_error`                    | the runtime failed (start, bad options, …)                                            |
+| -32012 | `unsupported`                      | runtime does not support the operation, setting lifetime, or native-default selection |
+| -32013 | `not_resumable`                    | the stored session never started, so there is nothing to resume                       |
+| -32020 | `git_error`                        | native Git operation failed                                                           |
+| -32021 | `git_conflict`                     | operation conflicts with repository state                                             |
 
 ## Example session
 
@@ -638,6 +738,18 @@ and `memory.pinned`. New fields are `forkedFrom`, `forkedAtSeq`, `inheritedTurns
 `forkDeferred`. Claude forks remain pending until the first actual prompt; an
 advanced source fails with `-32018 fork_source_changed` instead of silently
 branching newer native history. See [session semantics](sessions.md).
+
+### Compaction settings
+
+The shared `compaction` group accepts nullable positive `autoAtTokens`, nullable
+`autoAtPercent` greater than zero and at most 100, and positive `timeoutMs`
+(default 120000). Both thresholds default to `null` (disabled). Global settings
+provide new-session defaults, session updates apply next operation, and turn
+settings override that turn's policy. Either threshold can trigger before the
+next prompt from the latest non-stale observation; unknown counts cannot trigger
+it. A pre-turn compaction failure fails the accepted turn before its prompt is
+submitted. These host thresholds do not disable native automatic compaction.
+See [context usage and compaction](context.md) for runtime differences.
 
 ### Usage budgets
 
@@ -689,16 +801,16 @@ the optional source-control interface. Every operation targets an existing
 `sessionId`; arbitrary repository paths are not accepted as RPC parameters.
 Closed and suspended sessions can use these methods without starting a runtime.
 
-| Method | Additional params | Result |
-| --- | --- | --- |
-| `git.status` | none | root, HEAD/branch, upstream, files, remotes, truncation |
-| `git.diff` | `path?`, `staged?`, `maxBytes?` | patch, truncation, encoding loss |
-| `git.branches` | none | branches, truncation |
-| `git.log` | `ref?`, `limit?` | commits, truncation |
-| `git.stage`, `git.unstage` | `paths` | `{}` |
-| `git.commit` | `message` | commit ID |
-| `git.checkout` | `branch`, `create?`, `base?` | `{}` |
-| `git.fetch`, `git.pull`, `git.push` | `remote?`, `branch?`, `setUpstream?` (push only) | bounded output, truncation |
+| Method                              | Additional params                                | Result                                                  |
+| ----------------------------------- | ------------------------------------------------ | ------------------------------------------------------- |
+| `git.status`                        | none                                             | root, HEAD/branch, upstream, files, remotes, truncation |
+| `git.diff`                          | `path?`, `staged?`, `maxBytes?`                  | patch, truncation, encoding loss                        |
+| `git.branches`                      | none                                             | branches, truncation                                    |
+| `git.log`                           | `ref?`, `limit?`                                 | commits, truncation                                     |
+| `git.stage`, `git.unstage`          | `paths`                                          | `{}`                                                    |
+| `git.commit`                        | `message`                                        | commit ID                                               |
+| `git.checkout`                      | `branch`, `create?`, `base?`                     | `{}`                                                    |
+| `git.fetch`, `git.pull`, `git.push` | `remote?`, `branch?`, `setUpstream?` (push only) | bounded output, truncation                              |
 
 Global `git` settings in the unified settings document take effect at the next
 operation. Reads and writes honor cancellation and deadlines. Writes coordinate

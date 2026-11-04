@@ -61,13 +61,17 @@ func TestACPHelperProcess(t *testing.T) {
 			var params struct {
 				ProtocolVersion    int `json:"protocolVersion"`
 				ClientCapabilities struct {
-					FS       map[string]bool `json:"fs"`
-					Terminal bool            `json:"terminal"`
+					FS       map[string]bool            `json:"fs"`
+					Terminal bool                       `json:"terminal"`
+					Session  map[string]json.RawMessage `json:"session"`
 				} `json:"clientCapabilities"`
 			}
 			_ = req.UnmarshalParams(&params)
 			if params.ProtocolVersion != 1 {
 				return nil, fmt.Errorf("wrong version")
+			}
+			if strings.HasPrefix(mode, "compact") && string(params.ClientCapabilities.Session["compaction"]) != "{}" {
+				return nil, fmt.Errorf("compaction notifications not negotiated")
 			}
 			if mode == "default-capabilities" && (len(params.ClientCapabilities.FS) > 0 || params.ClientCapabilities.Terminal) {
 				return nil, fmt.Errorf("unsafe default capabilities")
@@ -101,6 +105,9 @@ func TestACPHelperProcess(t *testing.T) {
 			}
 			if req.Method == "session/load" {
 				message("old history must not replay")
+			}
+			if strings.HasPrefix(mode, "compact") {
+				notify(map[string]any{"sessionUpdate": "available_commands_update", "availableCommands": []any{map[string]any{"name": "compact", "description": "Compact context"}}})
 			}
 			return result, nil
 		case "session/set_config_option":
@@ -147,6 +154,29 @@ func TestACPHelperProcess(t *testing.T) {
 				}
 			}
 			switch text {
+			case "/compact":
+				if !strings.HasPrefix(mode, "compact") {
+					return nil, fmt.Errorf("unadvertised command was invoked")
+				}
+				notify(map[string]any{"sessionUpdate": "compaction_update", "compactionId": "cmp_1", "status": "in_progress"})
+				switch mode {
+				case "compact-missing":
+				case "compact-failed":
+					notify(map[string]any{"sessionUpdate": "compaction_update", "compactionId": "cmp_1", "status": "failed", "error": "provider unavailable"})
+				case "compact-cancelled":
+					notify(map[string]any{"sessionUpdate": "compaction_update", "compactionId": "cmp_1", "status": "cancelled"})
+				case "compact-unknown":
+					notify(map[string]any{"sessionUpdate": "compaction_update", "compactionId": "cmp_1", "status": "future-status"})
+				default:
+					notify(map[string]any{"sessionUpdate": "compaction_update", "compactionId": "cmp_1", "status": "completed"})
+					if mode == "compact-wait" {
+						<-ctx.Done()
+						return map[string]any{"stopReason": "cancelled"}, nil
+					}
+					notify(map[string]any{"sessionUpdate": "usage_update", "used": 1200, "size": 200000})
+				}
+				message("Compacted")
+				return map[string]any{"stopReason": "end_turn"}, nil
 			case "wait":
 				message("waiting")
 				<-ctx.Done()

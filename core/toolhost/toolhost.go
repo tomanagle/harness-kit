@@ -54,11 +54,32 @@ const (
 	envToken  = "HARNESS_KIT_BRIDGE_TOKEN"
 )
 
+// ToolRegistry supplies a host's tool catalog and execution backend. It may be
+// backed by tools.Registry, a remote service, or another application registry.
+// Implementations must be safe for concurrent use. Call owns argument
+// validation, execution limits, and cancellation; the Host enforces each
+// session's tool allowlist and the approval metadata returned by Get.
+type ToolRegistry interface {
+	Get(string) (tools.Tool, bool)
+	List() []tools.Tool
+	Call(context.Context, tools.Call) (tools.Result, error)
+}
+
+// ToolChangeNotifier is an optional ToolRegistry capability. OnChange returns
+// an unsubscribe function; callbacks notify connected agents to reload tools.
+// Static catalogs need only implement ToolRegistry.
+type ToolChangeNotifier interface {
+	OnChange(func()) func()
+}
+
+var _ ToolRegistry = (*tools.Registry)(nil)
+var _ ToolChangeNotifier = (*tools.Registry)(nil)
+
 // Options configure a Host.
 type Options struct {
 	// Registry holds the host tools. Nil means none (the Host then only
 	// answers permission prompts).
-	Registry *tools.Registry
+	Registry ToolRegistry
 	// BridgeCommand starts the bridge: an executable that calls
 	// ServeBridgeIfRequested first thing in main. Defaults to this
 	// executable.
@@ -93,8 +114,8 @@ func New(opts Options) *Host {
 		opts.Version = "dev"
 	}
 	h := &Host{opts: opts, log: opts.Logger, bindings: map[string]*binding{}}
-	if opts.Registry != nil {
-		h.stopList = opts.Registry.OnChange(h.notifyListChanged)
+	if changes, ok := opts.Registry.(ToolChangeNotifier); ok {
+		h.stopList = changes.OnChange(h.notifyListChanged)
 	}
 	return h
 }
@@ -297,7 +318,7 @@ func (h *Host) toolsFor(names []string) []tools.Tool {
 	if h.opts.Registry == nil {
 		return nil
 	}
-	all := h.opts.Registry.List()
+	all := slices.Clone(h.opts.Registry.List())
 	if names == nil {
 		return all
 	}

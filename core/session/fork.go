@@ -36,7 +36,7 @@ func (m *Manager) Fork(ctx context.Context, id string, p ForkParams) (Info, erro
 	if err != nil {
 		return Info{}, err
 	}
-	if parent.ActiveTurnID != "" || parent.State == StateStarting || parent.State == StateClosing || parent.State == StateSuspending {
+	if parent.ActiveTurnID != "" || parent.State == StateCompacting || parent.State == StateStarting || parent.State == StateClosing || parent.State == StateSuspending {
 		return Info{}, ErrBusy
 	}
 	if parent.RuntimeSessionID == "" || parent.Turns == 0 || parent.ForkPending {
@@ -107,6 +107,7 @@ func (m *Manager) Fork(ctx context.Context, id string, p ForkParams) (Info, erro
 	}
 	values.Memory.Pinned = false
 	values.Budget = parent.Budget.Clone()
+	values.Compaction = compactionPolicy(parent.Compaction)
 	for group, raw := range p.Settings {
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
@@ -116,7 +117,7 @@ func (m *Manager) Fork(ctx context.Context, id string, p ForkParams) (Info, erro
 			if group == "workspace" {
 				continue
 			}
-			if group == "budget" {
+			if group == "budget" || group == "compaction" {
 				continue
 			}
 			if group == "memory" && field == "pinned" {
@@ -153,18 +154,25 @@ func (m *Manager) Fork(ctx context.Context, id string, p ForkParams) (Info, erro
 	}
 	now := time.Now().UTC()
 	child := Info{Budget: next.Budget.Clone(), Usage: parent.Usage.Clone(), ID: NewID("ses_"), Runtime: parent.Runtime, State: StateSuspended,
+		Compaction:        next.Compaction.Clone(),
 		WorkspaceSettings: next.Workspace,
 		Cwd:               cfg.Cwd, Model: cfg.Model, Title: name, Metadata: maps.Clone(parent.Metadata), Pinned: next.Memory.Pinned,
 		CreatedAt: now, UpdatedAt: now, Turns: parent.Turns, LastStatus: parent.LastStatus,
 		LastSeq: parent.LastSeq, ForkedFrom: id, ForkedAtSeq: parent.LastSeq,
 		InheritedTurns: parent.Turns, ForkPending: true}
+	if parent.Context != nil {
+		v := parent.Context.Clone()
+		v.Stale = true
+		child.Context = &v
+	}
 	initial, err := cfg.Clone()
 	if err != nil {
 		return Info{}, err
 	}
 	initialBudget := next.Budget.Clone()
 	initialWorkspace := next.Workspace
-	childRecord := Record{InitialWorkspace: &initialWorkspace, Accounting: rec.Accounting, InitialBudget: &initialBudget, Info: child, Config: cfg, InitialConfig: &initial, NativeDefaults: rec.NativeDefaults, ForkSourceRuntimeID: cfg.ForkFrom}
+	initialCompaction := next.Compaction.Clone()
+	childRecord := Record{InitialCompaction: &initialCompaction, InitialWorkspace: &initialWorkspace, Accounting: rec.Accounting, InitialBudget: &initialBudget, Info: child, Config: cfg, InitialConfig: &initial, NativeDefaults: rec.NativeDefaults, ForkSourceRuntimeID: cfg.ForkFrom}
 	_, atomicCopy := m.store.(EventCopier)
 	if !atomicCopy {
 		if err = m.store.Put(ctx, childRecord); err != nil {
@@ -262,8 +270,11 @@ func (m *Manager) checkForkAdmission(ctx context.Context, ms *managed) error {
 		if parent.Turns != info.InheritedTurns {
 			return ErrForkSourceChanged
 		}
-		if parent.ActiveTurnID != "" {
+		if parent.ActiveTurnID != "" || parent.State == StateCompacting {
 			return ErrBusy
+		}
+		if err := m.checkForkCompactions(ctx, parent, info.ForkedAtSeq); err != nil {
+			return err
 		}
 	}
 	m.mu.Lock()
@@ -276,6 +287,38 @@ func (m *Manager) checkForkAdmission(ctx context.Context, ms *managed) error {
 		other := child.snapshot()
 		if other.ForkedFrom == info.ID && other.ForkPending && other.ActiveTurnID != "" {
 			return ErrBusy
+		}
+	}
+	return nil
+}
+
+// A deferred native fork is materialized by its first prompt. Maintenance can
+// change the source's native history without increasing its turn count, so
+// verify the bounded event pages since the copied transcript's checkpoint.
+// Missing history is insufficient evidence that the source is unchanged.
+func (m *Manager) checkForkCompactions(ctx context.Context, parent Info, after uint64) error {
+	if parent.LastSeq < after {
+		return ErrForkSourceChanged
+	}
+	for after < parent.LastSeq {
+		page, err := m.EventsPage(ctx, parent.ID, after, 128)
+		if err != nil {
+			return fmt.Errorf("%w: parent history unavailable: %w", ErrForkSourceChanged, err)
+		}
+		if page.Truncated || len(page.Events) == 0 {
+			return fmt.Errorf("%w: parent history is incomplete", ErrForkSourceChanged)
+		}
+		for _, ev := range page.Events {
+			if ev.Seq != after+1 {
+				return fmt.Errorf("%w: parent history has a gap", ErrForkSourceChanged)
+			}
+			if ev.Type == event.ContextCompaction {
+				return ErrForkSourceChanged
+			}
+			after = ev.Seq
+			if after >= parent.LastSeq {
+				return nil
+			}
 		}
 	}
 	return nil

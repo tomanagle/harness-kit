@@ -144,6 +144,12 @@ func (d *Direct) RenameSession(id, title string) (session.Info, error) {
 // OpenSession reads a session without starting its runtime.
 func (d *Direct) OpenSession(id string) (session.Info, error) { return d.mgr.Get(d.ctx, id) }
 
+// Context reads the same cached observation as the sidecar without starting a runtime.
+func (d *Direct) Context(id string) (session.ContextInfo, error) { return d.mgr.Context(d.ctx, id) }
+
+// Compact waits for native completion; Cancel remains available during this call.
+func (d *Direct) Compact(id string) (session.ContextInfo, error) { return d.mgr.Compact(d.ctx, id) }
+
 // Git bindings keep repository selection tied to the session. The example
 // exposes explicit actions; application-specific automation belongs to its host.
 func (d *Direct) GitStatus(id string) (workspace.RepositoryStatus, error) {

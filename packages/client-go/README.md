@@ -100,7 +100,7 @@ when you need custom environment, working directory, or process supervision.
 
 ## Events, tools, and errors
 
-- `OnEvent` and `OnSettings` execute in wire order on the read goroutine. Keep
+- `OnEvent`, `OnSettings`, and `OnLog` execute in wire order on the read goroutine. Keep
   them short: queue work before making another RPC. A slow callback applies
   backpressure; recover any `stream.gap` with the generated `SessionEventsPage`.
 - `HarnessEvent.Data` retains raw JSON, including future event types. Decode a
@@ -110,7 +110,8 @@ when you need custom environment, working directory, or process supervision.
   context. Return `TextResult`, `ErrorResult`, or a generated `ToolResult`.
 - Context cancellation sends `$/cancelRequest` for that RPC. Cancelling the
   request that accepted a prompt does not cancel an already-running turn; call
-  `SessionCancel` explicitly.
+  `SessionCancel` explicitly. Cancelling `SessionCompact` interrupts the native
+  compaction operation; the session remains reserved until it stops.
 - Use `errors.As(err, &rpcError)` with `var rpcError *harnesskit.Error` to inspect
   `Code`, `Reason`, and the full `Data` JSON. Unknown error details are preserved.
 - `Call` is available for additive methods on newer hosts. Generated methods
@@ -122,6 +123,23 @@ methods target a session without starting its runtime. Check the initialization
 result's `Capabilities.Git` field and use `SettingsConfigure` for host policy.
 See the [Git guide](https://github.com/tomanagle/harness-kit/blob/main/core/docs/git.md)
 for examples and operation behavior.
+
+`SessionContext(ctx, SessionIDParams{SessionID: id})` reads the latest cached
+context-window observation without starting the runtime. `UsedTokens` and
+`WindowTokens` are nullable pointers; check `Basis` and `Stale` before presenting
+the observation as current occupancy. `SessionCompact(ctx, params)` requests
+native compaction and waits for completion. Await the prior turn, check
+`CanCompact`, and use the call's context or `SessionCancel` to cancel. Automatic
+thresholds belong to `SettingsConfigure`'s `compaction` group. See the
+[context guide](https://github.com/tomanagle/harness-kit/blob/main/core/docs/context.md).
+
+Set `Options.OnLog` before calling the generated `LogsSubscribe(ctx, Empty{})`
+method. The callback receives `LogNotification.Record` or an explicit
+`LogNotification.Dropped` range; `LogsUnsubscribe` stops only this connection's
+delivery. Check `Capabilities.Logs` for older hosts. Log records have structured
+attributes and source locations, bounded live delivery, and no transcript replay.
+Configure `logging` through the same `SettingsConfigure` method. See the
+[logging guide](https://github.com/tomanagle/harness-kit/blob/main/core/docs/logging.md).
 
 From this directory, `go test -race ./...` runs transport tests. When run inside
 the repository checkout, it also builds the real sidecar and exercises an offline

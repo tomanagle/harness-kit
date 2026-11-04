@@ -178,7 +178,7 @@ func TestSchemaReferencesResolve(t *testing.T) {
 
 func TestUnsupportedWireConstantsFailClosed(t *testing.T) {
 	root := t.TempDir()
-	for _, dir := range []string{"agent", "budget", "config", "event", "mcp", "permission", "rpc/protocol", "settings", "session", "tools", "workspace", "internal/jsonrpc"} {
+	for _, dir := range []string{"agent", "budget", "config", "event", "logging", "mcp", "permission", "rpc/protocol", "settings", "session", "tools", "workspace", "internal/jsonrpc"} {
 		if err := os.MkdirAll(filepath.Join(root, "core", dir), 0755); err != nil {
 			t.Fatal(err)
 		}

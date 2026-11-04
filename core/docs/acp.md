@@ -184,11 +184,11 @@ supports HTTP MCP.
 
 Three constructor options control adapter buffering:
 
-| Option | Default | Scope |
-| --- | --- | --- |
-| `WithMaxMessageSize` | 32 MiB | One inbound JSON line |
-| `WithMaxImageBytes` | 16 MiB | One image before base64 encoding |
-| `WithMaxRetainedOutput` | 8 MiB | One completed text or tool snapshot |
+| Option                  | Default | Scope                               |
+| ----------------------- | ------- | ----------------------------------- |
+| `WithMaxMessageSize`    | 32 MiB  | One inbound JSON line               |
+| `WithMaxImageBytes`     | 16 MiB  | One image before base64 encoding    |
+| `WithMaxRetainedOutput` | 8 MiB   | One completed text or tool snapshot |
 
 Streaming text deltas remain complete when a completed snapshot reaches its
 limit, and a status event reports text snapshot truncation. Completed tool

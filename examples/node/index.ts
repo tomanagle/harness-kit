@@ -15,7 +15,8 @@ import { stdio } from "../../packages/client-ts/src/node.ts";
 
 const [runtime = "fake", ...words] = process.argv.slice(2);
 const prompt = words.join(" ") || "Hello!";
-const bin = process.env.HARNESS_KIT_BIN ?? new URL("../../core/bin/harness-kit", import.meta.url).pathname;
+const bin =
+  process.env.HARNESS_KIT_BIN ?? new URL("../../core/bin/harness-kit", import.meta.url).pathname;
 
 const kit = await createHarnessKit({
   transport: stdio({ command: bin, args: ["serve", "--fake-runtime", "--log-level", "warn"] }),
@@ -25,7 +26,9 @@ const rl = createInterface({ input: process.stdin, output: process.stderr });
 
 try {
   for (const d of await kit.runtimes.discover()) {
-    console.error(`${d.ready ? "✓" : "✗"} ${d.runtime} ${d.version ?? ""} ${d.auth.state}${d.problems?.length ? " - " + d.problems.join("; ") : ""}`);
+    console.error(
+      `${d.ready ? "✓" : "✗"} ${d.runtime} ${d.version ?? ""} ${d.auth.state}${d.problems?.length ? " - " + d.problems.join("; ") : ""}`,
+    );
   }
 
   const session = await kit.sessions.create({ runtime, cwd: process.cwd() });
@@ -42,11 +45,16 @@ try {
         break;
       case "approval.requested": {
         const answer = await rl.question(`\n⚠ ${event.data.title} - allow? [y/N] `);
-        await kit.approvals.respond(event.data.approvalId, answer.trim().toLowerCase() === "y" ? "allow" : "deny");
+        await kit.approvals.respond(
+          event.data.approvalId,
+          answer.trim().toLowerCase() === "y" ? "allow" : "deny",
+        );
         break;
       }
       case "turn.completed":
-        console.error(`\n— ${event.data.status}${event.data.error ? ": " + event.data.error.message : ""}`);
+        console.error(
+          `\n— ${event.data.status}${event.data.error ? ": " + event.data.error.message : ""}`,
+        );
         break;
     }
   }

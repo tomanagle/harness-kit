@@ -45,13 +45,17 @@ type promptResponse struct {
 	StopReason string `json:"stopReason"`
 }
 type turnState struct {
-	id                 string
-	ctx                context.Context
-	cancel             context.CancelFunc
-	itemID, kind, text string
-	itemSeq            int
-	truncated          bool
-	tools              map[string]*toolState
+	id                  string
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	itemID, kind, text  string
+	itemSeq             int
+	truncated           bool
+	tools               map[string]*toolState
+	compact             bool
+	compactionConfirmed bool
+	compactionCancelled bool
+	compactionFailure   string
 }
 type toolState struct {
 	name, title, kind, status, output string
@@ -78,20 +82,46 @@ type toolUpdate struct {
 	} `json:"locations"`
 }
 
+// lockEvents serializes a bounded batch of state changes and their delivery.
+// Never call a host while holding mu: a host may read session configuration or
+// capability state while processing an event (or while another event waits).
+func (s *Session) lockEvents() {
+	s.eventMu.Lock()
+	s.mu.Lock()
+}
+
+func (s *Session) unlockEvents() {
+	events := s.pendingEvents
+	s.pendingEvents = nil
+	s.mu.Unlock()
+	defer s.eventMu.Unlock()
+	for _, ev := range events {
+		s.h.Emit(ev)
+	}
+}
+
+// emitLocked records events under lockEvents; unlockEvents delivers them after
+// releasing mu. Batches are per notification/final flush, never a growing queue.
 func (s *Session) emitLocked(kind event.Type, data any) {
 	if s.h == nil {
 		return
+	}
+	if s.active != nil && s.active.compact {
+		switch kind {
+		case event.MessageDelta, event.MessageCompleted, event.ReasoningDelta, event.ReasoningCompleted, event.ToolStarted, event.ToolCompleted:
+			return
+		}
 	}
 	turnID := ""
 	if s.active != nil {
 		turnID = s.active.id
 	}
-	s.h.Emit(event.Event{Type: kind, TurnID: turnID, Data: data})
+	s.pendingEvents = append(s.pendingEvents, event.Event{Type: kind, TurnID: turnID, Data: data})
 }
 
 func (s *Session) raw(kind string, payload json.RawMessage) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.lockEvents()
+	defer s.unlockEvents()
 	s.rawLocked(kind, payload)
 }
 func (s *Session) rawLocked(kind string, payload json.RawMessage) {
@@ -115,9 +145,15 @@ func (s *Session) update(params json.RawMessage) {
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
-		ConfigOptions []ConfigOption `json:"configOptions"`
-		Used, Size    *int64
-		Cost          *struct {
+		ConfigOptions     []ConfigOption `json:"configOptions"`
+		AvailableCommands []struct {
+			Name string `json:"name"`
+		} `json:"availableCommands"`
+		CompactionID string `json:"compactionId"`
+		Status       string `json:"status"`
+		Error        string `json:"error"`
+		Used, Size   *int64
+		Cost         *struct {
 			Amount   float64 `json:"amount"`
 			Currency string  `json:"currency"`
 		} `json:"cost"`
@@ -125,8 +161,23 @@ func (s *Session) update(params json.RawMessage) {
 	if json.Unmarshal(envelope.Update, &update) != nil {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.lockEvents()
+	defer s.unlockEvents()
+	// Agents may advertise commands before session/new's response is read.
+	// Retain only this capability; session ID matching gates its later use.
+	if envelope.SessionID != "" && update.Kind == "available_commands_update" && (s.id == "" || envelope.SessionID == s.id) {
+		s.compactCommand = false
+		s.commandSessionID = envelope.SessionID
+		for _, command := range update.AvailableCommands {
+			if command.Name == "compact" {
+				s.compactCommand = true
+			}
+		}
+		if s.id != "" {
+			s.emitLocked(event.RuntimeStatus, event.RuntimeStatusData{Status: update.Kind, Detail: envelope.Update})
+		}
+		return
+	}
 	if envelope.SessionID == "" || envelope.SessionID != s.id {
 		return
 	}
@@ -138,7 +189,9 @@ func (s *Session) update(params json.RawMessage) {
 	// session/load replays history. Harness Kit owns its saved transcript;
 	// replaying native messages here would append duplicate events on wakeup.
 	if s.active == nil {
-		return
+		if s.replaying || (update.Kind != "usage_update" && update.Kind != "compaction_update") {
+			return
+		}
 	}
 	switch update.Kind {
 	case "agent_message_chunk", "agent_thought_chunk":
@@ -188,9 +241,45 @@ func (s *Session) update(params json.RawMessage) {
 			usage.CostUSD = &cost
 		}
 		s.emitLocked(event.Usage, usage)
-		// used is current context occupancy, not cumulative billable tokens.
 		s.emitLocked(event.RuntimeStatus, event.RuntimeStatusData{Status: "context_usage", Detail: envelope.Update})
-	case "plan", "current_mode_update", "available_commands_update", "session_info_update":
+		// ACP used/size describe current context, not cumulative spend.
+		if update.Used != nil && *update.Used >= 0 && update.Size != nil && *update.Size > 0 {
+			s.emitLocked(event.ContextUsage, event.ContextUsageData{UsedTokens: update.Used, WindowTokens: update.Size, Basis: "reported"})
+		}
+	case "compaction_update":
+		// https://agentclientprotocol.com/protocol/v1/prompt-turn
+		if update.CompactionID == "" {
+			return
+		}
+		// Summary/error patches can repeat a lifecycle status. They are not
+		// another compaction and must not invalidate a newer usage reading.
+		if s.lastCompactionID == update.CompactionID && s.lastCompactionStatus == update.Status {
+			s.rawLocked("session/update", params)
+			return
+		}
+		s.lastCompactionID, s.lastCompactionStatus = update.CompactionID, update.Status
+		switch update.Status {
+		case "in_progress":
+			s.emitLocked(event.RuntimeStatus, event.RuntimeStatusData{Status: "compacting", Detail: envelope.Update})
+		case "completed":
+			if s.active != nil {
+				s.active.compactionConfirmed = true
+			}
+			s.emitLocked(event.RuntimeStatus, event.RuntimeStatusData{Status: "compacted", Detail: envelope.Update})
+			s.emitLocked(event.ContextUsage, event.ContextUsageData{Basis: "unknown"})
+		case "failed", "cancelled":
+			if s.active != nil {
+				s.active.compactionCancelled = update.Status == "cancelled"
+				s.active.compactionFailure = update.Status
+				if update.Error != "" {
+					s.active.compactionFailure += ": " + update.Error
+				}
+			}
+			s.emitLocked(event.RuntimeStatus, event.RuntimeStatusData{Status: "compaction_" + update.Status, Message: update.Error, Detail: envelope.Update})
+		default:
+			s.rawLocked("session/update", params)
+		}
+	case "plan", "current_mode_update", "session_info_update":
 		s.emitLocked(event.RuntimeStatus, event.RuntimeStatusData{Status: update.Kind, Detail: envelope.Update})
 	default:
 		s.rawLocked("session/update", params)

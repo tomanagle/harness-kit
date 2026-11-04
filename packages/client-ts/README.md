@@ -67,11 +67,31 @@ const { session } = await kit.protocol.sessionCreate({ runtime: "codex" });
 const page = await kit.protocol.sessionEventsPage({ sessionId: session.sessionId });
 ```
 
+The current checkout also exposes `kit.sessions.context(id)` and
+`kit.sessions.compact(id, { signal })`, with equivalent methods on a `Session`
+handle. Context reads return the latest observation without starting a runtime;
+compaction waits for native completion and supports cancellation. Await the
+previous turn and check `canCompact` before requesting compaction. Nullable
+`usedTokens`/`windowTokens`, `basis`, and `stale` distinguish unknown data from
+current measurements. Use `context.usage` and `context.compaction` events for a
+live UI, and the shared `settings.compaction` object for automatic thresholds.
+These APIs require client and sidecar builds from the same current checkout;
+they are not in v0.2.0. See the
+[context guide](https://github.com/tomanagle/harness-kit/blob/main/core/docs/context.md).
+
 The raw `kit.request()` method remains available for protocol extensions. In a
 repository checkout, regenerate the schema and clients with `make generate`;
 `make check-generated` verifies that committed output is current. The standalone
 [Go client](https://github.com/tomanagle/harness-kit/tree/main/packages/client-go)
 uses the same generated contract.
+
+`await kit.logs.subscribe(listener)` enables structured Go `slog` diagnostics
+and returns an async unsubscribe function. The listener receives either a
+`record` (time, level, message, attributes, source) or a `dropped` marker when its
+bounded stream loses records. Check `kit.server.capabilities.logs`, await
+subscription readiness, and use `settings.logging` for live levels and limits.
+Logs are separate from saved conversations and have no replay store. See the
+[logging guide](https://github.com/tomanagle/harness-kit/blob/main/core/docs/logging.md).
 
 Optional source-control helpers are exposed through `kit.git`: status, diffs,
 branches, history, stage/unstage, commit, checkout, fetch, pull and push. They

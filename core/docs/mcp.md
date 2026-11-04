@@ -17,11 +17,11 @@ harness-kit prompt -runtime claude "Find open issues about login"   # same serve
 Each new session merges three layers. A later layer replaces an earlier
 entry with the same name entirely; fields are not merged.
 
-| Layer | Where | Typical use |
-| --- | --- | --- |
-| user | `~/Library/Application Support/harness-kit/config.json` (macOS), `~/.config/harness-kit/config.json` (Linux), `%AppData%\harness-kit\config.json` (Windows); override with `HARNESS_KIT_CONFIG` | your personal servers, everywhere |
-| project | `harness-kit.json`, found by walking up from the session's working directory | servers a repository needs; commit it |
-| session | `--mcp FILE` on the CLI, or `mcp` in `session.create` | servers an app adds in code |
+| Layer   | Where                                                                                                                                                                                           | Typical use                           |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| user    | `~/Library/Application Support/harness-kit/config.json` (macOS), `~/.config/harness-kit/config.json` (Linux), `%AppData%\harness-kit\config.json` (Windows); override with `HARNESS_KIT_CONFIG` | your personal servers, everywhere     |
+| project | `harness-kit.json`, found by walking up from the session's working directory                                                                                                                    | servers a repository needs; commit it |
+| session | `--mcp FILE` on the CLI, or `mcp` in `session.create`                                                                                                                                           | servers an app adds in code           |
 
 Separately, the runtime's **own** servers (configured with `codex mcp add`,
 `claude mcp add` and so on) still load unless the merged config sets
@@ -59,16 +59,16 @@ Unknown fields are rejected.
 }
 ```
 
-| Field | Meaning |
-| --- | --- |
-| `type` | `stdio` (default) or `http` (streamable HTTP; `streamable-http` is an alias). Legacy SSE is not supported. |
-| `command`, `args`, `env`, `cwd` | stdio servers |
-| `url`, `headers` | http servers |
-| `tools.allow` / `tools.deny` | exact tool names. With `allow`, only those tools are usable; `deny` tools are never usable. |
-| `approval` | `auto` (default): run the allowed tools without asking. `ask`: request approval for each call. |
-| `runtimes` | only load for these runtimes |
-| `startupTimeoutSec`, `toolTimeoutSec` | timeouts (Codex; ignored by Claude Code) |
-| `disabled` | remove a server defined in a lower layer |
+| Field                                 | Meaning                                                                                                    |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `type`                                | `stdio` (default) or `http` (streamable HTTP; `streamable-http` is an alias). Legacy SSE is not supported. |
+| `command`, `args`, `env`, `cwd`       | stdio servers                                                                                              |
+| `url`, `headers`                      | http servers                                                                                               |
+| `tools.allow` / `tools.deny`          | exact tool names. With `allow`, only those tools are usable; `deny` tools are never usable.                |
+| `approval`                            | `auto` (default): run the allowed tools without asking. `ask`: request approval for each call.             |
+| `runtimes`                            | only load for these runtimes                                                                               |
+| `startupTimeoutSec`, `toolTimeoutSec` | timeouts (Codex; ignored by Claude Code)                                                                   |
+| `disabled`                            | remove a server defined in a lower layer                                                                   |
 
 Server names may contain letters, digits, `-` and single `_`, which keeps
 them valid as Codex config keys and in Claude Code's `mcp__<server>__<tool>`
@@ -88,16 +88,16 @@ variable is unset is skipped with a warning; it does not fail the session.
 Every mapping below was checked against the real CLIs (Codex 0.166.0,
 Claude Code 2.1.316).
 
-| | Codex (`thread/start` → `config.mcp_servers`) | Claude Code (`claude -p`) |
-| --- | --- | --- |
-| servers | `mcp_servers.<name>` for that thread only | `--mcp-config '{"mcpServers": …}'` |
-| `${VAR}` | expanded by Harness Kit; sent only over the app-server pipe, not written to `~/.codex` | passed through unexpanded; Claude Code expands it, so secrets never appear on the command line |
-| `tools.allow` / `deny` | `enabled_tools` / `disabled_tools` | `--allowedTools mcp__<name>__<tool>` / `--disallowedTools` |
-| `approval: auto` | `default_tools_approval_mode = "approve"` | `--allowedTools mcp__<name>__*` |
-| `approval: ask` | `"prompt"`. Codex asks through an MCP elicitation, which Harness Kit turns into `approval.requested` | no allow rule, so Claude Code prompts, and the prompt reaches the host through the permission bridge ([tools.md](tools.md)). Without a tool host the tools are denied, with a warning. |
-| `inheritNative: false` | each native server (from `config/read`) set to `enabled = false` for the thread | `--strict-mcp-config` |
-| name clash with a native server | kit server skipped with a warning (Codex would merge the two definitions) | Claude Code's precedence applies |
-| `cwd` | supported | ignored (warning) |
+|                                 | Codex (`thread/start` → `config.mcp_servers`)                                                        | Claude Code (`claude -p`)                                                                                                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| servers                         | `mcp_servers.<name>` for that thread only                                                            | `--mcp-config '{"mcpServers": …}'`                                                                                                                                                     |
+| `${VAR}`                        | expanded by Harness Kit; sent only over the app-server pipe, not written to `~/.codex`               | passed through unexpanded; Claude Code expands it, so secrets never appear on the command line                                                                                         |
+| `tools.allow` / `deny`          | `enabled_tools` / `disabled_tools`                                                                   | `--allowedTools mcp__<name>__<tool>` / `--disallowedTools`                                                                                                                             |
+| `approval: auto`                | `default_tools_approval_mode = "approve"`                                                            | `--allowedTools mcp__<name>__*`                                                                                                                                                        |
+| `approval: ask`                 | `"prompt"`. Codex asks through an MCP elicitation, which Harness Kit turns into `approval.requested` | no allow rule, so Claude Code prompts, and the prompt reaches the host through the permission bridge ([tools.md](tools.md)). Without a tool host the tools are denied, with a warning. |
+| `inheritNative: false`          | each native server (from `config/read`) set to `enabled = false` for the thread                      | `--strict-mcp-config`                                                                                                                                                                  |
+| name clash with a native server | kit server skipped with a warning (Codex would merge the two definitions)                            | Claude Code's precedence applies                                                                                                                                                       |
+| `cwd`                           | supported                                                                                            | ignored (warning)                                                                                                                                                                      |
 
 MCP tool calls show up as ordinary `tool.started` / `tool.completed` events
 with `kind: "mcp"`.
@@ -121,7 +121,7 @@ a warning. `harness-kit mcp add --project` updates the trust record itself,
 since you wrote the change. `inheritNative: false` from an untrusted file is
 still honoured, because it can only remove servers.
 
-Note that Claude Code itself loads a project's `.mcp.json` *without asking*
+Note that Claude Code itself loads a project's `.mcp.json` _without asking_
 in `-p` mode. Use `--no-native-mcp` (`--strict-mcp-config`) in repositories
 you don't trust.
 

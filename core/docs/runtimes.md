@@ -4,20 +4,20 @@ A runtime is an existing, complete agent harness that Harness Kit drives.
 Every adapter uses the provider's own documented integration surface. No
 adapter reads credentials, scrapes a terminal, or impersonates a client.
 
-| | Codex | Claude Code | fake |
-| --- | --- | --- | --- |
-| Integration | `codex app-server` (JSON-RPC over stdio) | `claude -p --output-format stream-json` | in-process |
-| Verified against | codex-cli 0.166.0 | Claude Code 2.1.316 | — |
-| Streaming | ✓ | ✓ | ✓ |
-| Interactive approvals | ✓ (commands, file changes, permission grants, MCP tools) | ✓ via `--permission-prompt-tool` and Harness Kit's bridge ([tools.md](tools.md#claude-code-approvals)) | ✓ |
-| Host tools ([tools.md](tools.md)) | ✓ | ✓ | ✓ (`[call NAME {args}]`) |
-| Cancel | `turn/interrupt` | SIGINT, then kill | ✓ |
-| Resume | `thread/resume` | `--resume` | ✓ |
-| Image input | local image references | PNG, JPEG, GIF, WebP via stream-json stdin | — |
-| Usage / cost | tokens / – | tokens / estimated USD | ✓ |
-| Sign-in check | `account/read` | `claude auth status --json` | – |
-| List stored sessions | `thread/list` | ✗ (SDK-only; see below) | this process's sessions |
-| Per-session MCP servers ([mcp.md](mcp.md)) | ✓ thread `config.mcp_servers` | ✓ `--mcp-config` (`approval: ask` not yet) | reports what it received |
+|                                            | Codex                                                    | Claude Code                                                                                            | fake                     |
+| ------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------ |
+| Integration                                | `codex app-server` (JSON-RPC over stdio)                 | `claude -p --output-format stream-json`                                                                | in-process               |
+| Verified against                           | codex-cli 0.166.0                                        | Claude Code 2.1.316                                                                                    | —                        |
+| Streaming                                  | ✓                                                        | ✓                                                                                                      | ✓                        |
+| Interactive approvals                      | ✓ (commands, file changes, permission grants, MCP tools) | ✓ via `--permission-prompt-tool` and Harness Kit's bridge ([tools.md](tools.md#claude-code-approvals)) | ✓                        |
+| Host tools ([tools.md](tools.md))          | ✓                                                        | ✓                                                                                                      | ✓ (`[call NAME {args}]`) |
+| Cancel                                     | `turn/interrupt`                                         | SIGINT, then kill                                                                                      | ✓                        |
+| Resume                                     | `thread/resume`                                          | `--resume`                                                                                             | ✓                        |
+| Image input                                | local image references                                   | PNG, JPEG, GIF, WebP via stream-json stdin                                                             | —                        |
+| Usage / cost                               | tokens / –                                               | tokens / estimated USD                                                                                 | ✓                        |
+| Sign-in check                              | `account/read`                                           | `claude auth status --json`                                                                            | –                        |
+| List stored sessions                       | `thread/list`                                            | ✗ (SDK-only; see below)                                                                                | this process's sessions  |
+| Per-session MCP servers ([mcp.md](mcp.md)) | ✓ thread `config.mcp_servers`                            | ✓ `--mcp-config` (`approval: ask` not yet)                                                             | reports what it received |
 
 "Verified" means the adapter's unit tests run against a scripted fake of
 the CLI. The opt-in live tests (`make test-live`) also passed against the
@@ -52,7 +52,7 @@ What this means for you:
 - **Local or open-source apps** may drive the user's own `codex login`
   session through the app-server. This is what Harness Kit does.
 - **Commercial or hosted products** must not rely on app-server
-  authentication. Use OpenAI's *Sign in with ChatGPT* program or API keys.
+  authentication. Use OpenAI's _Sign in with ChatGPT_ program or API keys.
 - Set your own client identity:
   `codex.New(codex.WithClientInfo(codex.ClientInfo{Name: "my_app", Title: "My App", Version: "1.0.0"}))`.
 
@@ -118,37 +118,37 @@ Use portable model/effort rather than duplicating them in native `config` keys.
 
 Session options (`options` in `session.create`):
 
-| option | values | default |
-| --- | --- | --- |
-| `approvalPolicy` | `untrusted`, `on-request`, `never` | inherit Codex configuration |
-| `sandbox` | `read-only`, `workspace-write`, `danger-full-access`* | inherit Codex configuration |
-| `effort` (legacy startup option; prefer portable `effort`) | model-advertised effort, e.g. `low`, `high` | Codex default |
-| `ephemeral` | do not persist the thread | `false` |
-| `config` | thread config overrides, passed through (keys touching sandbox or approval settings*) | — |
+| option                                                     | values                                                                                | default                     |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------- |
+| `approvalPolicy`                                           | `untrusted`, `on-request`, `never`                                                    | inherit Codex configuration |
+| `sandbox`                                                  | `read-only`, `workspace-write`, `danger-full-access`*                                 | inherit Codex configuration |
+| `effort` (legacy startup option; prefer portable `effort`) | model-advertised effort, e.g. `low`, `high`                                           | Codex default               |
+| `ephemeral`                                                | do not persist the thread                                                             | `false`                     |
+| `config`                                                   | thread config overrides, passed through (keys touching sandbox or approval settings*) | —                           |
 
 \* These require `AllowUnsafe` / `--allow-unsafe`.
 
 Event mapping:
 
-| Codex | Harness Kit |
-| --- | --- |
-| `item/agentMessage/delta`, `item/completed` (agentMessage) | `message.delta`, `message.completed` |
-| `item/reasoning/summaryTextDelta`, `item/reasoning/textDelta`, `item/completed` (reasoning) | `reasoning.delta`, `reasoning.completed` |
-| `item/started` / `item/completed` for commandExecution, fileChange, mcpToolCall, dynamicToolCall, webSearch, collabAgentToolCall | `tool.started` / `tool.completed` |
-| `item/commandExecution/outputDelta`, `item/fileChange/outputDelta` | `tool.output` |
-| `thread/tokenUsage/updated` | `usage` (scope `session`); `turn.completed.usage` is the per-turn delta |
-| `error` with `willRetry` | `runtime.status` `retrying`; otherwise `error` |
-| `warning`, `configWarning`, `deprecationNotice`, `model/rerouted`, `thread/compacted` | `runtime.status` |
-| anything else | `runtime.raw` (with `rawEvents`) |
+| Codex                                                                                                                            | Harness Kit                                                             |
+| -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `item/agentMessage/delta`, `item/completed` (agentMessage)                                                                       | `message.delta`, `message.completed`                                    |
+| `item/reasoning/summaryTextDelta`, `item/reasoning/textDelta`, `item/completed` (reasoning)                                      | `reasoning.delta`, `reasoning.completed`                                |
+| `item/started` / `item/completed` for commandExecution, fileChange, mcpToolCall, dynamicToolCall, webSearch, collabAgentToolCall | `tool.started` / `tool.completed`                                       |
+| `item/commandExecution/outputDelta`, `item/fileChange/outputDelta`                                                               | `tool.output`                                                           |
+| `thread/tokenUsage/updated`                                                                                                      | `usage` (scope `session`); `turn.completed.usage` is the per-turn delta |
+| `error` with `willRetry`                                                                                                         | `runtime.status` `retrying`; otherwise `error`                          |
+| `warning`, `configWarning`, `deprecationNotice`, `model/rerouted`, `thread/compacted`                                            | `runtime.status`                                                        |
+| anything else                                                                                                                    | `runtime.raw` (with `rawEvents`)                                        |
 
 Approvals (server-to-client requests):
 
-| Codex request | Harness Kit request | outcome mapping |
-| --- | --- | --- |
-| `item/commandExecution/requestApproval` | `kind: command` with `command`, `cwd`, `reason` | allow→`accept`, allow_session→`acceptForSession`, deny→`decline`, abort→`cancel` |
-| `item/fileChange/requestApproval` | `kind: file_change` with `paths` | same |
-| `item/permissions/requestApproval` | `kind: permissions` | allow / allow_session grant the requested profile for the turn / session; deny grants nothing |
-| `mcpServer/elicitation/request` tagged `_meta.codex_approval_kind: "mcp_tool_call"` (MCP tool approval, for servers with approval mode `prompt`) | `kind: tool`, `tool: "mcp/<server>"`, the tool's params as `input` | allow → `accept`, deny → `decline`, abort → `cancel` |
+| Codex request                                                                                                                                    | Harness Kit request                                                | outcome mapping                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `item/commandExecution/requestApproval`                                                                                                          | `kind: command` with `command`, `cwd`, `reason`                    | allow→`accept`, allow_session→`acceptForSession`, deny→`decline`, abort→`cancel`              |
+| `item/fileChange/requestApproval`                                                                                                                | `kind: file_change` with `paths`                                   | same                                                                                          |
+| `item/permissions/requestApproval`                                                                                                               | `kind: permissions`                                                | allow / allow_session grant the requested profile for the turn / session; deny grants nothing |
+| `mcpServer/elicitation/request` tagged `_meta.codex_approval_kind: "mcp_tool_call"` (MCP tool approval, for servers with approval mode `prompt`) | `kind: tool`, `tool: "mcp/<server>"`, the tool's params as `input` | allow → `accept`, deny → `decline`, abort → `cancel`                                          |
 
 Requests Harness Kit cannot meaningfully answer get safe replies, so a turn
 never hangs:
@@ -193,18 +193,18 @@ subprocess". This adapter does exactly that.
   Harness Kit emits `runtime.status: permission_denied`. Either way,
   `permissionMode` and `allowedTools` decide what runs without asking.
 
-| option | meaning |
-| --- | --- |
-| `permissionMode` | `default`/`manual`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`* |
-| `allowedTools` / `disallowedTools` | permission rules, e.g. `["Read", "Bash(git diff *)"]` |
-| `tools` | restrict built-in tools; `[]` disables all |
-| `addDirs` | extra directories the tools may access |
-| `bare` | skip hooks, plugins, MCP servers and CLAUDE.md; **API-key auth only** |
-| `maxTurns`, `maxBudgetUsd` | per-prompt limits; also configurable between turns or per turn |
-| `maxImageBytes` | optional per-image byte cap before encoding; `null` inherits no kit cap, `0` refuses nonempty images; configurable per turn or between turns |
-| `effort` | legacy startup option; prefer portable `effort` |
-| `forkOnResume` | see above; startup-only |
-| `disablePartialMessages` | disables partial message streaming; configurable per turn or between turns |
+| option                             | meaning                                                                                                                                      |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `permissionMode`                   | `default`/`manual`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`*                                                           |
+| `allowedTools` / `disallowedTools` | permission rules, e.g. `["Read", "Bash(git diff *)"]`                                                                                        |
+| `tools`                            | restrict built-in tools; `[]` disables all                                                                                                   |
+| `addDirs`                          | extra directories the tools may access                                                                                                       |
+| `bare`                             | skip hooks, plugins, MCP servers and CLAUDE.md; **API-key auth only**                                                                        |
+| `maxTurns`, `maxBudgetUsd`         | per-prompt limits; also configurable between turns or per turn                                                                               |
+| `maxImageBytes`                    | optional per-image byte cap before encoding; `null` inherits no kit cap, `0` refuses nonempty images; configurable per turn or between turns |
+| `effort`                           | legacy startup option; prefer portable `effort`                                                                                              |
+| `forkOnResume`                     | see above; startup-only                                                                                                                      |
+| `disablePartialMessages`           | disables partial message streaming; configurable per turn or between turns                                                                   |
 
 \* Requires `AllowUnsafe` / `--allow-unsafe`.
 

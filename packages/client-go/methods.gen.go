@@ -103,6 +103,20 @@ func (c *Client) Initialize(ctx context.Context, params InitializeParams) (Initi
 	return result, err
 }
 
+// LogsSubscribe calls logs.subscribe.
+func (c *Client) LogsSubscribe(ctx context.Context, params Empty) (Empty, error) {
+	var result Empty
+	err := c.Call(ctx, "logs.subscribe", params, &result)
+	return result, err
+}
+
+// LogsUnsubscribe calls logs.unsubscribe.
+func (c *Client) LogsUnsubscribe(ctx context.Context, params Empty) (Empty, error) {
+	var result Empty
+	err := c.Call(ctx, "logs.unsubscribe", params, &result)
+	return result, err
+}
+
 // McpList calls mcp.list.
 func (c *Client) McpList(ctx context.Context, params McpListParams) (McpListResult, error) {
 	var result McpListResult
@@ -152,10 +166,24 @@ func (c *Client) SessionClose(ctx context.Context, params SessionIDParams) (Empt
 	return result, err
 }
 
+// SessionCompact calls session.compact.
+func (c *Client) SessionCompact(ctx context.Context, params SessionIDParams) (SessionContext, error) {
+	var result SessionContext
+	err := c.Call(ctx, "session.compact", params, &result)
+	return result, err
+}
+
 // SessionConfigure calls session.configure.
 func (c *Client) SessionConfigure(ctx context.Context, params SessionConfigureParams) (SessionResult, error) {
 	var result SessionResult
 	err := c.Call(ctx, "session.configure", params, &result)
+	return result, err
+}
+
+// SessionContext calls session.context.
+func (c *Client) SessionContext(ctx context.Context, params SessionIDParams) (SessionContext, error) {
+	var result SessionContext
+	err := c.Call(ctx, "session.context", params, &result)
 	return result, err
 }
 

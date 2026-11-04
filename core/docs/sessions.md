@@ -13,8 +13,11 @@ remain in the shared `settings.get` / `settings.configure` object.
 await kit.sessions.setTags(id, ["work", "review"]);
 await kit.sessions.archive(id);
 const sessions = await kit.sessions.list({
-  query: "authentication", searchTranscript: true,
-  tags: ["work"], archived: false, limit: 20,
+  query: "authentication",
+  searchTranscript: true,
+  tags: ["work"],
+  archived: false,
+  limit: 20,
 });
 await kit.sessions.archive(id, false);
 ```

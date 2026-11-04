@@ -10,14 +10,29 @@ import (
 // Registry holds the runtimes available to a host. It is safe for
 // concurrent use.
 type Registry struct {
-	mu       sync.RWMutex
-	runtimes map[string]Runtime
-	order    []string
+	discoverTimeout time.Duration
+	mu              sync.RWMutex
+	runtimes        map[string]Runtime
+	order           []string
 }
 
 // NewRegistry returns a registry containing rts.
 func NewRegistry(rts ...Runtime) *Registry {
-	r := &Registry{runtimes: make(map[string]Runtime)}
+	return NewRegistryWithOptions(RegistryOptions{}, rts...)
+}
+
+// RegistryOptions configures one registry independently of other hosts.
+type RegistryOptions struct {
+	// DiscoverTimeout bounds each probe. Non-positive values use 20 seconds.
+	DiscoverTimeout time.Duration
+}
+
+// NewRegistryWithOptions returns a registry with instance-scoped discovery policy.
+func NewRegistryWithOptions(options RegistryOptions, rts ...Runtime) *Registry {
+	if options.DiscoverTimeout <= 0 {
+		options.DiscoverTimeout = DiscoverTimeout
+	}
+	r := &Registry{runtimes: make(map[string]Runtime), discoverTimeout: options.DiscoverTimeout}
 	for _, rt := range rts {
 		if err := r.Register(rt); err != nil {
 			panic(err)
@@ -61,9 +76,9 @@ func (r *Registry) List() []Info {
 	return out
 }
 
-// DiscoverTimeout bounds each runtime's Discover call within
-// Registry.Discover.
-var DiscoverTimeout = 20 * time.Second
+// DiscoverTimeout is the default per-runtime discovery timeout.
+// Deprecated: configure each instance with RegistryOptions.DiscoverTimeout.
+const DiscoverTimeout = 20 * time.Second
 
 // Discover probes the named runtimes (all if none are given) concurrently.
 // A runtime whose probe fails is reported with the failure in Problems
@@ -92,7 +107,7 @@ func (r *Registry) Discover(ctx context.Context, names ...string) ([]Discovery, 
 		go func() {
 			defer wg.Done()
 			info := rt.Info()
-			dctx, cancel := context.WithTimeout(ctx, DiscoverTimeout)
+			dctx, cancel := context.WithTimeout(ctx, r.discoverTimeout)
 			defer cancel()
 			d, err := rt.Discover(dctx)
 			if d.Runtime == "" {

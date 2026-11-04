@@ -70,7 +70,11 @@ export interface RequestOptions {
  * Handles a request from the server. The signal aborts if the server
  * cancels the request ($/cancelRequest). Throw to reply with an error.
  */
-export type RequestHandler = (method: string, params: unknown, signal: AbortSignal) => Promise<unknown>;
+export type RequestHandler = (
+  method: string,
+  params: unknown,
+  signal: AbortSignal,
+) => Promise<unknown>;
 
 export class JsonRpcConnection {
   #transport: Transport;
@@ -150,7 +154,13 @@ export class JsonRpcConnection {
   }
 
   #receive(line: string): void {
-    let msg: { id?: number | string | null; method?: string; params?: unknown; result?: unknown; error?: { code: number; message: string; data?: unknown } };
+    let msg: {
+      id?: number | string | null;
+      method?: string;
+      params?: unknown;
+      result?: unknown;
+      error?: { code: number; message: string; data?: unknown };
+    };
     try {
       msg = JSON.parse(line);
     } catch {
@@ -180,7 +190,11 @@ export class JsonRpcConnection {
   #handleRequest(id: number | string, method: string, params: unknown): void {
     const handler = this.#requestHandler;
     if (!handler) {
-      this.#send({ jsonrpc: "2.0", id, error: { code: ErrorCodes.MethodNotFound, message: "method not found: " + method } });
+      this.#send({
+        jsonrpc: "2.0",
+        id,
+        error: { code: ErrorCodes.MethodNotFound, message: "method not found: " + method },
+      });
       return;
     }
     const ac = new AbortController();
@@ -191,7 +205,14 @@ export class JsonRpcConnection {
         (result) => this.#send({ jsonrpc: "2.0", id, result: result ?? null }),
         (e: unknown) => {
           const err = e as { code?: number; message?: string };
-          this.#send({ jsonrpc: "2.0", id, error: { code: typeof err?.code === "number" ? err.code : ErrorCodes.InternalError, message: err?.message ?? String(e) } });
+          this.#send({
+            jsonrpc: "2.0",
+            id,
+            error: {
+              code: typeof err?.code === "number" ? err.code : ErrorCodes.InternalError,
+              message: err?.message ?? String(e),
+            },
+          });
         },
       )
       .finally(() => this.#inbound.delete(id));

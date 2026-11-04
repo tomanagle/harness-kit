@@ -1,0 +1,26 @@
+# Git has no staging hook: format the staged files immediately before committing.
+# Lefthook hides/restores unstaged hunks; stage_fixed stages only matching files.
+min_version: 2.2.2
+glob_matcher: doublestar
+pre-commit:
+  parallel: false
+  jobs:
+    - name: format-go
+      glob: "**/*.go"
+      run: bun scripts/format-go.ts -- {staged_files}
+      stage_fixed: true
+    - name: format-web
+      glob: "**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,json,jsonc,css,scss,less,html,vue,svelte,yaml,yml,toml,md,mdx,graphql,gql}"
+      exclude:
+        - "protocol/schema.json"
+        - "packages/client-ts/src/protocol.ts"
+        - "**/*.gen.ts"
+        - "**/package-lock.json"
+      run: bun run format {staged_files}
+      stage_fixed: true
+    - name: lint-web
+      glob: "**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}"
+      exclude:
+        - "packages/client-ts/src/protocol.ts"
+        - "**/*.gen.ts"
+      run: bun lint {staged_files}

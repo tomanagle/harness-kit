@@ -78,12 +78,23 @@ type Options struct {
 	// Unsafe makes the configuration report itself as unsafe (see
 	// agent.Guarded), for testing host guards.
 	Unsafe bool `json:"unsafe,omitempty"`
+	// ContextTokens and ContextWindowTokens enable deterministic context
+	// observations when either is supplied. Omitted counts remain unknown.
+	// ContextTokens is reported initially and after each successful prompt.
+	ContextTokens       *int64 `json:"contextTokens,omitempty"`
+	ContextWindowTokens *int64 `json:"contextWindowTokens,omitempty"`
+	// CompactedTokens is reported after manual compaction (default zero).
+	CompactedTokens *int64 `json:"compactedTokens,omitempty"`
+	// CompactionDelayMs delays maintenance, allowing cancellation tests.
+	// Accepted range: 0–60000 milliseconds.
+	CompactionDelayMs int64 `json:"compactionDelayMs,omitempty"`
 }
 
 var (
 	_ agent.Runtime       = (*Runtime)(nil)
 	_ agent.Guarded       = (*Runtime)(nil)
 	_ agent.SessionLister = (*Runtime)(nil)
+	_ agent.Compactor     = (*Session)(nil)
 )
 
 // Info implements agent.Runtime.
@@ -96,9 +107,11 @@ func (r *Runtime) Info() agent.Info {
 			Configuration: map[string]config.Support{
 				"model": {Startup: true, Session: true, Turn: true}, "effort": {Startup: true, Session: true, Turn: true},
 				"options.unsafe": {Startup: true, Session: true, Turn: true}, "options.failStart": {Startup: true},
+				"options.contextTokens": {Startup: true}, "options.contextWindowTokens": {Startup: true},
+				"options.compactedTokens": {Startup: true}, "options.compactionDelayMs": {Startup: true},
 				"cwd": {Startup: true}, "instructions": {Startup: true}, "mcp": {Startup: true}, "hostTools": {Startup: true}, "rawEvents": {Startup: true},
 			},
-			Streaming: true, Approvals: true, Resume: true, Fork: true, Cancel: true, Usage: true, Cost: true, ListSessions: true, MCP: true,
+			Streaming: true, Approvals: true, Resume: true, Fork: true, Cancel: true, Usage: true, Cost: true, ListSessions: true, MCP: true, ContextUsage: true, Compaction: true,
 		},
 	}
 }
@@ -131,11 +144,26 @@ func (r *Runtime) ValidateConfig(cfg agent.SessionConfig) error {
 	if err := agent.DecodeOptions(cfg.Options, &opts); err != nil {
 		return fmt.Errorf("%w: %v", agent.ErrInvalidConfig, err)
 	}
+	if opts.ContextTokens != nil && *opts.ContextTokens < 0 {
+		return fmt.Errorf("%w: fake contextTokens must be non-negative", agent.ErrInvalidConfig)
+	}
+	if opts.ContextWindowTokens != nil && *opts.ContextWindowTokens <= 0 {
+		return fmt.Errorf("%w: fake contextWindowTokens must be positive", agent.ErrInvalidConfig)
+	}
+	if opts.CompactedTokens != nil && *opts.CompactedTokens < 0 {
+		return fmt.Errorf("%w: fake compactedTokens must be non-negative", agent.ErrInvalidConfig)
+	}
+	if opts.CompactionDelayMs < 0 || opts.CompactionDelayMs > 60000 {
+		return fmt.Errorf("%w: fake compactionDelayMs must be between 0 and 60000", agent.ErrInvalidConfig)
+	}
 	return nil
 }
 
 // Start implements agent.Runtime.
 func (r *Runtime) Start(_ context.Context, cfg agent.SessionConfig, h agent.Handler) (agent.Session, error) {
+	if err := r.ValidateConfig(cfg); err != nil {
+		return nil, err
+	}
 	var o Options
 	if err := agent.DecodeOptions(cfg.Options, &o); err != nil {
 		return nil, err
@@ -162,7 +190,9 @@ func (r *Runtime) Start(_ context.Context, cfg agent.SessionConfig, h agent.Hand
 			Status: "mcp", Message: "MCP servers: " + strings.Join(cfg.MCP.Names(), ", "), Detail: detail,
 		}})
 	}
-	return &Session{rt: r, id: id, cfg: cfg, h: h}, nil
+	s := &Session{rt: r, id: id, cfg: cfg, h: h, opts: o}
+	s.emitContext("", o.ContextTokens)
+	return s, nil
 }
 
 // Fork creates an independent deterministic echo session.
@@ -200,6 +230,7 @@ type Session struct {
 	cfg   agent.SessionConfig
 	h     agent.Handler
 	turns int
+	opts  Options
 }
 
 // RuntimeSessionID implements agent.Session.
@@ -207,6 +238,47 @@ func (s *Session) RuntimeSessionID() string { return s.id }
 
 // Close implements agent.Session.
 func (s *Session) Close(context.Context) error { return nil }
+
+// CanCompact is enabled only by explicitly configured context fixtures.
+func (s *Session) CanCompact() bool {
+	return s.opts.ContextTokens != nil || s.opts.ContextWindowTokens != nil
+}
+
+// Compact performs deterministic, cancellable maintenance without a prompt.
+func (s *Session) Compact(ctx context.Context) error {
+	if !s.CanCompact() {
+		return fmt.Errorf("%w: fake context fixtures are not enabled", agent.ErrUnsupported)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.opts.CompactionDelayMs > 0 {
+		timer := time.NewTimer(time.Duration(s.opts.CompactionDelayMs) * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	used := int64(0)
+	if s.opts.CompactedTokens != nil {
+		used = *s.opts.CompactedTokens
+	}
+	s.emitContext("", &used)
+	return nil
+}
+
+func (s *Session) emitContext(turnID string, used *int64) {
+	if !s.CanCompact() || s.h == nil {
+		return
+	}
+	snapshot := event.ContextUsageData{UsedTokens: used, WindowTokens: s.opts.ContextWindowTokens, Basis: "reported"}.Clone()
+	s.h.Emit(event.Event{Type: event.ContextUsage, TurnID: turnID, Data: snapshot})
+}
 
 // Prompt implements agent.Session.
 func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult, error) {
@@ -298,6 +370,7 @@ func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult
 	}
 	usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 	emit(event.Usage, *usage)
+	s.emitContext(turn.ID, s.opts.ContextTokens)
 	return agent.TurnResult{Status: event.TurnStatusCompleted, Usage: usage, RuntimeTurnID: fmt.Sprintf("%s-turn-%d", s.id, s.turns)}, nil
 }
 

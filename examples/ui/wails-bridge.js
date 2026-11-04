@@ -23,6 +23,8 @@ window.harnessKitReady = (async () => {
       renameSession: (id, title) => d.RenameSession(id, title),
       openSession: (id) => d.OpenSession(id),
       history: (id) => d.History(id),
+      context: (id) => d.Context(id),
+      compact: (id) => d.Compact(id),
       gitStatus: (id) => d.GitStatus(id),
       gitDiff: (id, options = {}) => d.GitDiff(id, options),
       gitBranches: (id) => d.GitBranches(id),

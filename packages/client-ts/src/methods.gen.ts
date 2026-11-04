@@ -67,6 +67,14 @@ export class ProtocolClient {
     return this.#request("initialize", params, opts);
   }
 
+  logsSubscribe(params: RpcMethods["logs.subscribe"]["params"], opts?: RequestOptions): Promise<RpcMethods["logs.subscribe"]["result"]> {
+    return this.#request("logs.subscribe", params, opts);
+  }
+
+  logsUnsubscribe(params: RpcMethods["logs.unsubscribe"]["params"], opts?: RequestOptions): Promise<RpcMethods["logs.unsubscribe"]["result"]> {
+    return this.#request("logs.unsubscribe", params, opts);
+  }
+
   mcpList(params: RpcMethods["mcp.list"]["params"], opts?: RequestOptions): Promise<RpcMethods["mcp.list"]["result"]> {
     return this.#request("mcp.list", params, opts);
   }
@@ -95,8 +103,16 @@ export class ProtocolClient {
     return this.#request("session.close", params, opts);
   }
 
+  sessionCompact(params: RpcMethods["session.compact"]["params"], opts?: RequestOptions): Promise<RpcMethods["session.compact"]["result"]> {
+    return this.#request("session.compact", params, opts);
+  }
+
   sessionConfigure(params: RpcMethods["session.configure"]["params"], opts?: RequestOptions): Promise<RpcMethods["session.configure"]["result"]> {
     return this.#request("session.configure", params, opts);
+  }
+
+  sessionContext(params: RpcMethods["session.context"]["params"], opts?: RequestOptions): Promise<RpcMethods["session.context"]["result"]> {
+    return this.#request("session.context", params, opts);
   }
 
   sessionCreate(params: RpcMethods["session.create"]["params"], opts?: RequestOptions): Promise<RpcMethods["session.create"]["result"]> {

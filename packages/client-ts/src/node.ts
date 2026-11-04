@@ -32,7 +32,8 @@ export interface StdioTransport extends Transport {
 export function stdio(options: StdioOptions): StdioTransport {
   const stderrMode = typeof options.stderr === "function" ? "pipe" : (options.stderr ?? "inherit");
   const args = [...(options.args ?? ["serve"])];
-  if (options.settings !== undefined) args.push("--settings-json", JSON.stringify(options.settings));
+  if (options.settings !== undefined)
+    args.push("--settings-json", JSON.stringify(options.settings));
   const child = spawn(options.command, args, {
     cwd: options.cwd,
     env: options.env ?? process.env,
@@ -61,7 +62,9 @@ export function stdio(options: StdioOptions): StdioTransport {
   });
   child.on("error", (err) => emitClose(err));
   child.on("exit", (code, signal) => {
-    emitClose(code === 0 ? undefined : new Error(`harness-kit exited (${signal ?? `code ${code}`})`));
+    emitClose(
+      code === 0 ? undefined : new Error(`harness-kit exited (${signal ?? `code ${code}`})`),
+    );
   });
   // Writes after the child died surface as EPIPE; the exit handler reports it.
   child.stdin!.on("error", () => {});

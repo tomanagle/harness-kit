@@ -1,6 +1,6 @@
 # Host tools
 
-Host tools are functions in *your* application that agents can call:
+Host tools are functions in _your_ application that agents can call:
 create a ticket, look up a customer, open a panel in your UI. Codex and
 Claude Code already bring their general-purpose tools (shell, files,
 search, web). Harness Kit adds a way for your app's own tools to reach
@@ -12,10 +12,10 @@ await kit.tools.register({
   name: "create_ticket",
   description: "Create a support ticket",
   inputSchema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] },
-  approval: "ask",                                  // ask the user before each call
+  approval: "ask", // ask the user before each call
   handler: async ({ title }, ctx) => tickets.create(title, { signal: ctx.signal }),
 });
-const session = await kit.sessions.create({ runtime: "codex" });   // or "claude"
+const session = await kit.sessions.create({ runtime: "codex" }); // or "claude"
 ```
 
 ```go
@@ -67,16 +67,16 @@ runtime ──stdio──► bridge (harness-kit, relay only) ──Unix socket�
 
 ## Tool behaviour
 
-| | |
-| --- | --- |
-| Input | validated against the tool's JSON Schema before the handler runs; invalid arguments return an error result explaining why |
-| Schema (Go) | inferred from the argument struct: `json` names; `omitempty` and pointer fields are optional; `desc:"..."` and `enum:"a,b"` tags |
-| Output | a string becomes text; a `tools.Result` / `ToolResult` is passed through; other values become JSON text plus `structuredContent` |
-| Errors | handler errors, panics and timeouts become error results the model can read (`isError: true`); the turn continues |
+|                   |                                                                                                                                                                   |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Input             | validated against the tool's JSON Schema before the handler runs; invalid arguments return an error result explaining why                                         |
+| Schema (Go)       | inferred from the argument struct: `json` names; `omitempty` and pointer fields are optional; `desc:"..."` and `enum:"a,b"` tags                                  |
+| Output            | a string becomes text; a `tools.Result` / `ToolResult` is passed through; other values become JSON text plus `structuredContent`                                  |
+| Errors            | handler errors, panics and timeouts become error results the model can read (`isError: true`); the turn continues                                                 |
 | `approval: "ask"` | Harness Kit asks before every call (`approval.requested`, policies apply). `deny` returns an error result; `abort` also cancels the turn. Works on both runtimes. |
-| Timeout | `timeoutMs` / `tools.WithTimeout`, default 2 minutes |
-| Concurrency | `tools.MaxConcurrent(n)` across the registry |
-| Read-only | `readOnly: true` is passed to runtimes as MCP's `readOnlyHint` |
+| Timeout           | `timeoutMs` / `tools.WithTimeout`, default 2 minutes                                                                                                              |
+| Concurrency       | `tools.MaxConcurrent(n)` across the registry                                                                                                                      |
+| Read-only         | `readOnly: true` is passed to runtimes as MCP's `readOnlyHint`                                                                                                    |
 
 Per session: `hostTools: ["a", "b"]` limits a session to some tools;
 `disableHostTools: true` gives it none (and no bridge). Register tools
@@ -112,12 +112,12 @@ prompt is denied).
 
 ## Protocol
 
-| Method | Direction | |
-| --- | --- | --- |
-| `tools.register` `{tools: [ToolSpec]}` | client → server | all or nothing; duplicate names fail with `duplicate_tool` |
-| `tools.unregister` `{names}` | client → server | only the caller's own tools |
-| `tools.list` | client → server | every registered tool |
-| `tool.call` `{sessionId, turnId, name, arguments}` | **server → client** | reply with a ToolResult; `$/cancelRequest` if abandoned |
+| Method                                             | Direction           |                                                            |
+| -------------------------------------------------- | ------------------- | ---------------------------------------------------------- |
+| `tools.register` `{tools: [ToolSpec]}`             | client → server     | all or nothing; duplicate names fail with `duplicate_tool` |
+| `tools.unregister` `{names}`                       | client → server     | only the caller's own tools                                |
+| `tools.list`                                       | client → server     | every registered tool                                      |
+| `tool.call` `{sessionId, turnId, name, arguments}` | **server → client** | reply with a ToolResult; `$/cancelRequest` if abandoned    |
 
 `ToolSpec = {name, description?, inputSchema?, approval?: "auto"|"ask", readOnly?, timeoutMs?}`.
 `capabilities.tools` in `initialize` reports whether the server hosts

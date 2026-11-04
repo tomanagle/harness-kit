@@ -27,7 +27,9 @@ const cwd = process.env.HARNESS_KIT_EXAMPLE_CWD || process.cwd();
 // it as an extra resource (electron-builder "extraResources") per platform.
 function sidecarPath() {
   const exe = process.platform === "win32" ? "harness-kit.exe" : "harness-kit";
-  return app.isPackaged ? path.join(process.resourcesPath, exe) : path.join(here, "..", "..", "core", "bin", exe);
+  return app.isPackaged
+    ? path.join(process.resourcesPath, exe)
+    : path.join(here, "..", "..", "core", "bin", exe);
 }
 
 let kit;
@@ -36,9 +38,15 @@ let storeDir;
 
 async function start() {
   // Session history survives app restarts; the smoke test uses a throwaway store.
-  storeDir = smoke ? fs.mkdtempSync(path.join(os.tmpdir(), "hk-electron-smoke-")) : path.join(app.getPath("userData"), "sessions");
+  storeDir = smoke
+    ? fs.mkdtempSync(path.join(os.tmpdir(), "hk-electron-smoke-"))
+    : path.join(app.getPath("userData"), "sessions");
   kit = await createHarnessKit({
-    transport: stdio({ command: sidecarPath(), args: ["serve", "--fake-runtime", "--kit-mcp", "--store", storeDir], stderr: "inherit" }),
+    transport: stdio({
+      command: sidecarPath(),
+      args: ["serve", "--fake-runtime", "--kit-mcp", "--store", storeDir],
+      stderr: "inherit",
+    }),
     clientInfo: { name: "electron-example", version: app.getVersion() },
   });
   await kit.tools.register(demoTools);
@@ -58,7 +66,12 @@ app.whenReady().then(async () => {
     width: 1100,
     height: 760,
     show: !smoke,
-    webPreferences: { preload: path.join(here, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false },
+    webPreferences: {
+      preload: path.join(here, "preload.cjs"),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+    },
   });
   await win.loadFile(path.join(here, "index.html"));
   if (smoke) await smokeTest();
@@ -106,14 +119,19 @@ async function smokeTest() {
       "session in the list": r.sessions.length > 0,
       "session renamed": r.title === "Renamed by the smoke test",
     };
-    const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([k]) => k);
+    const failed = Object.entries(checks)
+      .filter(([, ok]) => !ok)
+      .map(([k]) => k);
     console.log(failed.length ? `SMOKE FAILED: ${failed.join(", ")}` : "SMOKE OK");
     for (const [k, ok] of Object.entries(checks)) console.log(`  ${ok ? "✓" : "✗"} ${k}`);
     console.log(`  runtimes: ${r.runtimes.join(", ")} | tools: ${r.tools.join(", ")}`);
     console.log(`  MCP: ${r.mcp}`);
     process.exitCode = failed.length ? 1 : 0;
     if (process.env.HARNESS_KIT_SMOKE_SCREENSHOT) {
-      fs.writeFileSync(process.env.HARNESS_KIT_SMOKE_SCREENSHOT, (await win.webContents.capturePage()).toPNG());
+      fs.writeFileSync(
+        process.env.HARNESS_KIT_SMOKE_SCREENSHOT,
+        (await win.webContents.capturePage()).toPNG(),
+      );
       console.log(`  screenshot: ${process.env.HARNESS_KIT_SMOKE_SCREENSHOT}`);
     }
   } catch (e) {

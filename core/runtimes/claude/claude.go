@@ -33,7 +33,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"reflect"
 	"slices"
 	"strconv"
@@ -46,6 +45,7 @@ import (
 	"github.com/tomanagle/harness-kit/core/event"
 	"github.com/tomanagle/harness-kit/core/internal/process"
 	"github.com/tomanagle/harness-kit/core/mcp"
+	"github.com/tomanagle/harness-kit/core/runtimes/transport"
 )
 
 // Name is the runtime name.
@@ -63,12 +63,18 @@ const permissionPromptsVersion = "2.1.259"
 // --max-budget-usd still applies only to spend in the current invocation.
 const restoredCostVersion = "2.1.277"
 
+// First CLI version verified against the documented local command contract.
+// SDK release numbers are not treated as CLI version numbers.
+const compactCommandVersion = "2.1.317"
+
 // Runtime is the Claude Code adapter.
 type Runtime struct {
-	path  string
-	env   []string
-	args  []string
-	grace time.Duration
+	launcher   transport.Launcher
+	inputFiles agent.InputFileOpener
+	path       string
+	env        []string
+	args       []string
+	grace      time.Duration
 
 	versionMu sync.Mutex
 	versions  map[string]string
@@ -76,6 +82,26 @@ type Runtime struct {
 
 // Option configures the adapter.
 type Option func(*Runtime)
+
+// WithLauncher injects executable discovery and process execution for sessions
+// and probes. Nil retains the native OS implementation.
+func WithLauncher(launcher transport.Launcher) Option {
+	return func(r *Runtime) {
+		if launcher != nil {
+			r.launcher = launcher
+		}
+	}
+}
+
+// WithInputFiles supplies image attachments from a host filesystem. Nil retains
+// local file reads; size and supported-media checks still apply.
+func WithInputFiles(files agent.InputFileOpener) Option {
+	return func(r *Runtime) {
+		if files != nil {
+			r.inputFiles = files
+		}
+	}
+}
 
 // WithPath sets the claude binary path (default: HARNESS_KIT_CLAUDE_PATH,
 // then PATH and well-known install directories).
@@ -95,7 +121,7 @@ func WithInterruptGrace(d time.Duration) Option { return func(r *Runtime) { r.gr
 
 // New returns a Claude Code adapter.
 func New(opts ...Option) *Runtime {
-	r := &Runtime{grace: 5 * time.Second, versions: make(map[string]string)}
+	r := &Runtime{launcher: process.OSLauncher{}, inputFiles: osInputFiles{}, grace: 5 * time.Second, versions: make(map[string]string)}
 	for _, o := range opts {
 		o(r)
 	}
@@ -161,7 +187,7 @@ func (r *Runtime) Info() agent.Info {
 		DisplayName: "Claude Code",
 		Description: "Anthropic Claude Code CLI in headless stream-json mode.",
 		Capabilities: agent.Capabilities{
-			Streaming: true, Approvals: true, Resume: true, Fork: true, ForkDeferred: true, Cancel: true, Usage: true, Cost: true, MCP: true, Images: true,
+			Streaming: true, Approvals: true, Resume: true, Fork: true, ForkDeferred: true, Cancel: true, Usage: true, Cost: true, MCP: true, Images: true, ContextUsage: true, Compaction: true,
 			Configuration: configurationSupport(),
 		},
 	}
@@ -242,7 +268,7 @@ func (r *Runtime) Unsafe(cfg agent.SessionConfig) string {
 }
 
 func (r *Runtime) lookPath() (string, error) {
-	return process.LookPath("claude", process.LookOptions{Path: r.path, EnvVar: "HARNESS_KIT_CLAUDE_PATH"})
+	return r.launcher.LookPath("claude", transport.LookupOptions{Path: r.path, EnvVar: "HARNESS_KIT_CLAUDE_PATH"})
 }
 
 func (r *Runtime) version(ctx context.Context, path string) (string, error) {
@@ -251,21 +277,12 @@ func (r *Runtime) version(ctx context.Context, path string) (string, error) {
 	if v, ok := r.versions[path]; ok {
 		return v, nil
 	}
-	v, err := process.Version(ctx, path, r.env)
+	v, err := process.VersionWith(ctx, r.launcher, path, r.env)
 	if err != nil {
 		return "", err
 	}
 	r.versions[path] = v
 	return v, nil
-}
-
-func (r *Runtime) command(path string, args ...string) *exec.Cmd {
-	cmd := exec.Command(path, args...)
-	process.Configure(cmd)
-	if len(r.env) > 0 {
-		cmd.Env = append(os.Environ(), r.env...)
-	}
-	return cmd
 }
 
 // Discover implements agent.Runtime.
@@ -310,15 +327,14 @@ func (r *Runtime) Discover(ctx context.Context) (agent.Discovery, error) {
 func (r *Runtime) authStatus(ctx context.Context, path string) (agent.AuthStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	cmd := r.command(path, "auth", "status", "--json")
 	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Start(); err != nil {
+	child, err := r.launcher.Start(ctx, transport.Command{Path: path, Args: []string{"auth", "status", "--json"}, Env: r.env, Stdin: strings.NewReader(""), Stdout: &out})
+	if err != nil {
 		return agent.AuthStatus{}, err
 	}
-	stop := context.AfterFunc(ctx, func() { _ = process.Kill(cmd) })
+	stop := context.AfterFunc(ctx, func() { _ = child.Kill() })
 	defer stop()
-	runErr := cmd.Wait() // exit status 1 means "not logged in"
+	runErr := child.Wait() // exit status 1 means "not logged in"
 	var st struct {
 		LoggedIn         bool   `json:"loggedIn"`
 		AuthMethod       string `json:"authMethod"`
@@ -397,6 +413,7 @@ type Session struct {
 	h       agent.Handler
 
 	mu         sync.Mutex
+	turnMu     sync.Mutex
 	id         string
 	forkSource string
 	started    bool    // the session exists on disk; later turns use --resume
@@ -622,6 +639,52 @@ func (s *Session) PrepareTurn(ctx context.Context, in agent.TurnConfig) (agent.T
 
 // Prompt implements agent.Session.
 func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult, error) {
+	return s.prompt(ctx, turn, "")
+}
+
+var _ agent.Compactor = (*Session)(nil)
+
+// CanCompact requires an existing native conversation and a CLI that reports
+// local command completion. Older print modes must never receive a fake prompt.
+func (s *Session) CanCompact() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.started && process.CompareVersions(s.version, compactCommandVersion) >= 0
+}
+
+// Compact executes Claude's documented native /compact command. Both its
+// boundary and local command result must arrive before completion is reported.
+func (s *Session) Compact(ctx context.Context) error {
+	if !s.CanCompact() {
+		return fmt.Errorf("%w: Claude compaction requires an existing session and Claude Code >= %s", agent.ErrUnsupported, compactCommandVersion)
+	}
+	result, err := s.prompt(ctx, agent.Turn{Input: []agent.InputPart{{Type: "text", Text: "/compact"}}}, "compact")
+	if err != nil {
+		return err
+	}
+	if result.Status == event.TurnStatusCancelled {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return context.Canceled
+	}
+	if result.Status != event.TurnStatusCompleted {
+		if result.Error != nil {
+			return fmt.Errorf("claude compact: %s", result.Error.Message)
+		}
+		return fmt.Errorf("claude compact did not complete")
+	}
+	return nil
+}
+
+func (s *Session) prompt(ctx context.Context, turn agent.Turn, command string) (agent.TurnResult, error) {
+	if !s.turnMu.TryLock() {
+		return agent.TurnResult{}, fmt.Errorf("claude: a turn is already running")
+	}
+	defer s.turnMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return agent.TurnResult{}, err
+	}
 	settings, err := s.cfg.Settings()
 	if err != nil {
 		return agent.TurnResult{}, err
@@ -634,7 +697,7 @@ func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult
 	}
 	cfg := s.cfg.WithSettings(settings)
 	o, _ := validatedOptions(cfg)
-	input, streamInput, err := encodeInput(ctx, turn.Input, cfg.Cwd, o.MaxImageBytes)
+	input, streamInput, err := encodeInput(ctx, s.rt.inputFiles, turn.Input, cfg.Cwd, o.MaxImageBytes)
 	if err != nil {
 		return agent.TurnResult{}, err
 	}
@@ -642,20 +705,15 @@ func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult
 	if streamInput {
 		args = append(args, "--input-format", "stream-json")
 	}
-	cmd := s.rt.command(s.path, args...)
-	cmd.Dir = cfg.Cwd
 	// The prompt goes through stdin: no argv length limits and no risk of
 	// a prompt being parsed as a flag.
-	cmd.Stdin = bytes.NewReader(input)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return agent.TurnResult{}, err
-	}
 	stderr := process.NewTail(16 << 10)
-	cmd.Stderr = stderr
-	if err := cmd.Start(); err != nil {
+	child, err := s.rt.launcher.Start(ctx, transport.Command{Path: s.path, Args: args, Dir: cfg.Cwd, Env: s.rt.env, Stdin: bytes.NewReader(input), Stderr: stderr})
+	if err != nil {
 		return agent.TurnResult{}, fmt.Errorf("claude: start: %w", err)
 	}
+	stdout := child.Stdout()
+	defer stdout.Close()
 
 	s.mu.Lock()
 	if cfg.Model != "" {
@@ -665,14 +723,17 @@ func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult
 	waitDone := make(chan struct{})
 	var waitErr error
 	parsed := make(chan struct{})
-	tr := &turnReader{s: s, turnID: turn.ID, inheritModel: cfg.Model == ""}
+	tr := &turnReader{s: s, turnID: turn.ID, inheritModel: cfg.Model == "", command: command}
+	if command == "compact" {
+		tr.emit(event.RuntimeStatus, event.RuntimeStatusData{Status: "compacting"})
+	}
 	go func() {
 		defer close(parsed)
 		tr.read(stdout)
 	}()
 	go func() {
 		<-parsed // drain stdout before Wait closes the pipe
-		waitErr = cmd.Wait()
+		waitErr = child.Wait()
 		close(waitDone)
 	}()
 
@@ -681,7 +742,7 @@ func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult
 	case <-waitDone:
 	case <-ctx.Done():
 		cancelled = true
-		process.Stop(cmd, waitDone, s.rt.grace)
+		process.StopChild(child, waitDone, s.rt.grace)
 		<-waitDone
 	}
 
@@ -697,6 +758,14 @@ func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult
 		}
 		return agent.TurnResult{}, errors.New(msg + stderr.Suffix())
 	}
+	if command != "" && tr.result.Status == event.TurnStatusCompleted {
+		if waitErr != nil {
+			return agent.TurnResult{}, fmt.Errorf("claude compact: process exited: %w", waitErr)
+		}
+		if tr.localCommand != command || !tr.compacted {
+			return agent.TurnResult{}, fmt.Errorf("claude compact: native command completed without a confirmed compaction boundary")
+		}
+	}
 	return tr.result, nil
 }
 
@@ -705,6 +774,11 @@ type turnReader struct {
 	s            *Session
 	turnID       string
 	inheritModel bool
+	command      string
+	localCommand string
+	compacted    bool
+	contextModel string
+	contextUsage *event.ContextUsageData
 
 	curMsg    string
 	curIndex  int
@@ -714,6 +788,13 @@ type turnReader struct {
 }
 
 func (t *turnReader) emit(typ event.Type, data any) {
+	// A maintenance command is not an assistant conversation turn.
+	if t.command != "" {
+		switch typ {
+		case event.MessageDelta, event.MessageCompleted, event.ReasoningDelta, event.ReasoningCompleted, event.ToolStarted, event.ToolCompleted:
+			return
+		}
+	}
 	if t.s.h != nil {
 		t.s.h.Emit(event.Event{Type: typ, TurnID: t.turnID, Data: data})
 	}
@@ -756,12 +837,21 @@ type streamLine struct {
 	Subtype         string  `json:"subtype"`
 	SessionID       string  `json:"session_id"`
 	ParentToolUseID *string `json:"parent_tool_use_id"`
+	AgentID         string  `json:"agent_id"`
 	Model           string  `json:"model"`
 	PermissionMode  string  `json:"permissionMode"`
+	Status          string  `json:"status"`
 	Message         struct {
 		ID      string          `json:"id"`
+		Model   string          `json:"model"`
+		Usage   *messageUsage   `json:"usage"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
+	ContextUsage *struct {
+		Model        string `json:"model"`
+		TotalTokens  *int64 `json:"total_tokens"`
+		RawMaxTokens *int64 `json:"raw_max_tokens"`
+	} `json:"context_usage"`
 	Event struct {
 		Type    string `json:"type"`
 		Index   int    `json:"index"`
@@ -775,8 +865,12 @@ type streamLine struct {
 		} `json:"delta"`
 	} `json:"event"`
 	// result
-	IsError      bool     `json:"is_error"`
-	Result       string   `json:"result"`
+	IsError      bool   `json:"is_error"`
+	Result       string `json:"result"`
+	LocalCommand string `json:"local_command"`
+	ModelUsage   map[string]struct {
+		ContextWindow *int64 `json:"contextWindow"`
+	} `json:"modelUsage"`
 	TotalCostUSD *float64 `json:"total_cost_usd"`
 	Usage        struct {
 		InputTokens              int64 `json:"input_tokens"`
@@ -805,6 +899,10 @@ func (t *turnReader) handle(line []byte) {
 	}
 	switch m.Type {
 	case "system":
+		if (m.Subtype == "compact_boundary" || m.Subtype == "status") && (parent != "" || m.AgentID != "") {
+			t.raw("system/"+m.Subtype, line)
+			return
+		}
 		t.system(m, line)
 	case "stream_event":
 		t.streamEvent(m, parent)
@@ -845,7 +943,16 @@ func (t *turnReader) system(m streamLine, line []byte) {
 	case "permission_denied":
 		t.emit(event.RuntimeStatus, event.RuntimeStatusData{Status: "permission_denied", Message: "a tool call needing approval was denied", Detail: append(json.RawMessage(nil), line...)})
 	case "compact_boundary":
+		t.compacted = true
 		t.emit(event.RuntimeStatus, event.RuntimeStatusData{Status: "compacted"})
+		t.contextUsage = &event.ContextUsageData{Basis: "unknown"}
+		t.emit(event.ContextUsage, *t.contextUsage)
+	case "status":
+		if m.Status == "compacting" {
+			t.emit(event.RuntimeStatus, event.RuntimeStatusData{Status: "compacting"})
+		} else {
+			t.raw("system/status", line)
+		}
 	default:
 		t.raw("system/"+m.Subtype, line)
 	}
@@ -872,6 +979,9 @@ func (t *turnReader) streamEvent(m streamLine, parent string) {
 }
 
 func (t *turnReader) assistant(m streamLine, parent string) {
+	if parent == "" && m.AgentID == "" && t.command == "" {
+		t.observeContext(m)
+	}
 	var blocks []contentBlock
 	if json.Unmarshal(m.Message.Content, &blocks) != nil {
 		return
@@ -918,6 +1028,13 @@ func (t *turnReader) user(m streamLine) {
 
 func (t *turnReader) resultLine(m streamLine) {
 	t.gotResult = true
+	t.localCommand = m.LocalCommand
+	if t.contextUsage != nil && t.contextUsage.Basis != "reported" && t.contextModel != "" {
+		if usage, ok := m.ModelUsage[t.contextModel]; ok && usage.ContextWindow != nil && *usage.ContextWindow > 0 {
+			t.contextUsage.WindowTokens = usage.ContextWindow
+			t.emit(event.ContextUsage, *t.contextUsage)
+		}
+	}
 	usage := &event.UsageData{
 		Scope:             "turn",
 		InputTokens:       m.Usage.InputTokens,

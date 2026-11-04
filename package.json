@@ -1,0 +1,20 @@
+{
+  "name": "harness-kit-repository",
+  "private": true,
+  "packageManager": "bun@1.4.4",
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "scripts": {
+    "format": "bun fmt --no-script",
+    "format:check": "bun fmt --no-script --check",
+    "lint": "oxlint --deny-warnings",
+    "lint:fix": "oxlint --fix --deny-warnings",
+    "hooks:install": "lefthook install",
+    "postinstall": "lefthook install"
+  },
+  "devDependencies": {
+    "lefthook": "2.2.2",
+    "oxlint": "1.91.0"
+  }
+}

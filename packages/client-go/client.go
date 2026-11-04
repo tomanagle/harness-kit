@@ -24,10 +24,13 @@ var ErrClosed = jsonrpc.ErrClosed
 // Options configures the connection, callbacks and initial settings.
 type Options struct {
 	ClientInfo ClientInfo
-	// OnEvent and OnSettings run in wire order on the read goroutine. They must
+	// OnEvent, OnSettings and OnLog run in wire order on the read goroutine. They must
 	// return promptly. Queue work elsewhere before making blocking RPC calls.
 	OnEvent    func(HarnessEvent)
 	OnSettings func(SettingsSnapshot)
+	// OnLog must be installed before LogsSubscribe; delivery can begin before
+	// that method's response arrives.
+	OnLog func(LogNotification)
 	// OnError reports malformed notifications and other non-fatal wire errors.
 	OnError func(error)
 	// Settings is the startup document for Spawn. Connect rejects boot settings
@@ -108,6 +111,14 @@ func Connect(ctx context.Context, r io.Reader, w io.Writer, opts Options) (*Clie
 	}
 	c.rpc = jsonrpc.NewConn(r, w, jsonrpc.HandlerFunc(func(ctx context.Context, req *jsonrpc.Request) (any, error) {
 		switch req.Method {
+		case NotificationLog:
+			var notification LogNotification
+			if err := json.Unmarshal(req.Params, &notification); err != nil {
+				report(fmt.Errorf("harness-kit: decode log notification: %w", err))
+			} else if opts.OnLog != nil {
+				opts.OnLog(notification)
+			}
+			return nil, nil
 		case NotificationEvent:
 			var ev HarnessEvent
 			if err := json.Unmarshal(req.Params, &ev); err != nil {

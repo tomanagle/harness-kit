@@ -15,7 +15,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,6 +23,7 @@ import (
 	"github.com/tomanagle/harness-kit/core/internal/jsonrpc"
 	"github.com/tomanagle/harness-kit/core/internal/process"
 	"github.com/tomanagle/harness-kit/core/mcp"
+	"github.com/tomanagle/harness-kit/core/runtimes/transport"
 )
 
 // ProtocolVersion is the MCP protocol version this client requests.
@@ -52,6 +52,9 @@ type Options struct {
 	Dir string
 	// HTTPClient is used for http servers (default: 20s timeout).
 	HTTPClient *http.Client
+	// Launcher supplies executable discovery and stdio process ownership.
+	// Nil uses native OS processes. HTTP servers do not use this dependency.
+	Launcher transport.Launcher
 }
 
 type caller interface {
@@ -83,7 +86,7 @@ func Connect(ctx context.Context, s mcp.Server, opts Options) (*Session, error) 
 		}
 		c = &httpCaller{url: e.URL, headers: e.Headers, client: hc}
 	} else {
-		sc, err := startStdio(e, opts.Dir)
+		sc, err := startStdio(ctx, e, opts.Dir, opts.Launcher)
 		if err != nil {
 			return nil, err
 		}
@@ -189,38 +192,49 @@ func Probe(ctx context.Context, s mcp.Server, opts Options) (Result, error) {
 // ---- stdio ---------------------------------------------------------------
 
 type stdioCaller struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	conn   *jsonrpc.Conn
-	stderr *process.Tail
-	exited chan struct{}
+	child     transport.Child
+	stdin     io.WriteCloser
+	stdout    io.ReadCloser
+	conn      *jsonrpc.Conn
+	stderr    *process.Tail
+	exited    chan struct{}
+	closeOnce sync.Once
 }
 
-func startStdio(s mcp.Server, dir string) (*stdioCaller, error) {
-	cmd := exec.Command(s.Command, s.Args...)
-	process.Configure(cmd)
-	cmd.Dir = dir
+func startStdio(ctx context.Context, s mcp.Server, dir string, launcher transport.Launcher) (*stdioCaller, error) {
+	if launcher == nil {
+		launcher = process.OSLauncher{}
+	}
+	path, err := launcher.LookPath(s.Command, transport.LookupOptions{NoDefaultDirs: true})
+	if err != nil {
+		return nil, fmt.Errorf("find %s: %w", s.Command, err)
+	}
 	if s.Cwd != "" {
-		cmd.Dir = s.Cwd
+		dir = s.Cwd
 	}
-	cmd.Env = os.Environ()
+	var env []string
 	for k, v := range s.Env {
-		cmd.Env = append(cmd.Env, k+"="+v)
+		env = append(env, k+"="+v)
 	}
-	stdin, err := cmd.StdinPipe()
+	stderr := process.NewTail(8 << 10)
+	child, err := launcher.Start(ctx, transport.Command{Path: path, Args: s.Args, Dir: dir, Env: env, Stderr: stderr})
 	if err != nil {
-		return nil, err
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	c := &stdioCaller{cmd: cmd, stdin: stdin, stderr: process.NewTail(8 << 10), exited: make(chan struct{})}
-	cmd.Stderr = c.stderr
-	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start %s: %w", s.Command, err)
 	}
-	go func() { cmd.Wait(); close(c.exited) }()
+	stdin, stdout := child.Stdin(), child.Stdout()
+	if stdin == nil || stdout == nil {
+		_ = child.Kill()
+		if stdin != nil {
+			_ = stdin.Close()
+		}
+		if stdout != nil {
+			_ = stdout.Close()
+		}
+		_ = child.Wait()
+		return nil, errors.New("MCP launcher returned a child without stdio pipes")
+	}
+	c := &stdioCaller{child: child, stdin: stdin, stdout: stdout, stderr: stderr, exited: make(chan struct{})}
+	go func() { _ = child.Wait(); close(c.exited) }()
 	// Servers may send requests (ping, roots/list); answer politely.
 	c.conn = jsonrpc.NewConn(stdout, stdin, jsonrpc.HandlerFunc(func(_ context.Context, req *jsonrpc.Request) (any, error) {
 		switch req.Method {
@@ -231,7 +245,7 @@ func startStdio(s mcp.Server, dir string) (*stdioCaller, error) {
 		}
 		return nil, jsonrpc.NewError(jsonrpc.CodeMethodNotFound, "not supported", nil)
 	}), jsonrpc.Options{})
-	go c.conn.Run(context.Background())
+	go func() { _ = c.conn.Run(context.Background()); _ = stdout.Close() }()
 	return c, nil
 }
 
@@ -244,23 +258,43 @@ func (c *stdioCaller) call(ctx context.Context, method string, params, result an
 			return fmt.Errorf("%w%s", err, c.stderr.Suffix())
 		}
 		return nil
-	case <-c.exited:
-		return fmt.Errorf("server exited%s", c.stderr.Suffix())
+	case <-ctx.Done():
+		// Kill must unblock writes as well as reads. Wait for the call goroutine
+		// so it cannot mutate the caller's result after cancellation returns.
+		_ = c.child.Kill()
+		_ = c.stdin.Close()
+		<-errc
+		return ctx.Err()
 	}
 }
 
 func (c *stdioCaller) notify(ctx context.Context, method string, params any) error {
-	return c.conn.Notify(ctx, method, params)
+	done := make(chan error, 1)
+	go func() { done <- c.conn.Notify(ctx, method, params) }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		_ = c.child.Kill()
+		_ = c.stdin.Close()
+		<-done
+		return ctx.Err()
+	}
 }
 
 func (c *stdioCaller) close() {
-	c.stdin.Close()
-	select {
-	case <-c.exited:
-	case <-time.After(2 * time.Second):
-		_ = process.Kill(c.cmd)
-		<-c.exited
-	}
+	c.closeOnce.Do(func() {
+		_ = c.stdin.Close()
+		timer := time.NewTimer(2 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-c.exited:
+		case <-timer.C:
+			_ = c.child.Kill()
+			<-c.exited
+		}
+		_ = c.stdout.Close()
+	})
 }
 
 // ---- streamable HTTP -----------------------------------------------------

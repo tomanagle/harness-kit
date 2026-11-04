@@ -1,6 +1,8 @@
 # Harness Kit
 
-Build your own AI agent harness: a desktop app, CLI, editor integration, or other
+An unopinionated, language- and framework-agnostic kit for building AI harnesses.
+
+Build a desktop app, CLI, editor integration, or other
 product that runs coding agents for your users. Harness Kit provides the runtime
 adapters, session lifecycle, saved conversations, event streams, approvals, host
 tools and resource controls behind that product.
@@ -12,24 +14,26 @@ runtime.
 
 ## What the kit handles for you
 
-| You need | The kit provides |
-| --- | --- |
-| Run different agents | Adapters for Codex, Claude Code and configured ACP agents, plus an offline fake runtime |
-| Manage processes and conversations | Session creation, cancellation, close, suspend, restore and native conversation forks |
-| Show what an agent is doing | Typed streams for messages, tool calls, approvals, usage and lifecycle changes |
-| Reopen a conversation | Durable session records and JSONL transcripts, paginated replay and transcript search |
-| Build a session browser | Titles, tags, metadata, archive filters and updates for connected clients |
-| Build a settings screen | One startup/runtime settings object, field metadata, scope/lifetime information, revisions and change notifications |
-| Control resource usage | Bounded event caches and queues, idle eviction, runtime suspension, pinning and resource statistics |
-| Let users approve actions | Normalized approval requests, supported decisions and recovery of pending approvals |
-| Give agents your app's capabilities | Host tool registration, argument validation, timeouts, cancellation and an MCP bridge |
-| Connect MCP servers | Portable server definitions translated into each supported runtime's configuration |
-| Send images | A shared text/image input format translated by image-capable adapters |
-| Track usage and spending | Normalized usage, durable accounting and configurable token/cost stopping thresholds |
-| Isolate coding work | Optional Git worktrees and saved diffs between turn boundaries |
-| Build source control | Status, working/staged diffs, branches, history, staging, commits, fetch, pull and push |
-| Integrate with your application | Schema-generated TypeScript and Go clients, a local stdio sidecar, and an embeddable Go SDK |
-| Build your own agent loop | Go model-provider interfaces, optional OpenAI/Anthropic adapters, and caller-controlled context management |
+| You need                            | The kit provides                                                                                                           |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Run different agents                | Adapters for Codex, Claude Code and configured ACP agents, plus an offline fake runtime                                    |
+| Manage processes and conversations  | Session creation, cancellation, close, suspend, restore and native conversation forks                                      |
+| Show what an agent is doing         | Typed streams for messages, tool calls, approvals, usage and lifecycle changes                                             |
+| Show host diagnostics               | Structured Go `slog` records streamed to subscribed clients, with live level controls and bounded queues                   |
+| Reopen a conversation               | Durable session records and JSONL transcripts, paginated replay and transcript search                                      |
+| Build a session browser             | Titles, tags, metadata, archive filters and updates for connected clients                                                  |
+| Build a settings screen             | One startup/runtime settings object, field metadata, scope/lifetime information, revisions and change notifications        |
+| Control resource usage              | Bounded event caches and queues, idle eviction, runtime suspension, pinning and resource statistics                        |
+| Let users approve actions           | Normalized approval requests, supported decisions and recovery of pending approvals                                        |
+| Give agents your app's capabilities | Host tool registration, argument validation, timeouts, cancellation and an MCP bridge                                      |
+| Connect MCP servers                 | Portable server definitions translated into each supported runtime's configuration                                         |
+| Send images                         | A shared text/image input format translated by image-capable adapters                                                      |
+| Track usage and spending            | Normalized usage, durable accounting and configurable token/cost stopping thresholds                                       |
+| Manage the context window           | Consistent current-window observations, native compaction, optional pre-turn thresholds, and explicit unknown/stale values |
+| Isolate coding work                 | Optional Git worktrees and saved diffs between turn boundaries                                                             |
+| Build source control                | Status, working/staged diffs, branches, history, staging, commits, fetch, pull and push                                    |
+| Integrate with your application     | Schema-generated TypeScript and Go clients, a local stdio sidecar, and an embeddable Go SDK                                |
+| Build your own agent loop           | Go model-provider interfaces, optional OpenAI/Anthropic adapters, and caller-controlled context management                 |
 
 Features vary by runtime. Capabilities describe what each adapter supports;
 the kit does not assume every agent offers the same models, permissions, usage
@@ -39,10 +43,10 @@ reporting or resume behavior.
 
 There are two product components in this repository:
 
-| Component | Location | Status |
-| --- | --- | --- |
-| Kit for building harness applications | [`core/`](core/README.md) and [`packages/`](packages) | Implemented and usable independently |
-| Deployable server for coordinating sessions across devices | [`server/`](server/README.md) | Planned placeholder; no implementation yet |
+| Component                                                  | Location                                              | Status                                     |
+| ---------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------ |
+| Kit for building harness applications                      | [`core/`](core/README.md) and [`packages/`](packages) | Implemented and usable independently       |
+| Deployable server for coordinating sessions across devices | [`server/`](server/README.md)                         | Planned placeholder; no implementation yet |
 
 The existing `harness-kit serve` command is a **local stdio sidecar**. Your app
 can ship with it and work without a Harness Kit server. Cross-device sharing,
@@ -196,6 +200,41 @@ or executable paths requires a restart; the kit reports that requirement and
 rejects the patch without partially applying it. Field metadata lets your UI
 explain these lifetimes. See [configuration](core/docs/configuration.md).
 
+## Stream diagnostics to your UI
+
+The core uses Go's built-in `log/slog`. Clients can subscribe to structured host
+diagnostics independently of conversation events. You choose how to display or
+store them; the kit does not retain a second log history.
+
+```ts
+await kit.settings.configure({
+  patch: {
+    logging: {
+      level: "debug",
+      maxQueueRecords: 256,
+      maxQueueBytes: 1_048_576,
+      maxRecordBytes: 65_536,
+    },
+  },
+});
+
+// Await subscription readiness before starting work you want to observe.
+const stopLogs = await kit.logs.subscribe(({ record, dropped }) => {
+  if (record) console.log(record.time, record.level, record.message, record.attrs);
+  if (dropped) console.log(`${dropped.count} diagnostic records were dropped`);
+});
+
+await session.prompt("Explain the project").done;
+await stopLogs();
+```
+
+Records preserve structured attributes, groups, source location when available,
+and sequence numbers. Slow readers receive explicit loss markers; oversized
+records are marked `truncated` or dropped if even their envelope cannot fit.
+Go hosts can use `manager.Logger()` and `manager.Logs().Subscribe()`, or inject a
+shared `logging.Stream` while keeping their own `slog.Handler`. No global logger
+is replaced. See [logging](core/docs/logging.md) for Go examples and queue semantics.
+
 ## Saved conversations, replay and session organization
 
 With a file store, the kit writes each session record and its events as they
@@ -232,7 +271,7 @@ const matches = await kit.sessions.list({
 });
 console.log(matches);
 
-await kit.sessions.archive(session.id);        // Hide with an archive filter.
+await kit.sessions.archive(session.id); // Hide with an archive filter.
 await kit.sessions.archive(session.id, false); // Unarchive.
 
 const unsubscribe = kit.onEvent((event) => {
@@ -454,6 +493,69 @@ billing caps: delayed usage reporting can overshoot. Unsupported metrics are
 rejected, and unknown cost stays unknown. Codex does not report USD cost; ACP
 context occupancy is not consumed-token usage. See [budgets](core/docs/budgets.md).
 
+## Context windows and compaction
+
+Context usage has one shape in live events, saved history and session reads.
+Unknown token counts are `null`; zero is a real observation. The `basis` tells
+you whether the runtime reported occupancy directly or the kit used the latest
+model request's token count. `stale` means that observation is no longer current.
+The kit never substitutes cumulative billed tokens for context-window usage.
+
+```ts
+import type { ContextUsageData } from "@tomanagle/harness-kit";
+
+function showContext(usage: ContextUsageData) {
+  const used = usage.usedTokens ?? "unknown";
+  const capacity = usage.windowTokens ?? "unknown";
+  console.log(`${used} / ${capacity} tokens`, usage.basis, { stale: usage.stale });
+}
+
+// Cached read: no runtime startup or model request.
+showContext((await session.context()).usage);
+
+const unsubscribe = session.onEvent((event) => {
+  if (event.type === "context.usage") showContext(event.data);
+  if (event.type === "context.compaction") {
+    console.log(event.data.status, event.data.reason, event.data.error);
+  }
+});
+
+// After the preceding turn finishes, offer an explicit Compact action.
+const context = await session.context();
+if (context.canCompact) {
+  const abort = new AbortController(); // Connect your Cancel action to abort.abort().
+  showContext((await session.compact({ signal: abort.signal })).usage);
+}
+unsubscribe();
+```
+
+`compact()` waits for the runtime to finish; it rejects busy or unsupported
+sessions. Restore a suspended or stored session explicitly before compacting.
+Compaction can make model requests and incur usage. The full saved transcript
+remains available after the runtime summarizes its context.
+
+Optional automatic thresholds use the same settings object as everything else:
+
+```ts
+await kit.settings.configure({
+  target: { sessionId: session.id },
+  patch: { compaction: { autoAtPercent: 80, autoAtTokens: null, timeoutMs: 120_000 } },
+});
+
+// Override for one turn; changes apply before that prompt reaches the runtime.
+await session.prompt("Continue", {
+  settings: { compaction: { autoAtPercent: 90 } },
+}).done;
+```
+
+Either configured threshold triggers compaction before the next turn's prompt,
+using the latest non-stale observation. `null` disables that kit threshold;
+both are disabled by default. These settings do not disable the runtime's own
+automatic compaction. Adapter capabilities describe potential support;
+`context.canCompact` describes current session availability. See
+[context usage and compaction](core/docs/context.md) for runtime differences,
+replay semantics and cancellation.
+
 ## Git worktrees, turn diffs and source control
 
 Give a session an isolated checkout and capture what changed between the start
@@ -497,7 +599,9 @@ if (kit.server.capabilities.git) {
   const commit = await kit.git.commit(session.id, "Fix parser edge case");
   console.log(commit.commit);
   await kit.git.push(session.id, {
-    remote: "origin", branch: "fix/parser", setUpstream: true,
+    remote: "origin",
+    branch: "fix/parser",
+    setUpstream: true,
   });
 }
 
@@ -523,6 +627,8 @@ Go applications can embed the core manager directly or use the standalone
 [Go client](packages/client-go/README.md). Both clients' wire types and RPC methods
 are generated from one [protocol schema](protocol/README.md). Typed helpers sit
 above those methods, and `kit.protocol` exposes their exact request/result shapes.
+The [dependency-injection guide](core/docs/dependencies.md) describes the core's
+replaceable runtime, storage, tools, logging, Git, and model boundaries.
 
 For applications that own their inference loop, the Go-only
 [`model.Provider` and `model/contextwindow`](core/docs/models.md) packages provide
@@ -558,12 +664,34 @@ See the [SDK guide](core/README.md), [package boundaries](core/docs/packages.md)
 and [examples](examples/README.md) for details. The root `Makefile` and `hk` forward
 to `core/`; for example, `./hk prompt --runtime fake "Hello"` runs the local CLI.
 
+Repository tooling requires [Bun 1.4.4 or newer](https://bun.com/docs/installation)
+and Go. Run `bun upgrade` if an existing Bun installation predates the native
+formatter. CI uses Bun 1.4.4 and the pinned dependencies in `bun.lock`.
+
 ```sh
+make setup             # Install repository tooling and the Lefthook pre-commit hook
+make format            # Format Go and web/config/docs files throughout the repo
+make fmt               # Alias for make format
+make format-check      # Check formatting without writing files
+make lint              # Formatting checks, Go vet and JavaScript/TypeScript lint
+make hooks             # Reinstall Git hooks if needed
+bun lint               # JavaScript/TypeScript lint only (Oxlint)
 make test              # Offline core, clients, providers and Go examples
 make generate          # Regenerate schema and both client contracts
 make check-generated   # Detect stale generated files
 make lint wasm-check cross
 ```
+
+`make format` uses `gofmt` for Go and Bun's native `bun fmt` for TypeScript,
+JavaScript, JSON, CSS, HTML, YAML, TOML and Markdown. `bun lint` runs Oxlint;
+the released Bun version does not yet include a native linter. Generated
+protocol files keep their generator's formatting, and lockfiles are excluded.
+
+Git has no staging hook, so Lefthook formats staged files immediately before
+a commit and restages only those files, then lints staged JavaScript/TypeScript.
+It temporarily hides and restores unstaged hunks in partially staged files.
+Unrelated changes remain outside the commit. If restoring a hunk conflicts
+with formatting, the commit stops so you can review the changes.
 
 The optional OpenAI provider and direct-model example require Go 1.26+.
 Current core imports use `github.com/tomanagle/harness-kit/core`; the new module

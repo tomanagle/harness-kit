@@ -19,13 +19,17 @@ The TypeScript client provides `kit.git` helpers:
 ```ts
 const status = await kit.git.status(conversation.id);
 const diff = await kit.git.diff(conversation.id, {
-  path: "src/main.ts", staged: false, maxBytes: 65536,
+  path: "src/main.ts",
+  staged: false,
+  maxBytes: 65536,
 });
 await kit.git.checkout(conversation.id, { branch: "agent/fix", create: true });
 await kit.git.stage(conversation.id, ["src/main.ts"]);
 const commit = await kit.git.commit(conversation.id, "Fix session restoration");
 await kit.git.push(conversation.id, {
-  remote: "origin", branch: "agent/fix", setUpstream: true,
+  remote: "origin",
+  branch: "agent/fix",
+  setUpstream: true,
 });
 ```
 
@@ -79,17 +83,17 @@ the new values without a restart. Session and prompt patches cannot override
 host Git policy. Changing `process.gitPath` selects a different executable and
 requires the normal process restart flow.
 
-| Field | Default | Behavior |
-| --- | --- | --- |
-| `readOnly` | `false` | Reject stage, unstage, commit, checkout and remote operations |
-| `allowRemote` | `true` | Allow explicitly requested fetch, pull and push |
-| `allowDuringTurn` | `false` | Reject writes while a session managed by this manager is using the same checkout; block new turns during a write |
-| `timeoutMs` | `30000` | Deadline including repository lock waits and subprocesses |
-| `maxOutputBytes` | `1048576` | Bound captured command output and displayed patches |
-| `maxFiles` | `10000` | Limit listed files, branches and remotes, untracked diff files, and supplied paths |
-| `maxLogEntries` | `100` | Maximum commits returned by a log request |
-| `hooks` | `"inherit"` | Honor Git hooks, or choose `"disabled"` for these commands |
-| `signing` | `"inherit"` | Honor Git commit-signing configuration, or choose `"enabled"` / `"disabled"` |
+| Field             | Default     | Behavior                                                                                                         |
+| ----------------- | ----------- | ---------------------------------------------------------------------------------------------------------------- |
+| `readOnly`        | `false`     | Reject stage, unstage, commit, checkout and remote operations                                                    |
+| `allowRemote`     | `true`      | Allow explicitly requested fetch, pull and push                                                                  |
+| `allowDuringTurn` | `false`     | Reject writes while a session managed by this manager is using the same checkout; block new turns during a write |
+| `timeoutMs`       | `30000`     | Deadline including repository lock waits and subprocesses                                                        |
+| `maxOutputBytes`  | `1048576`   | Bound captured command output and displayed patches                                                              |
+| `maxFiles`        | `10000`     | Limit listed files, branches and remotes, untracked diff files, and supplied paths                               |
+| `maxLogEntries`   | `100`       | Maximum commits returned by a log request                                                                        |
+| `hooks`           | `"inherit"` | Honor Git hooks, or choose `"disabled"` for these commands                                                       |
+| `signing`         | `"inherit"` | Honor Git commit-signing configuration, or choose `"enabled"` / `"disabled"`                                     |
 
 These controls govern the kit's Git API. They do not sandbox a runtime's own
 shell tools or external Git processes. Native actions retain the user's Git

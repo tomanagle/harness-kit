@@ -22,6 +22,7 @@ import (
 	"github.com/tomanagle/harness-kit/core/agent"
 	"github.com/tomanagle/harness-kit/core/event"
 	"github.com/tomanagle/harness-kit/core/internal/jsonrpc"
+	"github.com/tomanagle/harness-kit/core/logging"
 	"github.com/tomanagle/harness-kit/core/mcp"
 	"github.com/tomanagle/harness-kit/core/permission"
 	"github.com/tomanagle/harness-kit/core/rpc/protocol"
@@ -30,6 +31,19 @@ import (
 	"github.com/tomanagle/harness-kit/core/tools"
 	"github.com/tomanagle/harness-kit/core/workspace"
 )
+
+// ToolRegistry is the tool inventory the RPC server consumes. Hosts can supply
+// their own implementation without coupling the server to tools.Registry.
+type ToolRegistry interface {
+	Register(tools.Tool) error
+	Unregister(...string)
+	List() []tools.Tool
+}
+
+// MCPResolver supplies a host's MCP overview without prescribing its storage.
+type MCPResolver interface {
+	Overview(string) (mcp.Overview, error)
+}
 
 // Options configure a Server.
 type Options struct {
@@ -49,10 +63,10 @@ type Options struct {
 	ShutdownTimeout time.Duration
 	// MCP, if set, is the resolver for kit MCP config files, reported by
 	// mcp.list (use the same one as the session Prepare hook).
-	MCP *mcp.Resolver
+	MCP MCPResolver
 	// Tools, if set, lets clients register host tools (tools.register).
 	// It should be the registry served to sessions (toolhost.Options).
-	Tools  *tools.Registry
+	Tools  ToolRegistry
 	Logger *slog.Logger
 }
 
@@ -91,14 +105,16 @@ func New(mgr *session.Manager, opts Options) *Server {
 		opts.ShutdownTimeout = 10 * time.Second
 	}
 	if opts.Logger == nil {
-		opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+		opts.Logger = mgr.Logger()
 	}
 	return &Server{mgr: mgr, opts: opts, log: opts.Logger}
 }
 
 // Serve runs one client connection until r reaches EOF. It does not shut
 // the Manager down; the caller decides whether sessions outlive the
-// connection.
+// connection. The host owns transport cleanup and must unblock both reads and
+// writes when cancelling or ending the connection. Queue bounds protect log
+// producers, but cannot interrupt an arbitrary blocking io.Writer.
 func (s *Server) Serve(ctx context.Context, r io.Reader, w io.Writer) error {
 	c := &conn{srv: s}
 	c.rpc = jsonrpc.NewConn(r, w, c, jsonrpc.Options{
@@ -123,6 +139,8 @@ type conn struct {
 	mu           sync.Mutex
 	sub          *event.Subscription
 	stopSettings func()
+	logs         *logging.Subscription
+	logsDone     chan struct{}
 	wg           sync.WaitGroup
 	tools        []string // names this client registered
 }
@@ -189,6 +207,7 @@ func (c *conn) startEvents() {
 }
 
 func (c *conn) stopEvents() {
+	c.stopLogs()
 	c.mu.Lock()
 	sub := c.sub
 	stop := c.stopSettings
@@ -200,6 +219,37 @@ func (c *conn) stopEvents() {
 		sub.Close()
 	}
 	c.wg.Wait()
+}
+
+func (c *conn) startLogs() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.logs != nil {
+		return
+	}
+	sub := c.srv.mgr.Logs().Subscribe()
+	done := make(chan struct{})
+	c.logs, c.logsDone = sub, done
+	go func() {
+		defer close(done)
+		for notification := range sub.C {
+			// Never report a log-delivery error through the same log stream.
+			if err := c.rpc.Notify(context.Background(), protocol.NotificationLog, notification); err != nil {
+				return
+			}
+		}
+	}()
+}
+
+func (c *conn) stopLogs() {
+	c.mu.Lock()
+	sub, done := c.logs, c.logsDone
+	c.logs, c.logsDone = nil, nil
+	c.mu.Unlock()
+	if sub != nil {
+		sub.Close()
+		<-done
+	}
 }
 
 func rpcErr(code int, reason, msg string) *jsonrpc.Error {
@@ -314,6 +364,7 @@ func (c *conn) initialize(req *jsonrpc.Request) (any, error) {
 		ProtocolVersion: protocol.Version,
 		ServerInfo:      protocol.ServerInfo{Name: c.srv.opts.Name, Version: c.srv.opts.Version},
 		Capabilities: protocol.ServerCapabilities{
+			Logs:         true,
 			Git:          c.srv.mgr.HasSourceControl(),
 			Runtimes:     c.srv.mgr.Registry().List(),
 			AllowUnsafe:  snapshot.Values.Process.AllowUnsafe,
@@ -331,6 +382,29 @@ func (c *conn) dispatch(ctx context.Context, req *jsonrpc.Request) (any, error) 
 	}
 	mgr := c.srv.mgr
 	switch req.Method {
+	case protocol.MethodLogsSubscribe, protocol.MethodLogsUnsubscribe:
+		var p protocol.Empty
+		if err := strictParams(req, &p); err != nil {
+			return nil, err
+		}
+		if req.Method == protocol.MethodLogsSubscribe {
+			c.startLogs()
+		} else {
+			c.stopLogs()
+		}
+		return protocol.Empty{}, nil
+	case protocol.MethodSessionContext, protocol.MethodSessionCompact:
+		var p protocol.SessionIDParams
+		if err := strictParams(req, &p); err != nil {
+			return nil, err
+		}
+		if p.SessionID == "" {
+			return nil, invalidParams("sessionId is required")
+		}
+		if req.Method == protocol.MethodSessionCompact {
+			return mgr.Compact(ctx, p.SessionID)
+		}
+		return mgr.Context(ctx, p.SessionID)
 	case protocol.MethodSettingsGet:
 		var p protocol.SettingsGetParams
 		if err := strictParams(req, &p); err != nil {
@@ -782,6 +856,15 @@ func (c *conn) dispatch(ctx context.Context, req *jsonrpc.Request) (any, error) 
 // and commit requests stay ordered. Discovery, approvals and non-Git reads run
 // concurrently. Git commands are bounded by policy and request cancellation.
 func orderKey(req *jsonrpc.Request) string {
+	if req.Method == protocol.MethodLogsSubscribe || req.Method == protocol.MethodLogsUnsubscribe {
+		return "logs"
+	}
+	// Compact waits for native completion. Manager admission reserves the
+	// session; keeping this request outside the queue lets cancel/close run.
+	// Callers await the preceding turn and the compaction before prompting.
+	if req.Method == protocol.MethodSessionCompact {
+		return ""
+	}
 	if strings.HasPrefix(req.Method, "git.") {
 		var p protocol.SessionIDParams
 		if json.Unmarshal(req.Params, &p) == nil && p.SessionID != "" {

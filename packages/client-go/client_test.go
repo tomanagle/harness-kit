@@ -90,6 +90,55 @@ func TestGeneratedMethodsAndStructuredErrors(t *testing.T) {
 	}
 }
 
+func TestGeneratedContextMethodsPreserveUnknownAndCancel(t *testing.T) {
+	started := make(chan struct{}, 1)
+	cancelled := make(chan struct{}, 1)
+	conn, _, _ := server(t, func(ctx context.Context, req *jsonrpc.Request) (any, error) {
+		var params hk.SessionIDParams
+		if err := req.UnmarshalParams(&params); err != nil {
+			return nil, err
+		}
+		if params.SessionID != "ses_context" {
+			t.Errorf("sessionId = %q", params.SessionID)
+		}
+		switch req.Method {
+		case hk.MethodSessionContext:
+			return hk.SessionContext{SessionID: params.SessionID, State: hk.SessionState("idle"), CanCompact: true, Usage: hk.ContextUsageData{Basis: "unknown"}}, nil
+		case hk.MethodSessionCompact:
+			started <- struct{}{}
+			<-ctx.Done()
+			cancelled <- struct{}{}
+			return nil, ctx.Err()
+		default:
+			return nil, jsonrpc.NewError(jsonrpc.CodeMethodNotFound, req.Method, nil)
+		}
+	})
+	c, err := hk.Connect(timeout(t), conn, conn, hk.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	p := hk.SessionIDParams{SessionID: "ses_context"}
+	snapshot, err := c.SessionContext(timeout(t), p)
+	if err != nil || !snapshot.CanCompact || snapshot.Usage.UsedTokens != nil || snapshot.Usage.WindowTokens != nil || snapshot.Usage.Basis != "unknown" {
+		t.Fatalf("context: %+v %v", snapshot, err)
+	}
+	raw, err := json.Marshal(snapshot.Usage)
+	if err != nil || !strings.Contains(string(raw), `"usedTokens":null`) || !strings.Contains(string(raw), `"windowTokens":null`) {
+		t.Fatalf("nullable wire fields: %s %v", raw, err)
+	}
+	ctx, cancel := context.WithCancel(timeout(t))
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := c.SessionCompact(ctx, p); done <- err }()
+	receive(t, started)
+	cancel()
+	if err := receive(t, done); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancel: %v", err)
+	}
+	receive(t, cancelled)
+}
+
 func TestNotificationsAndReverseToolCancellation(t *testing.T) {
 	conn, rpc, _ := server(t, func(_ context.Context, req *jsonrpc.Request) (any, error) {
 		if req.Method == hk.MethodToolsRegister {
@@ -259,16 +308,34 @@ func TestFakeSidecarIntegration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	events := make(chan hk.HarnessEvent, 64)
+	logs := make(chan hk.LogNotification, 64)
 	c, err := hk.Spawn(ctx, binary, []string{"serve", "--fake-runtime", "--log-level", "warn"}, io.Discard, hk.Options{
 		Settings: hk.SettingsPatch{"memory": json.RawMessage(`{"eventLogSize":16}`)},
 		OnEvent:  func(ev hk.HarnessEvent) { events <- ev },
+		OnLog:    func(n hk.LogNotification) { logs <- n },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = c.Close() })
+	if !c.Info().Capabilities.Logs {
+		t.Fatal("logs capability missing")
+	}
+	if _, err := c.SettingsConfigure(ctx, hk.ConfigureSettingsParams{Patch: hk.SettingsPatch{"logging": json.RawMessage(`{"level":"info"}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.LogsSubscribe(ctx, hk.Empty{}); err != nil {
+		t.Fatal(err)
+	}
 	created, err := c.SessionCreate(ctx, hk.CreateSessionParams{Runtime: "fake"})
 	if err != nil {
+		t.Fatal(err)
+	}
+	notification := receive(t, logs)
+	if notification.Record == nil || notification.Record.Message != "session started" || string(notification.Record.Attrs["sessionId"]) != `"`+created.Session.ID+`"` {
+		t.Fatalf("structured log: %+v", notification)
+	}
+	if _, err := c.LogsUnsubscribe(ctx, hk.Empty{}); err != nil {
 		t.Fatal(err)
 	}
 	_, err = c.SessionPrompt(ctx, hk.SessionPromptParams{SessionID: created.Session.ID, TurnID: "go-client-smoke", Input: []hk.InputPart{{Type: "text", Text: "hello from Go"}}})

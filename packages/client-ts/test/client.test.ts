@@ -9,7 +9,15 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { createHarnessKit, ErrorCodes, HarnessKitError, LineDecoder, type HarnessEvent, type HarnessKit } from "../src/index.ts";
+import {
+  createHarnessKit,
+  ErrorCodes,
+  HarnessKitError,
+  LineDecoder,
+  type HarnessEvent,
+  type HarnessKit,
+  type LogNotification,
+} from "../src/index.ts";
 import { stdio } from "../src/node.ts";
 
 const coreRoot = resolve(import.meta.dirname, "..", "..", "..", "core");
@@ -17,13 +25,19 @@ const binDir = mkdtempSync(join(tmpdir(), "hk-ts-"));
 const bin = join(binDir, process.platform === "win32" ? "harness-kit.exe" : "harness-kit");
 
 before(() => {
-  execFileSync("go", ["build", "-o", bin, "./cmd/harness-kit"], { cwd: coreRoot, stdio: "inherit" });
+  execFileSync("go", ["build", "-o", bin, "./cmd/harness-kit"], {
+    cwd: coreRoot,
+    stdio: "inherit",
+  });
 });
 after(() => rmSync(binDir, { recursive: true, force: true }));
 
 async function connect(extraArgs: string[] = []): Promise<HarnessKit> {
   return createHarnessKit({
-    transport: stdio({ command: bin, args: ["serve", "--runtimes", "", "--fake-runtime", "--log-level", "error", ...extraArgs] }),
+    transport: stdio({
+      command: bin,
+      args: ["serve", "--runtimes", "", "--fake-runtime", "--log-level", "error", ...extraArgs],
+    }),
     clientInfo: { name: "client-ts-tests", version: "0.0.0" },
   });
 }
@@ -34,9 +48,176 @@ test("LineDecoder splits chunked input", () => {
   assert.deepEqual(d.push(':2}\r\n\n{"c":3}\n'), ['{"b":2}', '{"c":3}']);
 });
 
+test("slog subscriptions share delivery, apply live settings and report bounded-record loss", async () => {
+  const kit = await connect();
+  try {
+    assert.equal(kit.server.capabilities.logs, true);
+    await kit.settings.configure({ patch: { logging: { level: "info" } } });
+    const first: LogNotification[] = [];
+    const second: LogNotification[] = [];
+    const [stopFirst, stopSecond] = await Promise.all([
+      kit.logs.subscribe((notification) => first.push(notification)),
+      kit.logs.subscribe((notification) => second.push(notification)),
+    ]);
+    const session = await kit.sessions.create({ runtime: "fake" });
+    const until = async (condition: () => boolean) => {
+      const deadline = Date.now() + 3000;
+      while (!condition()) {
+        assert.ok(Date.now() < deadline, "expected log notification");
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    };
+    await until(
+      () =>
+        first.some((n) => n.record?.message === "session started") &&
+        second.some((n) => n.record?.message === "session started"),
+    );
+    const started = first.find((n) => n.record?.message === "session started")!.record!;
+    assert.equal(started.attrs.sessionId, session.id);
+    assert.equal(started.level, "INFO");
+    assert.ok(started.time);
+    assert.equal(
+      second.find((n) => n.record?.message === "session started")?.record?.seq,
+      started.seq,
+    );
+    await stopFirst();
+    const firstCount = first.length;
+    await session.prompt("secret prompt text stays out of diagnostics").done;
+    await until(() => second.some((n) => n.record?.message === "turn completed"));
+    assert.equal(first.length, firstCount);
+    assert.doesNotMatch(JSON.stringify(second), /secret prompt text/);
+    await kit.settings.configure({ patch: { logging: { level: "debug", maxRecordBytes: 1 } } });
+    await session.prompt("drop oversized log envelopes").done;
+    await until(() => second.some((n) => n.dropped !== undefined));
+    assert.ok((second.find((n) => n.dropped)?.dropped?.count ?? 0) > 0);
+    await stopSecond();
+    await stopSecond(); // Idempotent cleanup.
+    const lastCount = second.length;
+    await session.close();
+    assert.equal(second.length, lastCount);
+  } finally {
+    await kit.close();
+  }
+});
+
+test("context observations and compaction use one shape across reads, events and replay", async () => {
+  const store = mkdtempSync(join(binDir, "context-store-"));
+  const kit = await connect(["--store", store]);
+  try {
+    const empty = await kit.sessions.create({ runtime: "fake" });
+    assert.deepEqual((await empty.context()).usage, {
+      usedTokens: null,
+      windowTokens: null,
+      basis: "unknown",
+      stale: false,
+    });
+    assert.equal((await empty.context()).canCompact, false);
+    await assert.rejects(
+      empty.compact(),
+      (error: HarnessKitError) => error.reason === "unsupported",
+    );
+
+    const session = await kit.sessions.create({
+      runtime: "fake",
+      options: { contextTokens: 80, contextWindowTokens: 100, compactedTokens: 20 },
+    });
+    const events: HarnessEvent[] = [];
+    const stop = session.onEvent((event) => events.push(event));
+    assert.equal((await session.context()).usage.usedTokens, 80);
+    const after = await session.compact();
+    assert.equal(after.usage.usedTokens, 20);
+    assert.equal(after.usage.windowTokens, 100);
+    assert.equal(after.usage.stale, false);
+    assert.equal(after.state, "idle");
+    assert.equal(after.canCompact, true);
+    assert.deepEqual((await kit.sessions.get(session.id)).context, after.usage);
+    const history = await session.events();
+    const observation = history.events.findLast((event) => event.type === "context.usage");
+    assert.deepEqual(observation?.data, after.usage);
+    assert.deepEqual(
+      events
+        .filter((event) => event.type === "context.compaction")
+        .map((event) => event.data.status),
+      ["started", "completed"],
+    );
+    stop();
+    await session.close();
+    const saved = await kit.sessions.context(session.id);
+    assert.equal(saved.state, "closed");
+    assert.equal(saved.canCompact, false);
+
+    const automatic = await kit.sessions.create({
+      settings: {
+        session: {
+          runtime: "fake",
+          options: { contextTokens: 80, contextWindowTokens: 100, compactedTokens: 20 },
+        },
+        compaction: { autoAtPercent: 50 },
+      },
+    });
+    const turn = automatic.prompt("continue");
+    const compactions: HarnessEvent[] = [];
+    for await (const event of turn)
+      if (event.type === "context.compaction") compactions.push(event);
+    assert.equal((await turn.done).status, "completed");
+    assert.deepEqual(
+      compactions.map(
+        (event) =>
+          event.type === "context.compaction" && [
+            event.data.reason,
+            event.data.status,
+            event.turnId,
+          ],
+      ),
+      [
+        ["threshold", "started", turn.id],
+        ["threshold", "completed", turn.id],
+      ],
+    );
+    await kit.settings.configure({
+      target: { sessionId: automatic.id },
+      patch: { compaction: { autoAtPercent: null, autoAtTokens: null } },
+    });
+    assert.equal(
+      (await kit.settings.get({ sessionId: automatic.id })).values.compaction.autoAtPercent,
+      null,
+    );
+  } finally {
+    await kit.close();
+  }
+});
+
+test("a client abort signal cancels native compaction and keeps the connection usable", async () => {
+  const kit = await connect();
+  try {
+    const session = await kit.sessions.create({
+      runtime: "fake",
+      options: { contextTokens: 80, contextWindowTokens: 100, compactionDelayMs: 5000 },
+    });
+    const abort = new AbortController();
+    let finished!: () => void;
+    const cancelled = new Promise<void>((resolve) => {
+      finished = resolve;
+    });
+    const stop = session.onEvent((event) => {
+      if (event.type !== "context.compaction") return;
+      if (event.data.status === "started") abort.abort();
+      if (event.data.status === "cancelled") finished();
+    });
+    await assert.rejects(kit.sessions.compact(session.id, { signal: abort.signal }));
+    await cancelled;
+    stop();
+    assert.equal((await session.context()).state, "idle");
+    assert.equal((await session.prompt("still usable").done).status, "completed");
+  } finally {
+    await kit.close();
+  }
+});
+
 test("generated Git methods operate on a session repository and apply live policy", async () => {
   const repo = mkdtempSync(join(binDir, "git-client-"));
-  const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" }).trim();
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" }).trim();
   git("init", "-b", "main");
   git("config", "user.name", "Kit Test");
   git("config", "user.email", "kit@example.invalid");
@@ -52,39 +233,83 @@ test("generated Git methods operate on a session repository and apply live polic
     assert.ok((await kit.sessions.get(session.id)).workspace?.gitDirIdentity);
     const diff = await kit.git.diff(session.id, { path: "space name.txt" });
     assert.match(diff.patch, /selected file/);
-    const bounded = await kit.protocol.gitDiff({ sessionId: session.id, path: "space name.txt", maxBytes: 20 });
+    const bounded = await kit.protocol.gitDiff({
+      sessionId: session.id,
+      path: "space name.txt",
+      maxBytes: 20,
+    });
     assert.equal(bounded.truncated, true);
     assert.ok(Buffer.byteLength(bounded.patch) <= 20);
     await kit.git.checkout(session.id, { branch: "kit-change", create: true });
     await kit.git.stage(session.id, ["space name.txt"]);
-    assert.equal((await kit.git.status(session.id)).files.find(f => f.path === "space name.txt")?.index, "A");
+    assert.equal(
+      (await kit.git.status(session.id)).files.find((f) => f.path === "space name.txt")?.index,
+      "A",
+    );
     await kit.settings.configure({ patch: { git: { readOnly: true } } });
-    await assert.rejects(kit.git.commit(session.id, "blocked"), (error: HarnessKitError) => error.code === ErrorCodes.PolicyViolation);
+    await assert.rejects(
+      kit.git.commit(session.id, "blocked"),
+      (error: HarnessKitError) => error.code === ErrorCodes.PolicyViolation,
+    );
     await kit.settings.configure({ patch: { git: { readOnly: false, allowRemote: false } } });
-    await assert.rejects(kit.git.fetch(session.id), (error: HarnessKitError) => error.code === ErrorCodes.PolicyViolation);
+    await assert.rejects(
+      kit.git.fetch(session.id),
+      (error: HarnessKitError) => error.code === ErrorCodes.PolicyViolation,
+    );
     const committed = await kit.git.commit(session.id, "Add selected file");
     assert.equal(git("rev-parse", "HEAD"), committed.commit);
     assert.equal((await kit.git.log(session.id, { limit: 1 })).commits[0]?.id, committed.commit);
-    assert.ok((await kit.git.branches(session.id)).branches.some(b => b.name === "kit-change" && b.current));
-    assert.deepEqual((await kit.git.status(session.id)).files.map(f => f.path), ["leave.txt"]);
-    await assert.rejects(kit.git.stage(session.id, ["../escape"]), (error: HarnessKitError) => error.code === ErrorCodes.InvalidParams);
-    await assert.rejects(kit.protocol.gitStatus({ sessionId: "missing" }), (error: HarnessKitError) => error.code === ErrorCodes.SessionNotFound);
-  } finally { await kit.close(); }
+    assert.ok(
+      (await kit.git.branches(session.id)).branches.some(
+        (b) => b.name === "kit-change" && b.current,
+      ),
+    );
+    assert.deepEqual(
+      (await kit.git.status(session.id)).files.map((f) => f.path),
+      ["leave.txt"],
+    );
+    await assert.rejects(
+      kit.git.stage(session.id, ["../escape"]),
+      (error: HarnessKitError) => error.code === ErrorCodes.InvalidParams,
+    );
+    await assert.rejects(
+      kit.protocol.gitStatus({ sessionId: "missing" }),
+      (error: HarnessKitError) => error.code === ErrorCodes.SessionNotFound,
+    );
+  } finally {
+    await kit.close();
+  }
 });
 
 test("workspace settings, saved diff and explicit cleanup use the typed client", async () => {
   const repo = mkdtempSync(join(binDir, "workspace-repo-"));
-  execFileSync("git", ["init", "-b", "main", repo], {stdio: "ignore"});
-  execFileSync("git", ["-C", repo, "-c", "user.name=Harness Test", "-c", "user.email=test@example.invalid",
-    "commit", "--allow-empty", "-m", "initial"], {stdio: "ignore"});
+  execFileSync("git", ["init", "-b", "main", repo], { stdio: "ignore" });
+  execFileSync(
+    "git",
+    [
+      "-C",
+      repo,
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "user.name=Harness Test",
+      "-c",
+      "user.email=test@example.invalid",
+      "commit",
+      "--allow-empty",
+      "-m",
+      "initial",
+    ],
+    { stdio: "ignore" },
+  );
   const root = mkdtempSync(join(binDir, "workspace-root-"));
   const kit = await connect();
   try {
     assert.equal(kit.server.capabilities.workspace, true);
     const conversation = await kit.sessions.create({
       settings: {
-        session: {runtime: "fake", cwd: repo},
-        workspace: {mode: "worktree", root, captureDiff: true},
+        session: { runtime: "fake", cwd: repo },
+        workspace: { mode: "worktree", root, captureDiff: true },
       },
     });
     const binding = conversation.info.workspace!;
@@ -93,12 +318,12 @@ test("workspace settings, saved diff and explicit cleanup use the typed client",
     assert.equal(existsSync(binding.path), true);
     const turn = conversation.prompt("no filesystem changes");
     await turn.done;
-    const diff = await kit.sessions.diff(conversation.id, turn.id, {maxBytes: 64});
+    const diff = await kit.sessions.diff(conversation.id, turn.id, { maxBytes: 64 });
     assert.equal(diff.complete, true);
     assert.equal(diff.workingTree, "");
     assert.equal(diff.index, "");
     assert.equal(diff.turnId, turn.id);
-    const config = await kit.settings.get({sessionId: conversation.id});
+    const config = await kit.settings.get({ sessionId: conversation.id });
     assert.equal(config.values.workspace.captureDiff, true);
     assert.equal(config.fields["workspace.captureDiff"]?.when, "nextTurn");
     await conversation.close();
@@ -114,13 +339,20 @@ test("handshake, discovery and a streamed turn", async () => {
   const kit = await connect();
   try {
     assert.equal(kit.server.protocolVersion, 1);
-    assert.deepEqual(kit.server.capabilities.runtimes.map((r) => r.name), ["fake"]);
+    assert.deepEqual(
+      kit.server.capabilities.runtimes.map((r) => r.name),
+      ["fake"],
+    );
 
     const discovered = await kit.runtimes.discover();
     assert.equal(discovered[0]?.ready, true);
     assert.equal(discovered[0]?.auth.state, "authenticated");
 
-    const session = await kit.sessions.create({ runtime: "fake", cwd: binDir, metadata: { app: "tests" } });
+    const session = await kit.sessions.create({
+      runtime: "fake",
+      cwd: binDir,
+      metadata: { app: "tests" },
+    });
     assert.equal(session.info.state, "idle");
     assert.equal(session.info.metadata?.app, "tests");
 
@@ -134,7 +366,8 @@ test("handshake, discovery and a streamed turn", async () => {
     assert.equal(text, "Echo: hello from typescript");
     assert.equal(seen[0]?.type, "turn.started");
     assert.equal(seen.at(-1)?.type, "turn.completed");
-    for (let i = 1; i < seen.length; i++) assert.ok(seen[i]!.seq > seen[i - 1]!.seq, "events are ordered");
+    for (let i = 1; i < seen.length; i++)
+      assert.ok(seen[i]!.seq > seen[i - 1]!.seq, "events are ordered");
     const done = await turn.done;
     assert.equal(done.status, "completed");
     assert.ok(done.usage?.outputTokens);
@@ -161,8 +394,14 @@ test("generated methods use exact protocol results and generated error codes", a
   const snapshot = await kit.protocol.settingsGet({ target: { sessionId: session.sessionId } });
   assert.equal(snapshot.values.budget.maxTurnTokens, 0);
   await assert.rejects(
-    kit.protocol.sessionPrompt({ sessionId: session.sessionId, input: [{ type: "text", text: "blocked" }] }),
-    (error: unknown) => error instanceof HarnessKitError && error.code === ErrorCodes.BudgetExceeded && error.reason === "budget_exceeded",
+    kit.protocol.sessionPrompt({
+      sessionId: session.sessionId,
+      input: [{ type: "text", text: "blocked" }],
+    }),
+    (error: unknown) =>
+      error instanceof HarnessKitError &&
+      error.code === ErrorCodes.BudgetExceeded &&
+      error.reason === "budget_exceeded",
   );
 
   const updated = await kit.protocol.settingsConfigure({
@@ -176,8 +415,11 @@ test("generated methods use exact protocol results and generated error codes", a
   const handle = await kit.sessions.attach(session.sessionId);
   assert.equal((await handle.prompt("generated client").done).status, "completed");
   const page = await kit.protocol.sessionEventsPage({ sessionId: session.sessionId });
-  assert.ok(page.events.some(event => event.type === "turn.completed"));
-  const { session: renamed } = await kit.protocol.sessionRename({ sessionId: session.sessionId, title: "Generated client" });
+  assert.ok(page.events.some((event) => event.type === "turn.completed"));
+  const { session: renamed } = await kit.protocol.sessionRename({
+    sessionId: session.sessionId,
+    title: "Generated client",
+  });
   assert.equal(renamed.title, "Generated client");
 });
 
@@ -202,7 +444,8 @@ test("approvals pause the turn until the host responds", async () => {
     // Deny with a message.
     const denied = session.prompt("[approve]");
     for await (const ev of denied) {
-      if (ev.type === "approval.requested") await kit.approvals.respond(ev.data.approvalId, { outcome: "deny", message: "no thanks" });
+      if (ev.type === "approval.requested")
+        await kit.approvals.respond(ev.data.approvalId, { outcome: "deny", message: "no thanks" });
       if (ev.type === "tool.completed") assert.equal(ev.data.error, "no thanks");
     }
   } finally {
@@ -230,13 +473,25 @@ test("AbortSignal cancels a running turn", async () => {
 test("errors carry stable reasons", async () => {
   const kit = await connect();
   try {
-    await assert.rejects(kit.sessions.create({ runtime: "nope" }), (e: unknown) => e instanceof HarnessKitError && e.reason === "runtime_not_found");
-    await assert.rejects(kit.sessions.create({ runtime: "fake", options: { unsafe: true } }), (e: unknown) => e instanceof HarnessKitError && e.reason === "policy_violation");
-    await assert.rejects(kit.sessions.get("ses_missing"), (e: unknown) => e instanceof HarnessKitError && e.reason === "session_not_found");
+    await assert.rejects(
+      kit.sessions.create({ runtime: "nope" }),
+      (e: unknown) => e instanceof HarnessKitError && e.reason === "runtime_not_found",
+    );
+    await assert.rejects(
+      kit.sessions.create({ runtime: "fake", options: { unsafe: true } }),
+      (e: unknown) => e instanceof HarnessKitError && e.reason === "policy_violation",
+    );
+    await assert.rejects(
+      kit.sessions.get("ses_missing"),
+      (e: unknown) => e instanceof HarnessKitError && e.reason === "session_not_found",
+    );
 
     const session = await kit.sessions.create({ runtime: "fake" });
     const slow = session.prompt("[slow]");
-    await assert.rejects(session.prompt("concurrent").done, (e: unknown) => e instanceof HarnessKitError && e.reason === "session_busy");
+    await assert.rejects(
+      session.prompt("concurrent").done,
+      (e: unknown) => e instanceof HarnessKitError && e.reason === "session_busy",
+    );
     await slow.cancel();
     await slow.done;
 
@@ -308,18 +563,31 @@ test("sessions persist across sidecar restarts and can be restored", async () =>
       // Reading the durable transcript does not start the runtime.
       const saved = await second.sessions.events(s.id);
       assert.equal(saved.truncated, false);
-      assert.ok(saved.events.some((ev) => ev.type === "turn.started" && ev.data.text === "remember pineapple"));
-      assert.ok(saved.events.some((ev) => ev.type === "message.completed" && ev.data.text === "Echo: remember pineapple"));
+      assert.ok(
+        saved.events.some(
+          (ev) => ev.type === "turn.started" && ev.data.text === "remember pineapple",
+        ),
+      );
+      assert.ok(
+        saved.events.some(
+          (ev) => ev.type === "message.completed" && ev.data.text === "Echo: remember pineapple",
+        ),
+      );
       assert.equal((await second.sessions.get(s.id)).state, "closed");
       const page = await second.sessions.events(s.id, { afterSeq: saved.events[0]!.seq, limit: 2 });
       assert.deepEqual(page.events, saved.events.slice(1, 3));
       const beforeRestoreSeq = saved.events.at(-1)!.seq;
       const updates: HarnessEvent[] = [];
-      const unsubscribe = second.onEvent((ev) => { if (ev.type === "session.updated" && ev.sessionId === s.id) updates.push(ev); });
+      const unsubscribe = second.onEvent((ev) => {
+        if (ev.type === "session.updated" && ev.sessionId === s.id) updates.push(ev);
+      });
 
       // A stored session can be renamed before it is restored.
       assert.equal((await second.sessions.rename(s.id, "  Fruit\n facts ")).title, "Fruit facts");
-      await assert.rejects(second.sessions.rename(s.id, "  "), (e: unknown) => e instanceof HarnessKitError && e.reason === "invalid_params");
+      await assert.rejects(
+        second.sessions.rename(s.id, "  "),
+        (e: unknown) => e instanceof HarnessKitError && e.reason === "invalid_params",
+      );
 
       const restored = await second.sessions.restore(s.id);
       assert.equal(restored.id, s.id);
@@ -331,21 +599,42 @@ test("sessions persist across sidecar restarts and can be restored", async () =>
       assert.equal((await restored.rename("Pineapple")).title, "Pineapple");
       assert.equal((await second.sessions.get(s.id)).title, "Pineapple");
       const replay = await restored.events();
-      assert.deepEqual(replay.events.slice(0, saved.events.length), saved.events, "restore preserves earlier events verbatim");
+      assert.deepEqual(
+        replay.events.slice(0, saved.events.length),
+        saved.events,
+        "restore preserves earlier events verbatim",
+      );
       assert.ok(replay.events.at(-1)!.seq > beforeRestoreSeq);
       assert.equal(replay.events.filter((ev) => ev.type === "turn.started").length, 2);
-      assert.ok(replay.events.some((ev) => ev.type === "session.updated" && ev.data.title === "Fruit facts"));
+      assert.ok(
+        replay.events.some(
+          (ev) => ev.type === "session.updated" && ev.data.title === "Fruit facts",
+        ),
+      );
       // Notifications and RPC responses travel independently: wait for the
       // rename notification rather than assuming it precedes its response.
-      for (let i = 0; i < 100 && !updates.some((ev) => ev.type === "session.updated" && ev.data.title === "Pineapple"); i++) {
+      for (
+        let i = 0;
+        i < 100 &&
+        !updates.some((ev) => ev.type === "session.updated" && ev.data.title === "Pineapple");
+        i++
+      ) {
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
-      assert.ok(updates.some((ev) => ev.type === "session.updated" && ev.data.title === "Pineapple"));
+      assert.ok(
+        updates.some((ev) => ev.type === "session.updated" && ev.data.title === "Pineapple"),
+      );
       unsubscribe();
 
       await second.sessions.delete(s.id);
-      await assert.rejects(second.sessions.events(s.id), (e: unknown) => e instanceof HarnessKitError && e.reason === "session_not_found");
-      await assert.rejects(second.sessions.get(s.id), (e: unknown) => e instanceof HarnessKitError && e.reason === "session_not_found");
+      await assert.rejects(
+        second.sessions.events(s.id),
+        (e: unknown) => e instanceof HarnessKitError && e.reason === "session_not_found",
+      );
+      await assert.rejects(
+        second.sessions.get(s.id),
+        (e: unknown) => e instanceof HarnessKitError && e.reason === "session_not_found",
+      );
     } finally {
       await second.close();
     }
@@ -360,16 +649,27 @@ test("per-session MCP servers reach the runtime", async () => {
     assert.equal(kit.server.capabilities.runtimes[0]?.capabilities.mcp, true);
     const seen: string[] = [];
     kit.onEvent((ev) => {
-      if (ev.type === "runtime.status" && ev.data.status === "mcp") seen.push(ev.data.message ?? "");
+      if (ev.type === "runtime.status" && ev.data.status === "mcp")
+        seen.push(ev.data.message ?? "");
     });
     const s = await kit.sessions.create({
       runtime: "fake",
-      mcp: { inheritNative: false, mcpServers: { github: { command: "npx", args: ["-y", "srv"], env: { GITHUB_TOKEN: "${GITHUB_TOKEN}" } } } },
+      mcp: {
+        inheritNative: false,
+        mcpServers: {
+          github: { command: "npx", args: ["-y", "srv"], env: { GITHUB_TOKEN: "${GITHUB_TOKEN}" } },
+        },
+      },
     });
     const { events } = await s.events();
-    assert.ok(events.some((e) => e.type === "runtime.status" && e.data.message === "MCP servers: github"));
+    assert.ok(
+      events.some((e) => e.type === "runtime.status" && e.data.message === "MCP servers: github"),
+    );
     await assert.rejects(
-      kit.sessions.create({ runtime: "fake", mcp: { mcpServers: { "bad__name": { command: "x" } } } }),
+      kit.sessions.create({
+        runtime: "fake",
+        mcp: { mcpServers: { bad__name: { command: "x" } } },
+      }),
       (e: unknown) => e instanceof HarnessKitError && e.reason === "invalid_params",
     );
   } finally {
@@ -377,80 +677,113 @@ test("per-session MCP servers reach the runtime", async () => {
   }
 });
 
-test("host tools: registered in TypeScript, called by the runtime", { timeout: 30_000 }, async (t) => {
-  const kit = await connect();
-  t.after(() => kit.close());
-  assert.equal(kit.server.capabilities.tools, true);
-  const calls: { args: unknown; sessionId: string; turnId?: string }[] = [];
-  let abortedBy: unknown;
-  let started!: () => void;
-  let aborted!: () => void;
-  const toolStarted = new Promise<void>((resolve) => { started = resolve; });
-  const toolAborted = new Promise<void>((resolve) => { aborted = resolve; });
-  await kit.tools.register([
-    {
-      name: "lookup",
-      description: "Look up an order",
-      inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
-      handler: (args: { id: string }, ctx) => {
-        calls.push({ args, sessionId: ctx.sessionId, turnId: ctx.turnId });
-        return { id: args.id, status: "shipped" };
+test(
+  "host tools: registered in TypeScript, called by the runtime",
+  { timeout: 30_000 },
+  async (t) => {
+    const kit = await connect();
+    t.after(() => kit.close());
+    assert.equal(kit.server.capabilities.tools, true);
+    const calls: { args: unknown; sessionId: string; turnId?: string }[] = [];
+    let abortedBy: unknown;
+    let started!: () => void;
+    let aborted!: () => void;
+    const toolStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const toolAborted = new Promise<void>((resolve) => {
+      aborted = resolve;
+    });
+    await kit.tools.register([
+      {
+        name: "lookup",
+        description: "Look up an order",
+        inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+        handler: (args: { id: string }, ctx) => {
+          calls.push({ args, sessionId: ctx.sessionId, turnId: ctx.turnId });
+          return { id: args.id, status: "shipped" };
+        },
       },
-    },
-    { name: "refund", approval: "ask", handler: () => "refunded" },
-    { name: "explode", handler: () => { throw new Error("database offline"); } },
-    {
-      name: "wait",
-      handler: (_args, ctx) => new Promise((_resolve, reject) => {
-        ctx.signal.addEventListener("abort", () => {
-          abortedBy = ctx.signal.reason;
-          aborted();
-          reject(new Error("aborted"));
-        }, { once: true });
-        started();
-      }),
-    },
-  ]);
-  await assert.rejects(kit.tools.register({ name: "lookup", handler: () => "x" }), /already registered/);
-  assert.deepEqual((await kit.tools.list()).map((t) => t.name), ["lookup", "refund", "explode", "wait"]);
+      { name: "refund", approval: "ask", handler: () => "refunded" },
+      {
+        name: "explode",
+        handler: () => {
+          throw new Error("database offline");
+        },
+      },
+      {
+        name: "wait",
+        handler: (_args, ctx) =>
+          new Promise((_resolve, reject) => {
+            ctx.signal.addEventListener(
+              "abort",
+              () => {
+                abortedBy = ctx.signal.reason;
+                aborted();
+                reject(new Error("aborted"));
+              },
+              { once: true },
+            );
+            started();
+          }),
+      },
+    ]);
+    await assert.rejects(
+      kit.tools.register({ name: "lookup", handler: () => "x" }),
+      /already registered/,
+    );
+    assert.deepEqual(
+      (await kit.tools.list()).map((t) => t.name),
+      ["lookup", "refund", "explode", "wait"],
+    );
 
-  const session = await kit.sessions.create({ runtime: "fake" });
-  const outputs: string[] = [];
-  const turn = session.prompt('[call lookup {"id":"A7"}] [call refund] [call explode]');
-  for await (const ev of turn) {
-    if (ev.type === "approval.requested") {
-      assert.equal(ev.data.tool, "refund");
-      await kit.approvals.respond(ev.data.approvalId, "allow");
+    const session = await kit.sessions.create({ runtime: "fake" });
+    const outputs: string[] = [];
+    const turn = session.prompt('[call lookup {"id":"A7"}] [call refund] [call explode]');
+    for await (const ev of turn) {
+      if (ev.type === "approval.requested") {
+        assert.equal(ev.data.tool, "refund");
+        await kit.approvals.respond(ev.data.approvalId, "allow");
+      }
+      if (ev.type === "tool.completed")
+        outputs.push(`${ev.data.status}:${ev.data.output ?? ""}${ev.data.error ?? ""}`);
     }
-    if (ev.type === "tool.completed") outputs.push(`${ev.data.status}:${ev.data.output ?? ""}${ev.data.error ?? ""}`);
-  }
-  assert.deepEqual(outputs, ['completed:{"id":"A7","status":"shipped"}', "completed:refunded", "failed:database offline"]);
-  assert.deepEqual(calls[0], { args: { id: "A7" }, sessionId: session.id, turnId: turn.id });
+    assert.deepEqual(outputs, [
+      'completed:{"id":"A7","status":"shipped"}',
+      "completed:refunded",
+      "failed:database offline",
+    ]);
+    assert.deepEqual(calls[0], { args: { id: "A7" }, sessionId: session.id, turnId: turn.id });
 
-  // Cancelling the turn aborts the in-flight tool call in the app.
-  const waiting = session.prompt("[call wait]");
-  // Under load, cancelling after a fixed delay can precede the tool call.
-  await toolStarted;
-  await waiting.cancel();
-  await toolAborted;
-  assert.ok(abortedBy);
-  assert.equal((await waiting.done).status, "cancelled");
+    // Cancelling the turn aborts the in-flight tool call in the app.
+    const waiting = session.prompt("[call wait]");
+    // Under load, cancelling after a fixed delay can precede the tool call.
+    await toolStarted;
+    await waiting.cancel();
+    await toolAborted;
+    assert.ok(abortedBy);
+    assert.equal((await waiting.done).status, "cancelled");
 
-  // Sessions can be limited to some tools, or have none.
-  const limited = await kit.sessions.create({ runtime: "fake", hostTools: ["lookup"] });
-  const r = await limited.prompt("[call refund]").done;
-  assert.equal(r.status, "completed");
-  const none = await kit.sessions.create({ runtime: "fake", disableHostTools: true });
-  let failed = "";
-  for await (const ev of none.prompt('[call lookup {"id":"1"}]')) if (ev.type === "tool.completed") failed = ev.data.error ?? "";
-  assert.match(failed, /no host tools/);
+    // Sessions can be limited to some tools, or have none.
+    const limited = await kit.sessions.create({ runtime: "fake", hostTools: ["lookup"] });
+    const r = await limited.prompt("[call refund]").done;
+    assert.equal(r.status, "completed");
+    const none = await kit.sessions.create({ runtime: "fake", disableHostTools: true });
+    let failed = "";
+    for await (const ev of none.prompt('[call lookup {"id":"1"}]'))
+      if (ev.type === "tool.completed") failed = ev.data.error ?? "";
+    assert.match(failed, /no host tools/);
 
-  await kit.tools.unregister("explode");
-  assert.equal((await kit.tools.list()).length, 3);
-});
+    await kit.tools.unregister("explode");
+    assert.equal((await kit.tools.list()).length, 3);
+  },
+);
 
 test("pending requests reject when the sidecar dies", async () => {
-  const transport = stdio({ command: bin, args: ["serve", "--runtimes", "", "--fake-runtime", "--log-level", "error"] });
+  const transport = stdio({
+    command: bin,
+    args: ["serve", "--runtimes", "", "--fake-runtime", "--log-level", "error"],
+  });
   const kit = await createHarnessKit({ transport });
   const session = await kit.sessions.create({ runtime: "fake" });
   const turn = session.prompt("[slow]");
@@ -500,21 +833,44 @@ test("configuration defaults, turn overrides and reset cross the full client/ser
     const reset = await kit.sessions.configure(session.id, { reset: ["model", "effort"] });
     assert.equal(reset.config?.model, "base");
     assert.equal(reset.config?.effort, "low");
-    for (const config of [null, { model: null }, { effort: null }, { modle: "typo" }, { model: "conflict", reset: ["model"] }]) {
-      await assert.rejects(kit.request("session.configure", { sessionId: session.id, config }),
-        (e: unknown) => e instanceof HarnessKitError && e.code === -32602 && e.reason === "invalid_params");
+    for (const config of [
+      null,
+      { model: null },
+      { effort: null },
+      { modle: "typo" },
+      { model: "conflict", reset: ["model"] },
+    ]) {
+      await assert.rejects(
+        kit.request("session.configure", { sessionId: session.id, config }),
+        (e: unknown) =>
+          e instanceof HarnessKitError && e.code === -32602 && e.reason === "invalid_params",
+      );
     }
-    await assert.rejects(kit.request("session.prompt", { sessionId: session.id, input: [{ type: "text", text: "invalid null config" }], config: null }),
-      (e: unknown) => e instanceof HarnessKitError && e.reason === "invalid_params");
-    await assert.rejects(kit.request("session.configure", { sessionId: session.id }),
-      (e: unknown) => e instanceof HarnessKitError && e.reason === "invalid_params");
-    await assert.rejects(kit.sessions.configure(session.id, { reset: ["options.failStart"] }),
-      (e: unknown) => e instanceof HarnessKitError && e.reason === "unsupported");
-    await assert.rejects(kit.sessions.configure(session.id, { options: { unsafe: true } }),
-      (e: unknown) => e instanceof HarnessKitError && e.reason === "policy_violation");
+    await assert.rejects(
+      kit.request("session.prompt", {
+        sessionId: session.id,
+        input: [{ type: "text", text: "invalid null config" }],
+        config: null,
+      }),
+      (e: unknown) => e instanceof HarnessKitError && e.reason === "invalid_params",
+    );
+    await assert.rejects(
+      kit.request("session.configure", { sessionId: session.id }),
+      (e: unknown) => e instanceof HarnessKitError && e.reason === "invalid_params",
+    );
+    await assert.rejects(
+      kit.sessions.configure(session.id, { reset: ["options.failStart"] }),
+      (e: unknown) => e instanceof HarnessKitError && e.reason === "unsupported",
+    );
+    await assert.rejects(
+      kit.sessions.configure(session.id, { options: { unsafe: true } }),
+      (e: unknown) => e instanceof HarnessKitError && e.reason === "policy_violation",
+    );
     const denied = session.prompt("must not start", { config: { options: { unsafe: true } } });
-    await assert.rejects(denied.done,
-      (e: unknown) => e instanceof HarnessKitError && e.reason === "policy_violation");
+    await assert.rejects(
+      denied.done,
+      (e: unknown) => e instanceof HarnessKitError && e.reason === "policy_violation",
+    );
     const explicitFalse = await session.configure({ options: { unsafe: false } });
     assert.equal(explicitFalse.config?.options?.unsafe, false);
     assert.equal((await session.refresh()).config?.model, "base");
@@ -524,7 +880,10 @@ test("configuration defaults, turn overrides and reset cross the full client/ser
 });
 
 test("one settings API configures startup, live policy, session defaults and turn input", async () => {
-  const transport = stdio({ command: bin, args: ["serve", "--runtimes", "fake", "--log-level", "error"] });
+  const transport = stdio({
+    command: bin,
+    args: ["serve", "--runtimes", "fake", "--log-level", "error"],
+  });
   const kit = await createHarnessKit({
     transport,
     initialSettings: {
@@ -538,33 +897,55 @@ test("one settings API configures startup, live policy, session defaults and tur
     assert.equal(initial.values.session.model, "host-model");
     assert.equal(initial.fields["memory.evictAfterIdleMs"]?.unit, "milliseconds");
     const changes: number[] = [];
-    const unsubscribe = kit.settings.onChanged(snapshot => changes.push(snapshot.revision));
+    const unsubscribe = kit.settings.onChanged((snapshot) => changes.push(snapshot.revision));
     const updated = await kit.settings.configure({
       patch: { history: { maxPageEvents: 3 }, streams: { maxQueueBytes: 4096 } },
       expectedRevision: initial.revision,
     });
     assert.equal(updated.values.history.maxPageEvents, 3);
     assert.ok(changes.includes(updated.revision));
-    await assert.rejects(kit.settings.configure({ patch: { history: { maxPageEvents: 4 } }, expectedRevision: initial.revision }),
-      (e: unknown) => e instanceof HarnessKitError && e.reason === "settings_conflict");
-    await assert.rejects(kit.settings.configure({ patch: { process: { store: "new-directory" }, history: { maxPageEvents: 5 } } }),
-      (e: unknown) => e instanceof HarnessKitError && e.reason === "restart_required");
+    await assert.rejects(
+      kit.settings.configure({
+        patch: { history: { maxPageEvents: 4 } },
+        expectedRevision: initial.revision,
+      }),
+      (e: unknown) => e instanceof HarnessKitError && e.reason === "settings_conflict",
+    );
+    await assert.rejects(
+      kit.settings.configure({
+        patch: { process: { store: "new-directory" }, history: { maxPageEvents: 5 } },
+      }),
+      (e: unknown) => e instanceof HarnessKitError && e.reason === "restart_required",
+    );
     assert.equal((await kit.settings.get()).values.history.maxPageEvents, 3);
 
-    const session = await kit.sessions.create({ settings: { session: { model: "created-model" } } });
+    const session = await kit.sessions.create({
+      settings: { session: { model: "created-model" } },
+    });
     assert.equal(session.runtime, "fake");
     assert.equal(session.info.config?.model, "created-model");
     const scoped = await kit.settings.get({ sessionId: session.id });
-    await kit.settings.configure({ target: { sessionId: session.id }, patch: { session: { model: "future-model" } }, expectedRevision: scoped.revision });
-    for await (const ev of session.prompt("unified turn", { settings: { session: { model: "turn-model" } } })) {
+    await kit.settings.configure({
+      target: { sessionId: session.id },
+      patch: { session: { model: "future-model" } },
+      expectedRevision: scoped.revision,
+    });
+    for await (const ev of session.prompt("unified turn", {
+      settings: { session: { model: "turn-model" } },
+    })) {
       if (ev.type === "turn.started") {
         assert.equal(ev.data.config?.model, "turn-model");
         assert.equal(ev.data.config?.effort, "low");
       }
     }
     assert.equal((await session.refresh()).config?.model, "future-model");
-    await assert.rejects(session.prompt("conflict", { settings: { session: { model: "one" } }, config: { model: "two" } }).done,
-      (e: unknown) => e instanceof HarnessKitError && e.reason === "invalid_params");
+    await assert.rejects(
+      session.prompt("conflict", {
+        settings: { session: { model: "one" } },
+        config: { model: "two" },
+      }).done,
+      (e: unknown) => e instanceof HarnessKitError && e.reason === "invalid_params",
+    );
     const page = await session.eventsPage();
     assert.equal(page.events.length, 3);
     assert.equal(page.hasMore, true);
@@ -593,14 +974,23 @@ test("settings validation rejects unknown and null envelopes atomically", async 
       { patch: {}, expectedRevison: before.revision },
       { patch: {}, target: { session: "typo" } },
     ]) {
-      await assert.rejects(kit.request("settings.configure", params),
-        (e: unknown) => e instanceof HarnessKitError && e.reason === "invalid_params");
+      await assert.rejects(
+        kit.request("settings.configure", params),
+        (e: unknown) => e instanceof HarnessKitError && e.reason === "invalid_params",
+      );
     }
     assert.equal((await kit.settings.get()).revision, before.revision);
     const session = await kit.sessions.create({ runtime: "fake" });
     for (const method of ["session.create", "session.prompt"]) {
-      await assert.rejects(kit.request(method, { runtime: "fake", sessionId: session.id, input: [{ type: "text", text: "bad" }], settings: null }),
-        (e: unknown) => e instanceof HarnessKitError && e.reason === "invalid_params");
+      await assert.rejects(
+        kit.request(method, {
+          runtime: "fake",
+          sessionId: session.id,
+          input: [{ type: "text", text: "bad" }],
+          settings: null,
+        }),
+        (e: unknown) => e instanceof HarnessKitError && e.reason === "invalid_params",
+      );
     }
   } finally {
     await kit.close();
@@ -627,7 +1017,11 @@ test("stdio boots from the same settings document including process wiring", asy
     assert.equal(boot.values.session.model, "boot-default");
     const session = await kit.sessions.create({});
     assert.equal(session.info.config?.model, "boot-default");
-    await kit.settings.configure({ patch: { memory: { evictAfterIdleMs: 600_000, suspendAfterIdleMs: 600_000, resumeOnPrompt: true } } });
+    await kit.settings.configure({
+      patch: {
+        memory: { evictAfterIdleMs: 600_000, suspendAfterIdleMs: 600_000, resumeOnPrompt: true },
+      },
+    });
     await session.prompt("saved conversation").done;
     await kit.sessions.suspend(session.id);
     assert.equal((await session.refresh()).state, "suspended");
@@ -648,20 +1042,29 @@ test("catalog filters, tags, archive and independent forks", async () => {
     const archived = await kit.sessions.list({ archived: true, tags: ["work"], query: "source" });
     assert.equal(archived.length, 1);
     assert.equal(archived[0]?.metadata?.tags, '["work"]');
-    const child = await kit.sessions.fork(parent.id, { title: "Branch", settings: { session: { model: "branch-model" } } });
+    const child = await kit.sessions.fork(parent.id, {
+      title: "Branch",
+      settings: { session: { model: "branch-model" } },
+    });
     assert.equal(child.info.forkedFrom, parent.id);
     assert.equal(child.info.inheritedTurns, 1);
     assert.equal(child.info.model, "branch-model");
     assert.notEqual(child.info.runtimeSessionId, parent.info.runtimeSessionId);
     assert.ok(!child.info.archived);
-    assert.ok((await child.events()).events.some((ev) => ev.type === "turn.started" && ev.data.text === "inherited conversation"));
+    assert.ok(
+      (await child.events()).events.some(
+        (ev) => ev.type === "turn.started" && ev.data.text === "inherited conversation",
+      ),
+    );
     await child.prompt("branch turn").done;
     assert.equal((await parent.refresh()).turns, 1);
     assert.equal((await child.refresh()).turns, 2);
     await kit.sessions.archive(parent.id, false);
     await kit.sessions.setTags(parent.id, []);
     assert.equal((await kit.sessions.list({ archived: true })).length, 0);
-  } finally { await kit.close(); }
+  } finally {
+    await kit.close();
+  }
 });
 
 test("budgets use shared settings, preserve totals and report observed stopping thresholds", async () => {
@@ -669,21 +1072,37 @@ test("budgets use shared settings, preserve totals and report observed stopping 
   try {
     await kit.settings.configure({ patch: { budget: { maxTurnTokens: 0 } } });
     const session = await kit.sessions.create({ runtime: "fake" });
-    await assert.rejects(session.prompt("blocked").done, (err: unknown) => err instanceof HarnessKitError && err.reason === "budget_exceeded");
-    const first = await session.prompt("hello", { settings: { budget: { maxTurnTokens: null } } }).done;
+    await assert.rejects(
+      session.prompt("blocked").done,
+      (err: unknown) => err instanceof HarnessKitError && err.reason === "budget_exceeded",
+    );
+    const first = await session.prompt("hello", { settings: { budget: { maxTurnTokens: null } } })
+      .done;
     assert.equal(first.status, "completed");
     const info = await session.refresh();
     assert.equal(info.usage?.totalTokens, first.usage?.totalTokens);
     const limit = info.usage!.totalTokens;
-    await kit.settings.configure({ target: { sessionId: session.id }, patch: { budget: { maxSessionTokens: limit, maxTurnTokens: null } } });
-    await assert.rejects(session.prompt("still blocked").done, (err: unknown) => err instanceof HarnessKitError && err.reason === "budget_exceeded");
-    await kit.settings.configure({ target: { sessionId: session.id }, patch: { budget: { maxSessionTokens: null } } });
-    const second = await session.prompt("again", { settings: { budget: { maxTurnTokens: 1 } } }).done;
+    await kit.settings.configure({
+      target: { sessionId: session.id },
+      patch: { budget: { maxSessionTokens: limit, maxTurnTokens: null } },
+    });
+    await assert.rejects(
+      session.prompt("still blocked").done,
+      (err: unknown) => err instanceof HarnessKitError && err.reason === "budget_exceeded",
+    );
+    await kit.settings.configure({
+      target: { sessionId: session.id },
+      patch: { budget: { maxSessionTokens: null } },
+    });
+    const second = await session.prompt("again", { settings: { budget: { maxTurnTokens: 1 } } })
+      .done;
     // Fake usage arrives with the result: already completed work stays completed.
     assert.equal(second.status, "completed");
     assert.equal(second.budget?.scope, "turn");
     assert.equal(second.budget?.metric, "tokens");
     const latest = await session.refresh();
     assert.equal(latest.usage?.totalTokens, limit + second.usage!.totalTokens!);
-  } finally { await kit.close(); }
+  } finally {
+    await kit.close();
+  }
 });

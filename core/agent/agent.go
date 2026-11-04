@@ -61,6 +61,11 @@ type Info struct {
 
 // Capabilities advertises optional behaviour.
 type Capabilities struct {
+	// ContextUsage reports model-window observations separately from spend.
+	ContextUsage bool `json:"contextUsage"`
+	// Compaction means the adapter can request native compaction. Per-session
+	// availability is negotiated through Compactor.CanCompact.
+	Compaction bool `json:"compaction"`
 	// Images: image input parts are accepted by the runtime.
 	Images bool `json:"images"`
 	// Configuration advertises accepted settings and their lifetimes.
@@ -192,6 +197,14 @@ type Session interface {
 	// Close releases the session's resources (processes, pipes). It is
 	// called at most once, never concurrently with Prompt.
 	Close(ctx context.Context) error
+}
+
+// Compactor is an optional native context operation. It must return only after
+// compaction completes or stops, honor cancellation, and never turn an unknown
+// command into an ordinary model prompt. The manager serializes it with Prompt.
+type Compactor interface {
+	CanCompact() bool
+	Compact(context.Context) error
 }
 
 // Turn is one prompt.

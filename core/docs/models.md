@@ -8,10 +8,10 @@ require their CLIs or change their runtime-owned context.
 The core `model` and `model/contextwindow` packages have no external dependencies and
 build for WebAssembly. SDK adapters live in separate Go modules:
 
-| Module | API | Minimum Go |
-| --- | --- | --- |
-| `github.com/tomanagle/harness-kit/core/providers/openai` | Official OpenAI Go SDK v3.93.0, Responses streaming | 1.26 |
-| `github.com/tomanagle/harness-kit/core/providers/anthropic` | Official Anthropic Go SDK v1.84.0, Messages streaming | 1.24 |
+| Module                                                      | API                                                   | Minimum Go |
+| ----------------------------------------------------------- | ----------------------------------------------------- | ---------- |
+| `github.com/tomanagle/harness-kit/core/providers/openai`    | Official OpenAI Go SDK v3.93.0, Responses streaming   | 1.26       |
+| `github.com/tomanagle/harness-kit/core/providers/anthropic` | Official Anthropic Go SDK v1.84.0, Messages streaming | 1.24       |
 
 Choose only the adapter your application needs. SDK dependencies do not enter
 the core module. These are the new monorepo module paths and are not tagged yet;

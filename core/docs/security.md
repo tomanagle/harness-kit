@@ -37,6 +37,7 @@ application in control.
   Opt in explicitly with `session.Options{AllowUnsafe: true}`, or
   `harness-kit --allow-unsafe`. Runtime adapters declare these checks
   through `agent.Guarded`.
+
 - **Codex** sessions default to `sandbox: "workspace-write"` with
   `approvalPolicy: "on-request"`.
 - **Claude Code** turns default to Claude Code's manual mode, with

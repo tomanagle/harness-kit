@@ -20,23 +20,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/tomanagle/harness-kit/core/runtimes/transport"
 )
 
 // ErrUnsupported is returned when an operation is unavailable on this OS.
 var ErrUnsupported = errors.New("process: unsupported on this platform")
 
 // LookOptions configure LookPath.
-type LookOptions struct {
-	// Path, if set, is used verbatim (it must exist).
-	Path string
-	// EnvVar names an environment variable that may hold an explicit path,
-	// e.g. "HARNESS_KIT_CODEX_PATH".
-	EnvVar string
-	// ExtraDirs are searched after PATH, before the default directories.
-	ExtraDirs []string
-	// NoDefaultDirs disables the built-in well-known install locations.
-	NoDefaultDirs bool
-}
+type LookOptions = transport.LookupOptions
 
 // LookPath finds an executable by name. Resolution order: opts.Path, the
 // opts.EnvVar environment variable, PATH, opts.ExtraDirs, then well-known
@@ -151,22 +143,29 @@ var versionRE = regexp.MustCompile(`\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?`)
 // returns the first semantic version in its output. env holds extra
 // KEY=VALUE entries added to the inherited environment.
 func Version(ctx context.Context, path string, env []string, args ...string) (string, error) {
+	return VersionWith(ctx, OSLauncher{}, path, env, args...)
+}
+
+// VersionWith uses the same launcher as the adapter's sessions and auth probes.
+func VersionWith(ctx context.Context, launcher transport.Launcher, path string, env []string, args ...string) (string, error) {
 	if len(args) == 0 {
 		args = []string{"--version"}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, path, args...)
-	if len(env) > 0 {
-		cmd.Env = append(os.Environ(), env...)
-	}
-	Configure(cmd)
-	cmd.Cancel = func() error { return Kill(cmd) }
 	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("process: %s %s: %w", filepath.Base(path), strings.Join(args, " "), err)
+	child, err := launcher.Start(ctx, transport.Command{Path: path, Args: args, Env: env, Stdin: strings.NewReader(""), Stdout: &out, Stderr: &out})
+	if err != nil {
+		return "", err
+	}
+	stop := context.AfterFunc(ctx, func() { _ = child.Kill() })
+	defer stop()
+	waitErr := child.Wait()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if waitErr != nil {
+		return "", fmt.Errorf("process: %s %s: %w", filepath.Base(path), strings.Join(args, " "), waitErr)
 	}
 	v := versionRE.FindString(out.String())
 	if v == "" {
@@ -229,6 +228,18 @@ func Stop(cmd *exec.Cmd, waitDone <-chan struct{}, grace time.Duration) {
 		}
 	}
 	_ = Kill(cmd)
+}
+
+// StopChild applies the same graceful-stop policy to an injected child.
+func StopChild(child transport.Child, waitDone <-chan struct{}, grace time.Duration) {
+	if err := child.Interrupt(); err == nil {
+		select {
+		case <-waitDone:
+			return
+		case <-time.After(grace):
+		}
+	}
+	_ = child.Kill()
 }
 
 // Tail is an io.Writer that keeps the last max bytes written to it, for

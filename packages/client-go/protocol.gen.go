@@ -52,6 +52,8 @@ const (
 	MethodGitStatus             = "git.status"
 	MethodGitUnstage            = "git.unstage"
 	MethodInitialize            = "initialize"
+	MethodLogsSubscribe         = "logs.subscribe"
+	MethodLogsUnsubscribe       = "logs.unsubscribe"
 	MethodMCPList               = "mcp.list"
 	MethodRuntimeDiscover       = "runtime.discover"
 	MethodRuntimeList           = "runtime.list"
@@ -59,7 +61,9 @@ const (
 	MethodSessionArchive        = "session.archive"
 	MethodSessionCancel         = "session.cancel"
 	MethodSessionClose          = "session.close"
+	MethodSessionCompact        = "session.compact"
 	MethodSessionConfigure      = "session.configure"
+	MethodSessionContext        = "session.context"
 	MethodSessionCreate         = "session.create"
 	MethodSessionDelete         = "session.delete"
 	MethodSessionDiff           = "session.diff"
@@ -85,6 +89,7 @@ const (
 	MethodWorkspaceRemove       = "workspace.remove"
 	NotificationCancelRequest   = "$/cancelRequest"
 	NotificationEvent           = "event"
+	NotificationLog             = "log"
 	NotificationSettingsUpdated = "settings.updated"
 	ReasonApprovalNotFound      = "approval_not_found"
 	ReasonBudgetExceeded        = "budget_exceeded"
@@ -260,8 +265,13 @@ type Capabilities struct {
 	Approvals bool `json:"approvals"`
 	// Cancel: an in-progress turn can be interrupted gracefully.
 	Cancel bool `json:"cancel"`
+	// Compaction means the adapter can request native compaction. Per-session
+	// availability is negotiated through Compactor.CanCompact.
+	Compaction bool `json:"compaction"`
 	// Configuration advertises accepted settings and their lifetimes.
 	Configuration map[string]ConfigurationSupport `json:"configuration,omitempty"`
+	// ContextUsage reports model-window observations separately from spend.
+	ContextUsage bool `json:"contextUsage"`
 	// Cost: reports an estimated cost.
 	Cost         bool `json:"cost"`
 	Fork         bool `json:"fork"`
@@ -286,6 +296,20 @@ type ClientInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
 }
+
+// CompactionSettings controls additional host-requested compaction before a
+// prompt. Nil thresholds leave timing to the native runtime. Neither setting
+// disables a runtime's own automatic compaction. Either threshold can trigger.
+type CompactionSettings struct {
+	AutoAtPercent *float64 `json:"autoAtPercent"`
+	AutoAtTokens  *int64   `json:"autoAtTokens"`
+	TimeoutMs     int64    `json:"timeoutMs"`
+}
+
+// CompactionSettings controls additional host-requested compaction before a
+// prompt. Nil thresholds leave timing to the native runtime. Neither setting
+// disables a runtime's own automatic compaction. Either threshold can trigger.
+type CompactionSettingsPatch map[string]json.RawMessage
 
 // Patch changes only supplied fields. Empty strings explicitly clear portable
 // selections; false, zero, null and empty lists remain native option values.
@@ -314,6 +338,28 @@ type ConfigureSettingsParams struct {
 	Patch            SettingsPatch  `json:"patch"`
 	Reset            []string       `json:"reset,omitempty"`
 	Target           SettingsTarget `json:"target,omitempty"`
+}
+
+// ContextCompactionData reports manual, threshold-triggered, and observed native
+// compaction using one lifecycle. Runtime-specific details remain in runtime.status.
+type ContextCompactionData struct {
+	After       *ContextUsageData `json:"after,omitempty"`
+	Before      ContextUsageData  `json:"before"`
+	Error       *ErrorInfo        `json:"error,omitempty"`
+	OperationID string            `json:"operationId"`
+	Reason      string            `json:"reason"`
+	Status      string            `json:"status"`
+}
+
+// ContextUsageData is the latest model-window observation, independent of
+// cumulative token consumption. Nil counts are unknown; zero is a known zero.
+// Basis is reported (native occupancy), last_request (the latest model request)
+// or unknown. Stale observations must not be presented as current occupancy.
+type ContextUsageData struct {
+	Basis        string `json:"basis"`
+	Stale        bool   `json:"stale"`
+	UsedTokens   *int64 `json:"usedTokens"`
+	WindowTokens *int64 `json:"windowTokens"`
 }
 
 // SessionCreateParams are the params of "session.create".
@@ -426,6 +472,8 @@ const (
 	EventTypeApprovalRequested  EventType = "approval.requested"
 	EventTypeApprovalResolved   EventType = "approval.resolved"
 	EventTypeBudgetExceeded     EventType = "budget.exceeded"
+	EventTypeContextCompaction  EventType = "context.compaction"
+	EventTypeContextUsage       EventType = "context.usage"
 	EventTypeError              EventType = "error"
 	EventTypeMessageCompleted   EventType = "message.completed"
 	EventTypeMessageDelta       EventType = "message.delta"
@@ -672,8 +720,42 @@ type ListSessionsOptions struct {
 	Tags             []string `json:"tags,omitempty"`
 }
 
+// Gap describes dropped live records. There is no retained history to replay.
+type LogGap struct {
+	Count   uint64 `json:"count"`
+	FromSeq uint64 `json:"fromSeq"`
+	ToSeq   uint64 `json:"toSeq"`
+}
+
+// Notification carries exactly one record or dropped-record marker.
+type LogNotification struct {
+	Dropped *LogGap    `json:"dropped,omitempty"`
+	Record  *LogRecord `json:"record,omitempty"`
+}
+
+// Record is one normalized slog record. Attrs preserve nested groups and JSON
+// value types; keys such as "message" in attrs cannot replace envelope fields.
+type LogRecord struct {
+	Attrs     map[string]json.RawMessage `json:"attrs"`
+	Level     string                     `json:"level"`
+	Message   string                     `json:"message"`
+	Seq       uint64                     `json:"seq"`
+	Source    *LogSource                 `json:"source,omitempty"`
+	Time      time.Time                  `json:"time"`
+	Truncated bool                       `json:"truncated,omitempty"`
+}
+
+type LogSource struct {
+	File     string `json:"file"`
+	Function string `json:"function"`
+	Line     int    `json:"line"`
+}
+
 type LoggingSettings struct {
-	Level string `json:"level"`
+	Level           string `json:"level"`
+	MaxQueueBytes   int64  `json:"maxQueueBytes"`
+	MaxQueueRecords int    `json:"maxQueueRecords"`
+	MaxRecordBytes  int    `json:"maxRecordBytes"`
 }
 
 type LoggingSettingsPatch map[string]json.RawMessage
@@ -911,9 +993,11 @@ type ServerCapabilities struct {
 	// disable runtime sandboxes or approvals.
 	AllowUnsafe bool `json:"allowUnsafe"`
 	// EventLogSize is the per-session replay window.
-	EventLogSize int           `json:"eventLogSize"`
-	Git          bool          `json:"git"`
-	Runtimes     []RuntimeInfo `json:"runtimes"`
+	EventLogSize int  `json:"eventLogSize"`
+	Git          bool `json:"git"`
+	// Logs advertises opt-in structured slog notifications.
+	Logs     bool          `json:"logs"`
+	Runtimes []RuntimeInfo `json:"runtimes"`
 	// Settings advertises the unified live settings API.
 	Settings bool `json:"settings"`
 	// Tools reports whether clients can register host tools.
@@ -981,6 +1065,15 @@ type SessionConfigureParams struct {
 	SessionID string       `json:"sessionId"`
 }
 
+// ContextInfo is a cached context observation. Reading it never starts a
+// runtime or makes an inference request. CanCompact is live session availability.
+type SessionContext struct {
+	CanCompact bool             `json:"canCompact"`
+	SessionID  string           `json:"sessionId"`
+	State      SessionState     `json:"state"`
+	Usage      ContextUsageData `json:"usage"`
+}
+
 // SessionDiffParams reads a saved, bounded before/after turn diff.
 type SessionDiffParams struct {
 	MaxBytes  int64  `json:"maxBytes,omitempty"`
@@ -1011,18 +1104,20 @@ type SessionInfo struct {
 	ActiveTurnID string `json:"activeTurnId,omitempty"`
 	// Archived hides a conversation only when a caller requests that filter.
 	// It is independent of runtime lifecycle and never cancels work.
-	Archived bool         `json:"archived,omitempty"`
-	Budget   BudgetLimits `json:"budget"`
+	Archived   bool               `json:"archived,omitempty"`
+	Budget     BudgetLimits       `json:"budget"`
+	Compaction CompactionSettings `json:"compaction"`
 	// Config is the current selection inherited by subsequent turns.
-	Config         *TurnConfig `json:"config,omitempty"`
-	CreatedAt      time.Time   `json:"createdAt"`
-	Cwd            string      `json:"cwd,omitempty"`
-	Error          *ErrorInfo  `json:"error,omitempty"`
-	ForkPending    bool        `json:"forkPending,omitempty"`
-	ForkedAtSeq    uint64      `json:"forkedAtSeq,omitempty"`
-	ForkedFrom     string      `json:"forkedFrom,omitempty"`
-	InheritedTurns int         `json:"inheritedTurns,omitempty"`
-	LastSeq        uint64      `json:"lastSeq"`
+	Config         *TurnConfig       `json:"config,omitempty"`
+	Context        *ContextUsageData `json:"context,omitempty"`
+	CreatedAt      time.Time         `json:"createdAt"`
+	Cwd            string            `json:"cwd,omitempty"`
+	Error          *ErrorInfo        `json:"error,omitempty"`
+	ForkPending    bool              `json:"forkPending,omitempty"`
+	ForkedAtSeq    uint64            `json:"forkedAtSeq,omitempty"`
+	ForkedFrom     string            `json:"forkedFrom,omitempty"`
+	InheritedTurns int               `json:"inheritedTurns,omitempty"`
+	LastSeq        uint64            `json:"lastSeq"`
 	// LastStatus is the status of the most recent finished turn.
 	LastStatus TurnStatus        `json:"lastStatus,omitempty"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
@@ -1141,6 +1236,7 @@ type SessionState string
 const (
 	SessionStateClosed     SessionState = "closed"
 	SessionStateClosing    SessionState = "closing"
+	SessionStateCompacting SessionState = "compacting"
 	SessionStateFailed     SessionState = "failed"
 	SessionStateIdle       SessionState = "idle"
 	SessionStateRunning    SessionState = "running"
@@ -1158,11 +1254,13 @@ type SessionTagsParams struct {
 // fields that are absent have been cleared, rather than left unchanged.
 // State uses the session lifecycle names (idle, running, closing, ...).
 type SessionUpdatedData struct {
-	ActiveTurnID string        `json:"activeTurnId,omitempty"`
-	Archived     bool          `json:"archived,omitempty"`
-	Budget       *BudgetLimits `json:"budget,omitempty"`
+	ActiveTurnID string              `json:"activeTurnId,omitempty"`
+	Archived     bool                `json:"archived,omitempty"`
+	Budget       *BudgetLimits       `json:"budget,omitempty"`
+	Compaction   *CompactionSettings `json:"compaction,omitempty"`
 	// Config contains current session defaults, never a one-turn override.
 	Config           *TurnConfig       `json:"config,omitempty"`
+	Context          *ContextUsageData `json:"context,omitempty"`
 	Error            *ErrorInfo        `json:"error,omitempty"`
 	ForkPending      bool              `json:"forkPending,omitempty"`
 	LastStatus       TurnStatus        `json:"lastStatus,omitempty"`
@@ -1219,16 +1317,17 @@ type SettingsTarget struct {
 // limit; a zero cache budget retains no cached events. These are data budgets,
 // not limits on process RSS or memory owned by child processes.
 type SettingsValues struct {
-	Approvals ApprovalSettings  `json:"approvals"`
-	Budget    BudgetLimits      `json:"budget"`
-	Git       GitSettings       `json:"git"`
-	History   HistorySettings   `json:"history"`
-	Logging   LoggingSettings   `json:"logging"`
-	Memory    MemorySettings    `json:"memory"`
-	Process   ProcessSettings   `json:"process"`
-	Session   SessionSettings   `json:"session"`
-	Streams   StreamSettings    `json:"streams"`
-	Workspace WorkspaceSettings `json:"workspace"`
+	Approvals  ApprovalSettings   `json:"approvals"`
+	Budget     BudgetLimits       `json:"budget"`
+	Compaction CompactionSettings `json:"compaction"`
+	Git        GitSettings        `json:"git"`
+	History    HistorySettings    `json:"history"`
+	Logging    LoggingSettings    `json:"logging"`
+	Memory     MemorySettings     `json:"memory"`
+	Process    ProcessSettings    `json:"process"`
+	Session    SessionSettings    `json:"session"`
+	Streams    StreamSettings     `json:"streams"`
+	Workspace  WorkspaceSettings  `json:"workspace"`
 }
 
 // StreamGapData is the payload of stream.gap.

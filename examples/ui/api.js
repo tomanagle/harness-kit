@@ -18,7 +18,9 @@ export function makeApi(kit, opts = {}) {
       const [runtimes, tools, mcp] = await Promise.all([
         kit.runtimes.discover(),
         kit.tools.list(),
-        kit.mcp.list({ cwd: opts.cwd, runtimes: opts.nativeMcpRuntimes ?? ["codex"] }).catch((e) => ({ error: String(e?.message ?? e) })),
+        kit.mcp
+          .list({ cwd: opts.cwd, runtimes: opts.nativeMcpRuntimes ?? ["codex"] })
+          .catch((e) => ({ error: String(e?.message ?? e) })),
       ]);
       return { runtimes, tools, mcp, git: Boolean(kit.server?.capabilities?.git) };
     },
@@ -28,6 +30,8 @@ export function makeApi(kit, opts = {}) {
       return s.info;
     },
     renameSession: (id, title) => kit.sessions.rename(String(id), String(title)),
+    context: (id) => kit.sessions.context(String(id)),
+    compact: (id) => kit.sessions.compact(String(id)),
     gitStatus: (id) => kit.git.status(String(id)),
     gitDiff: (id, options = {}) => kit.git.diff(String(id), options),
     gitBranches: (id) => kit.git.branches(String(id)),
@@ -54,7 +58,8 @@ export function makeApi(kit, opts = {}) {
       await kit.request("session.cancel", { sessionId: String(id) });
     },
     async approve(approvalId, outcome) {
-      if (!["allow", "allow_session", "deny", "abort"].includes(outcome)) throw new Error("bad outcome");
+      if (!["allow", "allow_session", "deny", "abort"].includes(outcome))
+        throw new Error("bad outcome");
       await kit.approvals.respond(String(approvalId), outcome);
     },
   };
