@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       bootstrap:
-        description: "Use NPM_TOKEN for the first publish, before npm trusted publishing is configured"
+        description: "Use NPM_TOKEN to stage the first release for approval on npm"
         type: boolean
         default: false
         required: true
@@ -40,7 +40,8 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      # OIDC publishing requires npm >= 11.5.1. Keep the CLI independent
+      # Staged bootstrap requires npm >= 11.15.0 (OIDC needs >= 11.5.1).
+      # Keep the CLI independent
       # of the npm version bundled with the selected Node release.
       - name: Install npm with trusted publishing support
         run: npm install --global npm@11
@@ -112,7 +113,7 @@ jobs:
           PACKAGE_TARBALL: ${{ steps.pack.outputs.tarball }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: npm publish "$PACKAGE_TARBALL" --access public --provenance --tag "$RELEASE_TAG"
-      - name: Bootstrap the first publish with NPM_TOKEN
+      - name: Stage the first release with NPM_TOKEN
         if: ${{ inputs.bootstrap }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -123,4 +124,14 @@ jobs:
             echo '::error::Add the NPM_TOKEN repository secret before using bootstrap mode.'
             exit 1
           fi
-          npm publish "$PACKAGE_TARBALL" --access public --provenance --tag "$RELEASE_TAG"
+          npm stage publish "$PACKAGE_TARBALL" --access public --provenance --tag "$RELEASE_TAG"
+          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          The first release is staged on npm and awaits maintainer approval.
+          Sign in to npm as `tomanagle`, open **Staged Packages**, and approve
+          the `@tomanagle/harness-kit` version shown in this run using npm's
+          authentication prompt.
+          The staged version is not publicly installable until approved. Use the stage
+          ID or review link in this step's output; do not rerun this version.
+          After approval, configure the `publish-npm.yml` trusted publisher
+          with direct publishing enabled for subsequent releases.
+          SUMMARY

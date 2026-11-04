@@ -101,7 +101,7 @@ Each is an independent package; none is required by the others.
 - ✅ Canonical GitHub/Go identity, initial commits and tagged platform binaries.
 - ✅ npm publishing workflow with bootstrap token and GitHub OIDC support.
 - 🔜 First npm publish: `@tomanagle/harness-kit` uses the personal `@tomanagle` scope.
-  Publication is pending verification; see [Releases](releases.md).
+  Bootstrap stages the release for npm's required 2FA approval; see [Releases](releases.md).
 
 ## Identities and compatibility
 

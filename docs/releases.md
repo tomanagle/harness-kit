@@ -20,15 +20,26 @@ gh workflow run publish-npm.yml --repo tomanagle/harness-kit --ref main -f boots
 
 The workflow checks the package identity, runs the TypeScript and sidecar
 integration tests, builds the client, and installs and imports the packed tarball
-before publishing that same artifact. The token is exposed only to the bootstrap
-publish step.
+before staging that same artifact with `npm stage publish`. The token is exposed
+only to the bootstrap stage step. Staging defers npm's 2FA check to approval, so
+the workflow does not need a one-time password.
+
+Sign in to npm as `tomanagle`, open **Staged Packages**, review the version from
+the run, and click **Approve**. npm requires your 2FA authentication to make that
+version public. Alternatively, use `npm stage approve <stage-id>` from a signed-in
+local npm CLI; the workflow output contains the stage ID.
+
+For a new package, npm creates a public `0.0.0-stage` placeholder. The real staged
+version remains unavailable until approved. Do not rerun publishing for a staged
+version: it already reserves that version number. See
+[npm's staged publishing documentation](https://docs.npmjs.com/staged-publishing/).
 
 If npm rejects the first scoped publish with `E404`, check that the token belongs
 to the npm account `tomanagle` and can create public packages in its personal
 `@tomanagle` scope. The package uses that account's scope; no npm organization is
 required.
 Update the GitHub repository secret and rerun the bootstrap workflow; no source
-change or version bump is needed for a version that was never published.
+change or version bump is needed for a version that was never staged or published.
 
 ## Authorize npm trusted publishing
 
