@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -73,7 +74,13 @@ func TestBoundarySnapshotsIncludeStagedAndUntrackedWithoutChangingIndex(t *testi
 	gitCommand(t, repo, "add", "tracked.txt")
 	write(t, filepath.Join(repo, "tracked.txt"), "unstaged after\n")
 	write(t, filepath.Join(repo, "draft.txt"), "draft after\n")
-	write(t, filepath.Join(repo, "new file\nwith tab\t.txt"), "new content\n")
+	newFile := "new file.txt"
+	if runtime.GOOS != "windows" {
+		// Windows forbids control characters in filenames. Unix also exercises
+		// the NUL-delimited Git path handling with newlines and tabs.
+		newFile = "new file\nwith tab\t.txt"
+	}
+	write(t, filepath.Join(repo, newFile), "new content\n")
 	after, err := backend.Capture(ctx, binding, "turn", "after", policy)
 	if err != nil {
 		t.Fatal(err)
