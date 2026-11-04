@@ -128,6 +128,9 @@ Image inputs are sent as base64 only after the agent advertises image support.
 They are read from local paths; relative paths resolve against the session
 directory. Unsupported content types fail before prompting.
 
+ACP advertises `capabilities.usage: false` because it has no consumed-token
+counter; nonzero token budgets are rejected as unsupported.
+
 ACP `usage_update` reports **current context occupancy** and **cumulative session
 cost**, not billable input/output token totals. Harness Kit emits the context
 window and USD session cost in `usage`; it preserves native `used`, `size` and

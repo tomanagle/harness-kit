@@ -75,6 +75,7 @@ harness-kit sessions archive ses_...
 harness-kit sessions unarchive ses_...
 harness-kit sessions tags ses_... work review
 harness-kit sessions fork ses_... --title 'Alternative approach'
+harness-kit sessions fork ses_... --session-settings '{"budget":{"maxTurnTokens":20000}}'
 harness-kit prompt --resume ses_... --image ./screenshot.png 'Explain this screen'
 ```
 

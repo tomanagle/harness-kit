@@ -1,6 +1,6 @@
 # Releases
 
-The TypeScript client is published as [`@harness-kit/kit`](https://www.npmjs.com/package/@harness-kit/kit).
+The TypeScript client's npm package name is [`@harness-kit/kit`](https://www.npmjs.com/package/@harness-kit/kit).
 Its publishing workflow is [`.github/workflows/publish-npm.yml`](../.github/workflows/publish-npm.yml).
 The npm package contains the client and type declarations; install the Go sidecar separately.
 
@@ -21,6 +21,12 @@ The workflow checks the package identity, runs the TypeScript and sidecar
 integration tests, builds the client, and installs and imports the packed tarball
 before publishing that same artifact. The token is exposed only to the bootstrap
 publish step.
+
+If npm rejects the first scoped publish with `E404`, check that the `harness-kit`
+npm organization exists and that the token can create public packages in that
+organization. Creating the GitHub repository does not create the npm scope.
+Update the GitHub repository secret and rerun the bootstrap workflow; no source
+change or version bump is needed for a version that was never published.
 
 ## Authorize npm trusted publishing
 
@@ -51,10 +57,10 @@ cd packages/client-ts
 npm version patch --no-git-tag-version
 cd ../..
 git add packages/client-ts/package.json packages/client-ts/package-lock.json
-git commit -m "Release npm client 0.1.1"
+git commit -m "Release npm client 0.2.1"
 git push origin main
-git tag npm-v0.1.1
-git push origin npm-v0.1.1
+git tag npm-v0.2.1
+git push origin npm-v0.2.1
 ```
 
 The `npm-v` prefix keeps client releases independent from Go binary releases and
@@ -65,19 +71,19 @@ match `package.json`. Stable versions publish to `latest`; prereleases publish t
 
 ## Go binaries
 
-Pushing a semantic version tag such as `v0.1.0` triggers
+Pushing a semantic version tag such as `v0.2.0` triggers
 [`.github/workflows/release-binaries.yml`](../.github/workflows/release-binaries.yml).
 It runs Go tests and portability checks, then builds macOS, Linux and Windows
 binaries for amd64 and arm64. The GitHub release contains archives, the MIT
 license and README, plus `SHA256SUMS`. Prerelease tags create prereleases.
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 The Go module can also be installed at that version:
 
 ```sh
-go install github.com/tomanagle/harness-kit/cmd/harness-kit@v0.1.0
+go install github.com/tomanagle/harness-kit/cmd/harness-kit@v0.2.0
 ```

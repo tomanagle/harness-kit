@@ -34,11 +34,14 @@ func TestCLICatalogAndFork(t *testing.T) {
 			}
 			parent := list[0]
 			var child session.Info
-			if err := json.Unmarshal([]byte(call("sessions", "fork", result.SessionID, "--title", "Branch")), &child); err != nil {
+			if err := json.Unmarshal([]byte(call("sessions", "fork", result.SessionID, "--title", "Branch", "--session-settings", `{"budget":{"maxTurnTokens":123}}`)), &child); err != nil {
 				t.Fatal(err)
 			}
 			if child.RuntimeSessionID == parent.RuntimeSessionID || child.ForkedFrom != parent.ID || child.Archived || child.Title != "Branch" {
 				t.Fatal(child)
+			}
+			if child.Budget.MaxTurnTokens == nil || *child.Budget.MaxTurnTokens != 123 || parent.Budget.MaxTurnTokens != nil {
+				t.Fatalf("fork settings were not independent: child=%+v parent=%+v", child.Budget, parent.Budget)
 			}
 			call("sessions", "unarchive", result.SessionID)
 			if err := json.Unmarshal([]byte(call("sessions", "list", "--archived", "true")), &list); err != nil || len(list) != 0 {

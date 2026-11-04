@@ -174,6 +174,8 @@ dependencies.
 | `rpc/client` | Go client (e.g. a Wails backend talking to a sidecar) |
 | `runtimes/codex`, `runtimes/claude`, `runtimes/acp`, `runtimes/fake` | Adapters |
 | `model`, `contextwindow` | Portable raw inference contract and caller-owned context management |
+| `budget` | Observed token/cost accounting with durable checkpoints and explicit limits |
+| `workspace`, `workspace/git` | Portable workspace contract and optional native Git worktree/diff backend |
 | `providers/openai`, `providers/anthropic` | Separate modules using official provider SDKs |
 | `cmd/harness-kit` | The sidecar binary |
 | `packages/client-ts` | `@harness-kit/kit` (browser-safe) and `@harness-kit/kit/node` (stdio transport) |

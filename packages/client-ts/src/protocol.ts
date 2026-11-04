@@ -50,7 +50,8 @@ export type ErrorReason =
   | "restart_required"
   | "new_session_required"
   | "event_too_large"
-  | "fork_source_changed";
+  | "fork_source_changed"
+  | "budget_exceeded";
 
 export interface Capabilities {
   images?: boolean;
@@ -184,6 +185,10 @@ export interface ErrorInfo {
 export type SessionState = "starting" | "idle" | "running" | "closing" | "closed" | "failed" | "suspending" | "suspended";
 
 export interface SessionInfo {
+	workspace?: WorkspaceBinding;
+	workspaceSettings?: WorkspaceSettings;
+  budget?: BudgetLimits;
+  usage?: BudgetUsage;
   archived?: boolean;
   forkedFrom?: string;
   forkedAtSeq?: number;
@@ -216,6 +221,8 @@ export interface SessionInfo {
 
 /** Mutable session fields carried by session.updated; absent optional fields are cleared. */
 export interface SessionUpdatedData {
+  budget?: BudgetLimits;
+  usage?: BudgetUsage;
   archived?: boolean;
   metadata?: Record<string, string>;
   forkPending?: boolean;
@@ -283,6 +290,8 @@ export type ToolKind = "command" | "file_change" | "file_read" | "search" | "web
 export type ToolStatus = "completed" | "failed" | "declined";
 
 export interface UsageData {
+  mode?: "snapshot" | "delta";
+  tokensKnown?: boolean;
   scope: "turn" | "session";
   inputTokens?: number;
   outputTokens?: number;
@@ -296,6 +305,7 @@ export interface UsageData {
 }
 
 export interface TurnCompletedData {
+  budget?: BudgetExceeded;
   status: TurnStatus;
   error?: ErrorInfo;
   usage?: UsageData;
@@ -316,10 +326,11 @@ interface EventOf<T extends string, D> {
  * listed here (new types are added without a protocol version bump).
  */
 export type HarnessEvent =
+	| EventOf<"workspace.diff", WorkspaceDiff>
   | EventOf<"session.started", { runtime: string; runtimeSessionId?: string; resumed?: boolean; model?: string }>
   | EventOf<"session.updated", SessionUpdatedData>
   | EventOf<"session.closed", { reason?: string; error?: ErrorInfo }>
-  | EventOf<"turn.started", { text?: string; input?: InputPart[]; config?: TurnConfig }>
+  | EventOf<"turn.started", { text?: string; input?: InputPart[]; config?: TurnConfig; budget?: BudgetLimits; workspace?: WorkspaceSettings }>
   | EventOf<"turn.completed", TurnCompletedData>
   | EventOf<"message.delta", { itemId: string; text: string; parentCallId?: string }>
   | EventOf<"message.completed", { itemId: string; role: string; text: string; parentCallId?: string }>
@@ -331,6 +342,7 @@ export type HarnessEvent =
   | EventOf<"approval.requested", ApprovalRequest>
   | EventOf<"approval.resolved", { approvalId: string; decision: Decision; source: "host" | "policy" | "timeout" | "cancelled"; request?: ApprovalRequest }>
   | EventOf<"usage", UsageData>
+  | EventOf<"budget.exceeded", BudgetExceeded>
   | EventOf<"runtime.status", { status: string; message?: string; detail?: unknown }>
   | EventOf<"error", ErrorInfo>
   | EventOf<"runtime.raw", { runtime: string; kind: string; payload: unknown }>
@@ -342,7 +354,7 @@ export type EventData<T extends EventType> = Extract<HarnessEvent, { type: T }>[
 export interface InitializeResult {
   protocolVersion: number;
   serverInfo: { name: string; version: string };
-  capabilities: { runtimes: RuntimeInfo[]; allowUnsafe: boolean; eventLogSize: number; tools: boolean; settings?: boolean };
+  capabilities: { runtimes: RuntimeInfo[]; allowUnsafe: boolean; eventLogSize: number; tools: boolean; settings?: boolean; workspace?: boolean };
 }
 
 /** A tool registered by the client; its handler runs in the client. */
@@ -404,6 +416,8 @@ export interface CreateSessionParams {
 
 /** Settings shared by startup, host updates, session updates and turn input. */
 export interface SettingsValues {
+	workspace: WorkspaceSettings;
+  budget: BudgetLimits;
   process: {
     store: string;
     runtimes: string[];
@@ -411,6 +425,7 @@ export interface SettingsValues {
     acp?: Record<string, AcpRuntimeSettings>;
     codexPath: string;
     claudePath: string;
+    gitPath: string;
     fakeDelayMs: number;
     shutdownTimeoutMs: number;
     kitMcp: boolean;
@@ -455,6 +470,56 @@ export interface AcpRuntimeSettings {
   maxMessageBytes?: number;
   maxImageBytes?: number;
   maxRetainedOutputBytes?: number;
+}
+
+/** Location fields require a new session; capture policy applies next turn. */
+export interface WorkspaceSettings {
+  mode: "existing" | "worktree";
+  repo: string;
+  base: string;
+  path: string;
+  root: string;
+  captureDiff: boolean;
+  maxDiffBytes: number;
+  maxSnapshotBytes: number;
+  maxFiles: number;
+  timeoutMs: number;
+}
+export interface WorkspaceBinding {
+  kind: string;
+  sessionId: string;
+  repo: string;
+  path: string;
+  gitDir: string;
+  commonDir: string;
+  baseCommit?: string;
+  owned: boolean;
+}
+export interface WorkspaceSnapshot {
+  tree: string;
+  index: string;
+  head?: string;
+  capturedAt: string;
+  files: number;
+  bytes: number;
+}
+/** Observed before/after changes, including concurrent external edits. */
+export interface WorkspaceDiff {
+  sessionId: string;
+  turnId: string;
+  binding: WorkspaceBinding;
+  before?: WorkspaceSnapshot;
+  after?: WorkspaceSnapshot;
+  complete: boolean;
+  error?: string;
+  maxDiffBytes: number;
+  /** Includes nonignored untracked files. */
+  workingTree: string;
+  /** Separate changes to staged content. */
+  index: string;
+  truncated: boolean;
+  /** Invalid UTF-8 patch bytes were replaced for JSON display. */
+  encodingLossy?: boolean;
 }
 
 /** Omitted fields remain unchanged; null disables explicitly nullable limits. */
@@ -526,4 +591,25 @@ export interface ListSessionsOptions {
 export interface ForkSessionOptions {
  title?: string;
  settings?: SettingsPatch;
+}
+
+/** Null disables a limit; zero rejects further work. Limits are observed thresholds. */
+export interface BudgetLimits {
+  maxSessionTokens: number | null;
+  maxSessionCostUsd: number | null;
+  maxTurnTokens: number | null;
+  maxTurnCostUsd: number | null;
+}
+export interface BudgetUsage {
+  totalTokens: number;
+  /** Runtime estimate; omitted means unavailable. */
+  costUsd?: number;
+  tokensComplete: boolean;
+  costComplete: boolean;
+}
+export interface BudgetExceeded {
+  scope: "session" | "turn";
+  metric: "tokens" | "costUsd";
+  limit: number;
+  observed: number;
 }

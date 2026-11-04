@@ -31,7 +31,8 @@ func overrideServeFlags(flags *flag.FlagSet, values, flagValues settings.Values)
 	paths := map[string]string{
 		"store": "process.store", "runtimes": "process.runtimes", "fake-runtime": "process.runtimes",
 		"codex-path": "process.codexPath", "claude-path": "process.claudePath", "fake-delay": "process.fakeDelayMs",
-		"kit-mcp": "process.kitMcp", "allow-unsafe": "process.allowUnsafe", "log-level": "logging.level",
+		"git-path": "process.gitPath",
+		"kit-mcp":  "process.kitMcp", "allow-unsafe": "process.allowUnsafe", "log-level": "logging.level",
 		"approval-timeout": "approvals.timeoutMs", "event-log-size": "memory.eventLogSize", "event-buffer": "streams.maxQueueEvents",
 	}
 	raw, err := json.Marshal(flagValues)

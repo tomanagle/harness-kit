@@ -623,3 +623,46 @@ and `memory.pinned`. New fields are `forkedFrom`, `forkedAtSeq`, `inheritedTurns
 `forkDeferred`. Claude forks remain pending until the first actual prompt; an
 advanced source fails with `-32018 fork_source_changed` instead of silently
 branching newer native history. See [session semantics](sessions.md).
+
+### Usage budgets
+
+The shared `budget` settings group has nullable `maxSessionTokens`,
+`maxSessionCostUsd`, `maxTurnTokens`, and `maxTurnCostUsd`. Global scope supplies
+new-session defaults; session scope changes limits live; turn scope accepts only
+the two turn limits. Null means unlimited and zero denies new work. See
+[usage accounting and limitations](budgets.md).
+
+`session.prompt` returns `-32019 budget_exceeded` when admission is exhausted.
+During a turn, `budget.exceeded` carries `{scope, metric, limit, observed}` and
+requests cancellation. The same object appears as optional `budget` in the final
+`turn.completed` result. Usage observed after inference does not turn already
+completed work into cancelled work. Session snapshots include `budget` policy and
+`usage` totals with `totalTokens`, optional estimated `costUsd`, `tokensComplete`
+and `costComplete`.
+
+`usage.mode` defaults to `snapshot`; `delta` explicitly means an increment.
+`usage.tokensKnown` can distinguish a measured zero from unknown usage. Native
+context occupancy and context-window sizes never count toward token budgets.
+
+### Workspaces and turn diffs
+
+The shared workspace settings group controls opt-in worktree creation and turn
+capture. Global values are defaults for new sessions; scoped capture limits
+apply next turn, and location changes require a new session. Initialization
+advertises capabilities.workspace when the host supplies a native backend.
+
+session.diff accepts {sessionId, turnId, maxBytes?} and returns the bounded saved
+workingTree and index patches, before/after snapshot metadata, complete, error,
+truncated and encodingLossy. These are differences between turn boundaries,
+including nonignored untracked files and concurrent external edits. They are
+not a cumulative diff against HEAD or proof of agent authorship.
+
+workspace.diff events carry the same saved result before turn.completed;
+turn.started.workspace records the accepted capture policy. Missing captures
+return reason turn_diff_not_found. Saving patches in the transcript allows
+retrieval without a live runtime, workspace or Git installation.
+
+workspace.remove accepts {sessionId}. It requires a closed/suspended runtime,
+verified ownership and a clean worktree, including ignored files, and refuses
+advanced detached HEADs. Session deletion never removes workspace files.
+See [workspace settings, boundaries and cleanup](workspaces.md).

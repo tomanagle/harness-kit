@@ -17,10 +17,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/tomanagle/harness-kit/agent"
+	"github.com/tomanagle/harness-kit/budget"
 	"github.com/tomanagle/harness-kit/event"
 	"github.com/tomanagle/harness-kit/mcp"
 	"github.com/tomanagle/harness-kit/permission"
 	"github.com/tomanagle/harness-kit/settings"
+	"github.com/tomanagle/harness-kit/workspace"
 )
 
 // Errors returned by the Manager. They can be matched with errors.Is.
@@ -40,6 +42,9 @@ const MaxTitleLength = 200
 
 // Options configure a Manager. The zero value is usable.
 type Options struct {
+	// Workspace supplies optional native worktrees and turn snapshot support.
+	// Nil leaves the portable manager usable without Git/process dependencies.
+	Workspace workspace.Backend
 	// LogLevel controls the host logger's live level. Supply the same LevelVar
 	// used by the logger handler to enable logging.level updates.
 	LogLevel *slog.LevelVar
@@ -189,11 +194,13 @@ func (m *Manager) Registry() *agent.Registry { return m.reg }
 
 // CreateParams configure a new session.
 type CreateParams struct {
+	workspace workspace.Settings
 	// Settings uses the unified settings envelope: session values and
 	// memory.pinned may be supplied at creation. Global resource policies
 	// belong to ConfigureSettings.
 	Settings settings.Patch
 	pinned   bool
+	budget   budget.Limits
 	Runtime  string
 	Config   agent.SessionConfig
 	Metadata map[string]string
@@ -244,14 +251,16 @@ func (m *Manager) Create(ctx context.Context, p CreateParams) (Info, error) {
 	}
 	now := time.Now().UTC()
 	return m.start(ctx, Info{
-		ID:        NewID("ses_"),
-		Pinned:    p.pinned,
-		Runtime:   p.Runtime,
-		Cwd:       p.Config.Cwd,
-		Model:     p.Config.Model,
-		Metadata:  maps.Clone(p.Metadata),
-		Title:     name,
-		CreatedAt: now,
+		WorkspaceSettings: p.workspace,
+		ID:                NewID("ses_"),
+		Budget:            p.budget.Clone(),
+		Pinned:            p.pinned,
+		Runtime:           p.Runtime,
+		Cwd:               p.Config.Cwd,
+		Model:             p.Config.Model,
+		Metadata:          maps.Clone(p.Metadata),
+		Title:             name,
+		CreatedAt:         now,
 	}, p.Config, warnings...)
 }
 
@@ -384,8 +393,15 @@ func (m *Manager) newManaged(ctx context.Context, info Info, cfg agent.SessionCo
 	if err != nil {
 		return nil, err
 	}
+	ledger := budget.New(cfg.ResumeID != "")
+	initialBudget := info.Budget.Clone()
+	initialWorkspace := workspacePolicy(info.WorkspaceSettings)
+	var accountingAfter uint64
 	_, hasLookup := m.store.(TurnLookup)
 	visit := func(ev event.Event) error {
+		if ev.Seq > accountingAfter {
+			replayBudgetEvent(&ledger, ev)
+		}
 		log.Restore(ev)
 		if !hasLookup && ev.TurnID != "" {
 			turnIDs[ev.TurnID] = struct{}{}
@@ -396,6 +412,16 @@ func (m *Manager) newManaged(ctx context.Context, info Info, cfg agent.SessionCo
 		rec, err := m.store.Get(ctx, info.ID)
 		if err != nil {
 			return nil, err
+		}
+		if rec.Accounting != nil {
+			ledger = *rec.Accounting
+			accountingAfter = rec.Info.LastSeq
+		}
+		if rec.InitialBudget != nil {
+			initialBudget = rec.InitialBudget.Clone()
+		}
+		if rec.InitialWorkspace != nil {
+			initialWorkspace = *rec.InitialWorkspace
 		}
 		if rec.InitialConfig != nil {
 			initial, err = rec.InitialConfig.Clone()
@@ -457,7 +483,9 @@ func (m *Manager) newManaged(ctx context.Context, info Info, cfg agent.SessionCo
 	}
 	info.Config = &selection
 	info.Model = selection.Model
-	return &managed{m: m, cfg: cfg, initialCfg: initial, info: info, turnIDs: turnIDs, log: log, lastAccess: time.Now()}, nil
+	ledger.Interrupt()
+	info.Usage = ledger.Usage()
+	return &managed{m: m, cfg: cfg, initialCfg: initial, initialWorkspace: initialWorkspace, initialBudget: initialBudget, accounting: ledger, info: info, turnIDs: turnIDs, log: log, lastAccess: time.Now()}, nil
 }
 
 // Warnings returns the warning messages recorded for a session (from
@@ -478,7 +506,7 @@ func (m *Manager) Warnings(sessionID string) []string {
 }
 
 // start registers a session, starts its runtime and announces it.
-func (m *Manager) start(ctx context.Context, info Info, cfg agent.SessionConfig, warnings ...string) (Info, error) {
+func (m *Manager) start(ctx context.Context, info Info, cfg agent.SessionConfig, warnings ...string) (result Info, startErr error) {
 	rt, ok := m.reg.Get(info.Runtime)
 	if !ok {
 		return Info{}, fmt.Errorf("%w: %q", ErrRuntimeNotFound, info.Runtime)
@@ -495,6 +523,23 @@ func (m *Manager) start(ctx context.Context, info Info, cfg agent.SessionConfig,
 		if err := cfg.MCP.Validate(); err != nil {
 			return Info{}, err
 		}
+	}
+	if err := validateBudgetPolicy(rt, info.Budget); err != nil {
+		return Info{}, err
+	}
+	if err := m.validateConfig(ctx, rt, info.ID, op, cfg); err != nil {
+		return Info{}, err
+	}
+	newWorkspace := info.Workspace == nil
+	if err := m.prepareWorkspace(ctx, &info, &cfg); err != nil {
+		return Info{}, err
+	}
+	if newWorkspace && info.Workspace != nil && info.Workspace.Owned {
+		defer func() {
+			if startErr != nil {
+				result, startErr = m.retainFailedWorkspace(info, cfg, startErr)
+			}
+		}()
 	}
 	if err := m.validateConfig(ctx, rt, info.ID, op, cfg); err != nil {
 		return Info{}, err
@@ -687,8 +732,21 @@ func dormantInfo(info Info) Info {
 // storedInfo reconciles updates synced just before a process stopped, before
 // the corresponding record replacement. Old snapshots never override newer records.
 func (m *Manager) storedInfo(ctx context.Context, info Info) (Info, error) {
+	rec, err := m.store.Get(ctx, info.ID)
+	if err != nil {
+		return Info{}, err
+	}
+	ledger := budget.New(rec.Config.ResumeID != "")
+	var ledgerAfter uint64
+	if rec.Accounting != nil {
+		ledger = *rec.Accounting
+		ledgerAfter = rec.Info.LastSeq
+	}
 	after := info.LastSeq
 	apply := func(ev event.Event) error {
+		if ev.Seq > ledgerAfter {
+			replayBudgetEvent(&ledger, ev)
+		}
 		if ev.Seq <= after {
 			return nil
 		}
@@ -696,6 +754,12 @@ func (m *Manager) storedInfo(ctx context.Context, info Info) (Info, error) {
 			info.Title, info.State, info.ActiveTurnID = d.Title, State(d.State), d.ActiveTurnID
 			info.RuntimeSessionID, info.Turns, info.LastStatus = d.RuntimeSessionID, d.Turns, d.LastStatus
 			info.UpdatedAt, info.Error, info.Pinned = d.UpdatedAt, d.Error, d.Pinned
+			if d.Budget != nil {
+				info.Budget = d.Budget.Clone()
+			}
+			if d.Usage != nil {
+				info.Usage = d.Usage.Clone()
+			}
 			info.Archived, info.ForkPending, info.Metadata = d.Archived, d.ForkPending, maps.Clone(d.Metadata)
 			if d.SettingsRevision > 0 {
 				info.SettingsRevision = max(info.SettingsRevision, d.SettingsRevision)
@@ -714,7 +778,7 @@ func (m *Manager) storedInfo(ctx context.Context, info Info) (Info, error) {
 			return Info{}, err
 		}
 	} else if store, ok := m.store.(EventStore); ok {
-		cursor := after
+		cursor := min(after, ledgerAfter)
 		for {
 			evs, _, err := store.Events(ctx, info.ID, cursor, 128)
 			if err != nil {
@@ -733,6 +797,8 @@ func (m *Manager) storedInfo(ctx context.Context, info Info) (Info, error) {
 			cursor = next
 		}
 	}
+	ledger.Interrupt()
+	info.Usage = ledger.Usage()
 	return dormantInfo(info), nil
 }
 
@@ -769,12 +835,15 @@ type PromptParams struct {
 
 // Turn is a handle on a running turn.
 type Turn struct {
+	workspace workspace.Settings
 	ID        string
 	SessionID string
 
-	cancel context.CancelFunc
-	done   chan struct{}
-	result agent.TurnResult
+	cancel     context.CancelFunc
+	done       chan struct{}
+	result     agent.TurnResult
+	budget     turnBudget
+	budgetStop *budget.Exceeded
 }
 
 // Done is closed when the turn has finished and turn.completed was emitted.
@@ -840,6 +909,14 @@ func (m *Manager) Prompt(requestCtx context.Context, sessionID string, p PromptP
 		return nil, ErrBusy
 	}
 	ms.mu.Unlock()
+	budgetSelection, budgetPolicy, err := ms.prepareBudget(p.Settings)
+	if err != nil {
+		return nil, err
+	}
+	workspaceSettings, err := ms.turnWorkspace(p.Settings)
+	if err != nil {
+		return nil, err
+	}
 	settings, err := ms.prepareTurn(requestCtx, p.Config)
 	if err != nil {
 		return nil, err
@@ -869,8 +946,9 @@ func (m *Manager) Prompt(requestCtx context.Context, sessionID string, p PromptP
 	// are checked on disk rather than retained for the lifetime of the process.
 	ms.turnIDs[turnID] = struct{}{}
 	ctx, cancel := context.WithCancel(m.baseCtx)
-	t := &Turn{ID: turnID, SessionID: sessionID, cancel: cancel, done: make(chan struct{})}
+	t := &Turn{ID: turnID, SessionID: sessionID, cancel: cancel, done: make(chan struct{}), budget: budgetSelection, workspace: workspaceSettings}
 	ms.turn = t
+	ms.accounting.Begin()
 	ms.info.State = StateRunning
 	ms.info.ActiveTurnID = turnID
 	ms.info.Turns++
@@ -881,7 +959,7 @@ func (m *Manager) Prompt(requestCtx context.Context, sessionID string, p PromptP
 	ms.mu.Unlock()
 
 	snapshot := settings.Clone()
-	ms.emitLocked(event.Event{Type: event.TurnStarted, TurnID: turnID, Data: event.TurnStartedData{Text: agent.JoinText(input), Input: slices.Clone(input), Config: &snapshot}})
+	ms.emitLocked(event.Event{Type: event.TurnStarted, TurnID: turnID, Data: event.TurnStartedData{Workspace: &workspaceSettings, Budget: &budgetPolicy, Text: agent.JoinText(input), Input: slices.Clone(input), Config: &snapshot}})
 	ms.updatedLocked(turnID)
 	ms.persist()
 	m.turns.Add(1)
@@ -1167,11 +1245,14 @@ func title(prompt string) string {
 
 // managed is one session held by the Manager. It implements agent.Handler.
 type managed struct {
-	m          *Manager
-	rt         agent.Runtime
-	cfg        agent.SessionConfig
-	initialCfg agent.SessionConfig
-	log        *event.Log
+	m                *Manager
+	rt               agent.Runtime
+	cfg              agent.SessionConfig
+	initialCfg       agent.SessionConfig
+	initialBudget    budget.Limits
+	initialWorkspace workspace.Settings
+	accounting       budget.Ledger
+	log              *event.Log
 
 	// emitMu serialises Append+Publish so subscribers observe events in
 	// sequence order. Lock order: emitMu before mu.
@@ -1217,6 +1298,12 @@ func (ms *managed) snapshot() Info {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	info := ms.info
+	if info.Workspace != nil {
+		v := *info.Workspace
+		info.Workspace = &v
+	}
+	info.Budget = info.Budget.Clone()
+	info.Usage = info.Usage.Clone()
 	info.Metadata = maps.Clone(info.Metadata)
 	if info.Config != nil {
 		selection := info.Config.Clone()
@@ -1253,6 +1340,8 @@ func (ms *managed) persist() error {
 	cfg, cloneErr := ms.cfg.Clone()
 	initial, initialErr := ms.initialCfg.Clone()
 	sess := ms.sess
+	ledger := ms.accounting
+	initialBudget := ms.initialBudget.Clone()
 	ms.mu.Unlock()
 	if err := errors.Join(cloneErr, initialErr); err != nil {
 		return err
@@ -1262,7 +1351,8 @@ func (ms *managed) persist() error {
 		selection := provider.NativeDefaults().Clone()
 		defaults = &selection
 	}
-	rec := Record{Info: ms.snapshot(), Config: cfg, InitialConfig: &initial, NativeDefaults: defaults, ForkSourceRuntimeID: cfg.ForkFrom}
+	initialWorkspace := ms.initialWorkspace
+	rec := Record{Accounting: &ledger, InitialBudget: &initialBudget, InitialWorkspace: &initialWorkspace, Info: ms.snapshot(), Config: cfg, InitialConfig: &initial, NativeDefaults: defaults, ForkSourceRuntimeID: cfg.ForkFrom}
 	err := ms.m.store.Put(context.Background(), rec)
 	ms.mu.Lock()
 	ms.recordWriteFailed = err != nil
@@ -1277,7 +1367,7 @@ func (ms *managed) persist() error {
 func (ms *managed) updatedLocked(turnID string) {
 	info := ms.snapshot()
 	ms.emitLocked(event.Event{Type: event.SessionUpdated, TurnID: turnID, Data: event.SessionUpdatedData{
-		Archived: info.Archived, Metadata: maps.Clone(info.Metadata), ForkPending: info.ForkPending,
+		Budget: &info.Budget, Usage: &info.Usage, Archived: info.Archived, Metadata: maps.Clone(info.Metadata), ForkPending: info.ForkPending,
 		Config: info.Config, SettingsRevision: info.SettingsRevision, Pinned: info.Pinned, Title: info.Title, State: string(info.State), ActiveTurnID: info.ActiveTurnID,
 		RuntimeSessionID: info.RuntimeSessionID, Turns: info.Turns,
 		LastStatus: info.LastStatus, UpdatedAt: info.UpdatedAt, Error: info.Error,
@@ -1293,7 +1383,13 @@ func (ms *managed) Emit(ev event.Event) {
 		}
 		ms.mu.Unlock()
 	}
-	ms.emit(ev)
+	ms.emitMu.Lock()
+	ms.emitLocked(ev)
+	if u, ok := ev.Data.(event.UsageData); ok {
+		ms.observeUsageLocked(u, false)
+		_ = ms.persist()
+	}
+	ms.emitMu.Unlock()
 }
 
 func (ms *managed) emit(ev event.Event) {
@@ -1374,7 +1470,9 @@ func (ms *managed) runTurn(ctx context.Context, t *Turn, input agent.Turn) {
 	defer ms.m.turns.Done()
 	defer t.cancel()
 
+	workspaceChange := ms.captureWorkspace(ctx, t)
 	res, err := ms.sess.Prompt(ctx, input)
+	ms.completeWorkspace(t, workspaceChange)
 	dead := errors.Is(err, agent.ErrSessionDead)
 	switch {
 	case err != nil && ctx.Err() != nil && !dead:
@@ -1389,10 +1487,15 @@ func (ms *managed) runTurn(ctx context.Context, t *Turn, input agent.Turn) {
 	case res.Status == "":
 		res.Status = event.TurnStatusCompleted
 	}
-	t.result = res
-
 	ms.emitMu.Lock()
+	if res.Usage != nil {
+		ms.observeUsageLocked(*res.Usage, true)
+	}
 	ms.mu.Lock()
+	res.Budget = t.budgetStop
+	t.result = res
+	ms.accounting.End()
+	ms.info.Usage = ms.accounting.Usage()
 	ms.turn = nil
 	ms.info.ActiveTurnID = ""
 	ms.info.UpdatedAt = time.Now().UTC()
@@ -1415,6 +1518,7 @@ func (ms *managed) runTurn(ctx context.Context, t *Turn, input agent.Turn) {
 	ms.updatedLocked(t.ID)
 	ms.emitLocked(event.Event{Type: event.TurnCompleted, TurnID: t.ID, Data: event.TurnCompletedData{
 		Status:        res.Status,
+		Budget:        res.Budget,
 		Error:         res.Error,
 		Usage:         res.Usage,
 		RuntimeTurnID: res.RuntimeTurnID,

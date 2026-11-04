@@ -17,12 +17,16 @@ import (
 	"time"
 
 	"github.com/tomanagle/harness-kit/agent"
+	"github.com/tomanagle/harness-kit/budget"
 	"github.com/tomanagle/harness-kit/event"
 	"github.com/tomanagle/harness-kit/permission"
 	"github.com/tomanagle/harness-kit/rpc/client"
 	"github.com/tomanagle/harness-kit/rpc/protocol"
 	"github.com/tomanagle/harness-kit/session"
+	"github.com/tomanagle/harness-kit/settings"
 	"github.com/tomanagle/harness-kit/toolhost"
+	"github.com/tomanagle/harness-kit/workspace"
+	gitworkspace "github.com/tomanagle/harness-kit/workspace/git"
 )
 
 // exitCode is returned by commands that want a specific process exit code.
@@ -38,12 +42,14 @@ type backend interface {
 	Discover(ctx context.Context, names []string) ([]agent.Discovery, error)
 	Create(ctx context.Context, p protocol.SessionCreateParams) (session.Info, error)
 	Get(ctx context.Context, sessionID string) (session.Info, error)
-	Prompt(ctx context.Context, sessionID, turnID string, input []agent.InputPart, cfg *agent.ConfigPatch) error
+	Prompt(ctx context.Context, sessionID, turnID string, input []agent.InputPart, cfg *agent.ConfigPatch, selection settings.Patch) error
 	Cancel(ctx context.Context, sessionID string) error
 	Respond(ctx context.Context, approvalID string, d permission.Decision) error
 	Events(ctx context.Context, sessionID string, afterSeq uint64) ([]event.Event, error)
 	List(ctx context.Context) ([]session.Info, error)
 	Query(ctx context.Context, options session.ListOptions) ([]session.Info, error)
+	Diff(ctx context.Context, sessionID, turnID string, options workspace.DiffOptions) (workspace.Diff, error)
+	RemoveWorkspace(ctx context.Context, sessionID string) error
 	Fork(ctx context.Context, id string, p session.ForkParams) (session.Info, error)
 	Archive(ctx context.Context, id string, archived bool) (session.Info, error)
 	SetTags(ctx context.Context, id string, tags []string) (session.Info, error)
@@ -51,6 +57,8 @@ type backend interface {
 	Delete(ctx context.Context, sessionID string) error
 	Rename(ctx context.Context, sessionID, title string) (session.Info, error)
 	Configure(ctx context.Context, sessionID string, cfg agent.ConfigPatch) (session.Info, error)
+	Settings(context.Context, settings.Target) (settings.Snapshot, error)
+	ConfigureSettings(context.Context, settings.ConfigureParams) (settings.Snapshot, error)
 	RuntimeSessions(ctx context.Context, runtime string, opts agent.ListSessionsOptions) ([]agent.RuntimeSession, error)
 	// Stream delivers every event, from creation of the backend onwards.
 	Stream() <-chan event.Event
@@ -118,7 +126,7 @@ func newDirectBackend(bf *backendFlags) (*directBackend, error) {
 	// The CLI registers no host tools of its own, but the tool host still
 	// bridges Claude Code's permission prompts to the terminal.
 	host := toolhost.New(toolhost.Options{Version: buildVersion()})
-	opts := session.Options{AllowUnsafe: bf.allowUnsafe, Store: store, ToolServer: host}
+	opts := session.Options{AllowUnsafe: bf.allowUnsafe, Store: store, ToolServer: host, Workspace: gitworkspace.New(bf.gitPath)}
 	if !bf.noKitMCP {
 		r, err := kitResolver()
 		if err != nil {
@@ -130,6 +138,12 @@ func newDirectBackend(bf *backendFlags) (*directBackend, error) {
 	return &directBackend{mgr: mgr, sub: mgr.Subscribe(nil, 0), host: host}, nil
 }
 
+func (d *directBackend) Settings(ctx context.Context, target settings.Target) (settings.Snapshot, error) {
+	return d.mgr.Settings(ctx, target)
+}
+func (d *directBackend) ConfigureSettings(ctx context.Context, p settings.ConfigureParams) (settings.Snapshot, error) {
+	return d.mgr.ConfigureSettings(ctx, p)
+}
 func (d *directBackend) Runtimes(context.Context) ([]agent.Info, error) {
 	return d.mgr.Registry().List(), nil
 }
@@ -142,7 +156,8 @@ func (d *directBackend) Create(ctx context.Context, p protocol.SessionCreatePara
 		opts = p.Options
 	}
 	return d.mgr.Create(ctx, session.CreateParams{
-		Runtime: p.Runtime,
+		Settings: p.Settings,
+		Runtime:  p.Runtime,
 		Config: agent.SessionConfig{
 			Cwd: p.Cwd, Model: p.Model, Effort: p.Effort, ResumeID: p.ResumeID, Instructions: p.Instructions,
 			RawEvents: p.RawEvents, Options: opts, MCP: p.MCP,
@@ -155,8 +170,8 @@ func (d *directBackend) Create(ctx context.Context, p protocol.SessionCreatePara
 func (d *directBackend) Get(ctx context.Context, id string) (session.Info, error) {
 	return d.mgr.Get(ctx, id)
 }
-func (d *directBackend) Prompt(ctx context.Context, sid, turnID string, input []agent.InputPart, cfg *agent.ConfigPatch) error {
-	_, err := d.mgr.Prompt(ctx, sid, session.PromptParams{TurnID: turnID, Input: input, Config: cfg})
+func (d *directBackend) Prompt(ctx context.Context, sid, turnID string, input []agent.InputPart, cfg *agent.ConfigPatch, selection settings.Patch) error {
+	_, err := d.mgr.Prompt(ctx, sid, session.PromptParams{TurnID: turnID, Input: input, Config: cfg, Settings: selection})
 	return err
 }
 func (d *directBackend) Cancel(_ context.Context, sid string) error { return d.mgr.Cancel(sid) }
@@ -184,6 +199,12 @@ func (d *directBackend) Restore(ctx context.Context, id string) (session.Info, e
 	return d.mgr.Restore(ctx, id)
 }
 func (d *directBackend) Delete(ctx context.Context, id string) error { return d.mgr.Delete(ctx, id) }
+func (d *directBackend) Diff(ctx context.Context, id, turnID string, options workspace.DiffOptions) (workspace.Diff, error) {
+	return d.mgr.TurnDiff(ctx, id, turnID, options)
+}
+func (d *directBackend) RemoveWorkspace(ctx context.Context, id string) error {
+	return d.mgr.RemoveWorkspace(ctx, id)
+}
 func (d *directBackend) Rename(ctx context.Context, id, title string) (session.Info, error) {
 	return d.mgr.Rename(ctx, id, title)
 }
@@ -224,6 +245,9 @@ func newRPCBackend(ctx context.Context, bf *backendFlags) (*rpcBackend, error) {
 	if bf.claudePath != "" {
 		args = append(args, "--claude-path", bf.claudePath)
 	}
+	if bf.gitPath != "" {
+		args = append(args, "--git-path", bf.gitPath)
+	}
 	if bf.allowUnsafe {
 		args = append(args, "--allow-unsafe")
 	}
@@ -245,9 +269,22 @@ func newRPCBackend(ctx context.Context, bf *backendFlags) (*rpcBackend, error) {
 	return b, nil
 }
 
+func (r *rpcBackend) Settings(ctx context.Context, target settings.Target) (settings.Snapshot, error) {
+	return r.c.Settings(ctx, target)
+}
+func (r *rpcBackend) ConfigureSettings(ctx context.Context, p settings.ConfigureParams) (settings.Snapshot, error) {
+	return r.c.ConfigureSettings(ctx, p)
+}
 func (r *rpcBackend) Runtimes(ctx context.Context) ([]agent.Info, error) {
 	res, err := r.c.Runtimes(ctx)
 	return res.Runtimes, err
+}
+
+func (r *rpcBackend) Diff(ctx context.Context, id, turnID string, options workspace.DiffOptions) (workspace.Diff, error) {
+	return r.c.TurnDiff(ctx, protocol.SessionDiffParams{SessionID: id, TurnID: turnID, DiffOptions: options})
+}
+func (r *rpcBackend) RemoveWorkspace(ctx context.Context, id string) error {
+	return r.c.RemoveWorkspace(ctx, id)
 }
 func (r *rpcBackend) Discover(ctx context.Context, names []string) ([]agent.Discovery, error) {
 	res, err := r.c.Discover(ctx, names...)
@@ -259,8 +296,8 @@ func (r *rpcBackend) Create(ctx context.Context, p protocol.SessionCreateParams)
 func (r *rpcBackend) Get(ctx context.Context, id string) (session.Info, error) {
 	return r.c.GetSession(ctx, id)
 }
-func (r *rpcBackend) Prompt(ctx context.Context, sid, turnID string, input []agent.InputPart, cfg *agent.ConfigPatch) error {
-	_, err := r.c.Prompt(ctx, protocol.SessionPromptParams{SessionID: sid, TurnID: turnID, Input: input, Config: cfg})
+func (r *rpcBackend) Prompt(ctx context.Context, sid, turnID string, input []agent.InputPart, cfg *agent.ConfigPatch, selection settings.Patch) error {
+	_, err := r.c.Prompt(ctx, protocol.SessionPromptParams{SessionID: sid, TurnID: turnID, Input: input, Config: cfg, Settings: selection})
 	return err
 }
 func (r *rpcBackend) Cancel(ctx context.Context, sid string) error { return r.c.Cancel(ctx, sid) }
@@ -463,26 +500,32 @@ func dash(s string) string {
 
 type sessionFlags struct {
 	backendFlags
-	runtime      string
-	cwd          string
-	model        string
-	effort       string
-	turnConfig   string
-	turnPatch    *agent.ConfigPatch
-	resume       string
-	instructions string
-	title        string
-	options      string
-	approve      string
-	out          outputFlags
-	raw          bool
-	mcpFile      string
-	noNativeMCP  bool
-	images       []string
+	runtime            string
+	cwd                string
+	model              string
+	effort             string
+	turnConfig         string
+	sessionSettingsRaw string
+	turnSettingsRaw    string
+	sessionSettings    settings.Patch
+	turnSettings       settings.Patch
+	turnPatch          *agent.ConfigPatch
+	resume             string
+	instructions       string
+	title              string
+	options            string
+	approve            string
+	out                outputFlags
+	raw                bool
+	mcpFile            string
+	noNativeMCP        bool
+	images             []string
 }
 
 func (sf *sessionFlags) register(fs *flag.FlagSet) {
 	sf.backendFlags.register(fs)
+	fs.StringVar(&sf.sessionSettingsRaw, "session-settings", "", "shared settings JSON for creation or a restored session")
+	fs.StringVar(&sf.turnSettingsRaw, "turn-settings", "", "shared settings JSON for this turn")
 	fs.Func("image", "attach a local image to the first prompt (repeat for multiple images)", func(path string) error {
 		absolute, err := filepath.Abs(path)
 		if err != nil {
@@ -538,6 +581,19 @@ func (sf *sessionFlags) prepare(fs *flag.FlagSet) error {
 	if sf.options != "" && !json.Valid([]byte(sf.options)) {
 		return fmt.Errorf("--options is not valid JSON")
 	}
+	if sf.turnSettingsRaw != "" && sf.turnConfig != "" {
+		return errors.New("--turn-settings and --turn-config cannot both be supplied")
+	}
+	for _, item := range []struct {
+		raw    string
+		target *settings.Patch
+	}{{sf.sessionSettingsRaw, &sf.sessionSettings}, {sf.turnSettingsRaw, &sf.turnSettings}} {
+		if item.raw != "" {
+			if err := json.Unmarshal([]byte(item.raw), item.target); err != nil {
+				return err
+			}
+		}
+	}
 	if sf.turnConfig != "" {
 		patch, err := parseConfigPatch(sf.turnConfig)
 		if err != nil {
@@ -559,8 +615,9 @@ func (sf *sessionFlags) createParams() (protocol.SessionCreateParams, error) {
 		return protocol.SessionCreateParams{}, err
 	}
 	p := protocol.SessionCreateParams{
-		MCP:     extra,
-		Runtime: sf.runtime, Cwd: sf.cwd, Model: sf.model, Effort: sf.effort, ResumeID: sf.resume,
+		Settings: sf.sessionSettings,
+		MCP:      extra,
+		Runtime:  sf.runtime, Cwd: sf.cwd, Model: sf.model, Effort: sf.effort, ResumeID: sf.resume,
 		Instructions: sf.instructions, RawEvents: sf.raw, Title: sf.title,
 		Metadata: map[string]string{"client": "harness-kit-cli"},
 	}
@@ -598,6 +655,7 @@ func (c *console) next(cancel <-chan struct{}) (string, bool) {
 
 // turnResult is the --output json object.
 type turnResult struct {
+	Budget           *budget.Exceeded `json:"budget,omitempty"`
 	SessionID        string           `json:"sessionId"`
 	Runtime          string           `json:"runtime"`
 	RuntimeSessionID string           `json:"runtimeSessionId,omitempty"`
@@ -661,7 +719,7 @@ func (r *turnRunner) run(input []agent.InputPart) (turnResult, error) {
 	start := time.Now()
 	turnID := session.NewID("turn_")
 	res := turnResult{SessionID: r.info.ID, Runtime: r.info.Runtime, TurnID: turnID}
-	if err := r.b.Prompt(ctx, r.info.ID, turnID, input, r.sf.turnPatch); err != nil {
+	if err := r.b.Prompt(ctx, r.info.ID, turnID, input, r.sf.turnPatch, r.sf.turnSettings); err != nil {
 		return res, err
 	}
 	var reply replyText
@@ -716,7 +774,7 @@ func (r *turnRunner) run(input []agent.InputPart) (turnResult, error) {
 				case permission.Request:
 					r.answer(d, done)
 				case event.TurnCompletedData:
-					res.Status, res.Usage, res.Error = d.Status, d.Usage, d.Error
+					res.Status, res.Usage, res.Error, res.Budget = d.Status, d.Usage, d.Error, d.Budget
 					res.Text = reply.String()
 					res.DurationMs = time.Since(start).Milliseconds()
 					res.RuntimeSessionID = r.info.RuntimeSessionID
@@ -849,6 +907,12 @@ func startSession(args []string, name string) (*turnRunner, []string, error) {
 		info, err = b.Restore(ctx, sf.resume)
 		if errors.Is(err, session.ErrNotFound) || isReason(err, protocol.ReasonSessionNotFound) {
 			err = fmt.Errorf("no session %s in %s (see harness-kit sessions)", sf.resume, sf.store)
+		}
+		if err == nil && sf.sessionSettings != nil {
+			_, err = b.ConfigureSettings(ctx, settings.ConfigureParams{Target: settings.Target{SessionID: info.ID}, Patch: sf.sessionSettings})
+			if err == nil {
+				info, err = b.Get(ctx, info.ID)
+			}
 		}
 		if err == nil && sf.title != "" {
 			info, err = b.Rename(ctx, info.ID, sf.title)
@@ -1060,12 +1124,23 @@ func sessionsCmd(args []string) error {
 	tags := fs.String("tags", "", "comma-separated tags that must all match")
 	archived := fs.String("archived", "all", "archive filter: all, true, false")
 	forkTitle := fs.String("title", "", "title for the fork (defaults to parent title)")
+	forkSettingsRaw := fs.String("session-settings", "", "shared settings JSON for the fork, including workspace and budget overrides")
+	diffBytes := fs.Int64("max-bytes", 0, "maximum bytes returned by sessions diff (0 keeps the recorded limit)")
 	pos, err := parseArgs(fs, args)
 	if err != nil {
 		return err
 	}
 	if err := out.resolve("text", "json"); err != nil {
 		return err
+	}
+	var forkSettings settings.Patch
+	if *forkSettingsRaw != "" {
+		if sub != "fork" {
+			return errors.New("--session-settings is only valid with sessions fork")
+		}
+		if err := json.Unmarshal([]byte(*forkSettingsRaw), &forkSettings); err != nil {
+			return fmt.Errorf("--session-settings: %w", err)
+		}
 	}
 	if *cwd != "" {
 		if *cwd, err = filepath.Abs(*cwd); err != nil {
@@ -1094,6 +1169,48 @@ func sessionsCmd(args []string) error {
 		return pos[0], nil
 	}
 	switch sub {
+	case "diff":
+		if len(pos) != 2 {
+			return errors.New("usage: harness-kit sessions diff <session-id> <turn-id> [--max-bytes N]")
+		}
+		diff, err := b.Diff(ctx, pos[0], pos[1], workspace.DiffOptions{MaxBytes: *diffBytes})
+		if err != nil {
+			return err
+		}
+		if out.format == "json" {
+			return printJSON(diff)
+		}
+		fmt.Fprint(os.Stdout, diff.WorkingTree)
+		if diff.Index != "" {
+			fmt.Fprintln(os.Stdout, "\nStaged changes:")
+			fmt.Fprint(os.Stdout, diff.Index)
+		}
+		if !diff.Complete {
+			return fmt.Errorf("incomplete turn diff: %s", diff.Error)
+		}
+		if diff.Truncated {
+			fmt.Fprintln(os.Stderr, "diff truncated by the configured size limit")
+		}
+		if diff.EncodingLossy {
+			fmt.Fprintln(os.Stderr, "some file content could not be displayed as text")
+		}
+		if diff.WorkingTree == "" && diff.Index == "" {
+			fmt.Fprintln(os.Stdout, "No file changes during this turn.")
+		}
+		return nil
+	case "remove-workspace":
+		id, err := needID()
+		if err != nil {
+			return err
+		}
+		if err := b.RemoveWorkspace(ctx, id); err != nil {
+			return err
+		}
+		if out.format == "json" {
+			return printJSON(map[string]bool{"ok": true})
+		}
+		fmt.Fprintln(os.Stdout, "Removed the session's clean, owned worktree.")
+		return nil
 	case "list":
 		if *native {
 			return listNativeSessions(ctx, b, *runtimeName, *cwd, *limit, out.format == "json")
@@ -1153,7 +1270,7 @@ func sessionsCmd(args []string) error {
 		case "archive", "unarchive":
 			info, err = b.Archive(ctx, pos[0], sub == "archive")
 		case "fork":
-			info, err = b.Fork(ctx, pos[0], session.ForkParams{Title: *forkTitle})
+			info, err = b.Fork(ctx, pos[0], session.ForkParams{Title: *forkTitle, Settings: forkSettings})
 		case "tags":
 			info, err = b.SetTags(ctx, pos[0], pos[1:])
 		}
@@ -1178,6 +1295,25 @@ func sessionsCmd(args []string) error {
 		}
 		fmt.Fprintf(os.Stderr, "renamed %s to %q\n", info.ID, info.Title)
 		return nil
+	case "settings":
+		if len(pos) < 1 || len(pos) > 2 {
+			return errors.New(`usage: harness-kit sessions settings <session-id> ['{"budget":{"maxSessionTokens":10000}}']`)
+		}
+		target := settings.Target{SessionID: pos[0]}
+		var snapshot settings.Snapshot
+		if len(pos) == 1 {
+			snapshot, err = b.Settings(ctx, target)
+		} else {
+			var patch settings.Patch
+			if err = json.Unmarshal([]byte(pos[1]), &patch); err != nil {
+				return err
+			}
+			snapshot, err = b.ConfigureSettings(ctx, settings.ConfigureParams{Target: target, Patch: patch})
+		}
+		if err != nil {
+			return err
+		}
+		return printJSON(snapshot)
 	case "configure":
 		if len(pos) != 2 {
 			return errors.New(`usage: harness-kit sessions configure <session-id> '{"model":"model-name","effort":"high"}'`)

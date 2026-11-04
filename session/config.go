@@ -6,7 +6,9 @@ import (
 	"reflect"
 
 	"github.com/tomanagle/harness-kit/agent"
+	"github.com/tomanagle/harness-kit/budget"
 	"github.com/tomanagle/harness-kit/config"
+	"github.com/tomanagle/harness-kit/workspace"
 )
 
 // ConfigOperation identifies when the host is validating a configuration.
@@ -79,14 +81,21 @@ func validatePatch(rt agent.Runtime, patch agent.ConfigPatch, turn bool) error {
 func (m *Manager) Configure(ctx context.Context, id string, patch agent.ConfigPatch) (Info, error) {
 	m.lifecycleMu.Lock()
 	defer m.lifecycleMu.Unlock()
-	info, err := m.configureLocked(ctx, id, patch, nil)
+	info, err := m.configureLocked(ctx, id, patch, sessionChanges{})
 	if err == nil {
 		m.publishSessionSettingsLocked(ctx, id)
 	}
 	return info, err
 }
 
-func (m *Manager) configureLocked(ctx context.Context, id string, patch agent.ConfigPatch, pin *bool) (Info, error) {
+type sessionChanges struct {
+	workspace *workspace.Settings
+	pin       *bool
+	budget    *budget.Limits
+}
+
+func (m *Manager) configureLocked(ctx context.Context, id string, patch agent.ConfigPatch, changes sessionChanges) (Info, error) {
+	pin := changes.pin
 	ms, ok := m.lookup(id)
 	if !ok {
 		rec, err := m.store.Get(ctx, id)
@@ -105,6 +114,11 @@ func (m *Manager) configureLocked(ctx context.Context, id string, patch agent.Co
 	rt, ok := m.reg.Get(ms.info.Runtime)
 	if !ok {
 		return Info{}, fmt.Errorf("%w: %s", ErrRuntimeNotFound, ms.info.Runtime)
+	}
+	if changes.budget != nil {
+		if err := validateBudgetPolicy(rt, *changes.budget); err != nil {
+			return Info{}, err
+		}
 	}
 	if err := validatePatch(rt, patch, false); err != nil {
 		return Info{}, err
@@ -138,7 +152,7 @@ func (m *Manager) configureLocked(ctx context.Context, id string, patch agent.Co
 	if err := m.validateConfig(ctx, rt, id, ConfigConfigure, candidate); err != nil {
 		return Info{}, err
 	}
-	if preparer, ok := ms.sess.(agent.TurnPreparer); ok {
+	if preparer, ok := ms.sess.(agent.TurnPreparer); ok && !reflect.DeepEqual(base, next) {
 		// Preflight only. Keep inherited selections in session defaults; native
 		// resolution belongs to each accepted turn snapshot.
 		if _, err := preparer.PrepareTurn(ctx, next.Clone()); err != nil {
@@ -146,13 +160,19 @@ func (m *Manager) configureLocked(ctx context.Context, id string, patch agent.Co
 		}
 	}
 	ms.mu.Lock()
-	if reflect.DeepEqual(base, next) && (pin == nil || *pin == ms.info.Pinned) {
+	if reflect.DeepEqual(base, next) && (pin == nil || *pin == ms.info.Pinned) && (changes.budget == nil || reflect.DeepEqual(*changes.budget, ms.info.Budget)) && (changes.workspace == nil || *changes.workspace == workspacePolicy(ms.info.WorkspaceSettings)) {
 		ms.mu.Unlock()
 		return ms.snapshot(), nil
 	}
 	oldCfg, oldInfo := ms.cfg, ms.info
 	ms.info.SettingsRevision = max(uint64(1), ms.info.SettingsRevision) + 1
 	ms.cfg = candidate
+	if changes.workspace != nil {
+		ms.info.WorkspaceSettings = *changes.workspace
+	}
+	if changes.budget != nil {
+		ms.info.Budget = changes.budget.Clone()
+	}
 	if pin != nil {
 		ms.info.Pinned = *pin
 	}
@@ -166,6 +186,7 @@ func (m *Manager) configureLocked(ctx context.Context, id string, patch agent.Co
 		ms.mu.Unlock()
 		return Info{}, err
 	}
+	ms.checkBudgetLocked()
 	ms.updatedLocked("")
 	err = ms.persist()
 	return ms.snapshot(), err

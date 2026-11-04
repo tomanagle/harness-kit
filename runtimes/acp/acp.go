@@ -90,7 +90,7 @@ func (r *Runtime) Info() agent.Info {
 	r.mu.RUnlock()
 	return agent.Info{Name: r.name, DisplayName: r.name, Description: "Agent Client Protocol v1 over stdio",
 		Capabilities: agent.Capabilities{Streaming: true, Approvals: true, Cancel: true, MCP: true, Images: caps.Prompt.Image,
-			Resume: caps.LoadSession || caps.session("resume"), Usage: true, Cost: true,
+			Resume: caps.LoadSession || caps.session("resume"), Usage: false, Cost: true,
 			Configuration: map[string]config.Support{
 				"model": {Startup: true, Session: true, Turn: true}, "effort": {Startup: true, Session: true, Turn: true},
 				"options.config":     {Startup: true, Session: true, Turn: true},

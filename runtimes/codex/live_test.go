@@ -9,6 +9,7 @@ import (
 
 	"github.com/tomanagle/harness-kit/agent"
 	"github.com/tomanagle/harness-kit/event"
+	"github.com/tomanagle/harness-kit/mcp"
 )
 
 // TestLive runs against the real, locally installed and signed-in Codex
@@ -30,7 +31,9 @@ func TestLive(t *testing.T) {
 	cwd := t.TempDir()
 	rec := &recorder{}
 	opts := Options{Sandbox: "read-only", ApprovalPolicy: "on-request", Effort: "low"}
-	s, err := rt.Start(ctx, agent.SessionConfig{Cwd: cwd, Options: opts}, rec)
+	inheritMCP := false
+	mcpConfig := &mcp.Config{InheritNative: &inheritMCP}
+	s, err := rt.Start(ctx, agent.SessionConfig{Cwd: cwd, Options: opts, MCP: mcpConfig}, rec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +54,7 @@ func TestLive(t *testing.T) {
 
 	// Resume the thread in a fresh app-server process.
 	rec2 := &recorder{}
-	s2, err := rt.Start(ctx, agent.SessionConfig{Cwd: cwd, ResumeID: thread, Options: opts}, rec2)
+	s2, err := rt.Start(ctx, agent.SessionConfig{Cwd: cwd, ResumeID: thread, Options: opts, MCP: mcpConfig}, rec2)
 	if err != nil {
 		t.Fatal(err)
 	}

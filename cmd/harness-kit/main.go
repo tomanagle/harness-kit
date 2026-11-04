@@ -43,6 +43,7 @@ import (
 	"github.com/tomanagle/harness-kit/settings"
 	"github.com/tomanagle/harness-kit/toolhost"
 	"github.com/tomanagle/harness-kit/tools"
+	gitworkspace "github.com/tomanagle/harness-kit/workspace/git"
 )
 
 // callMCPTool lets the fake runtime call tools (its [call] directive).
@@ -141,6 +142,9 @@ Usage:
   harness-kit sessions show|delete ID    inspect or forget one session
   harness-kit sessions rename ID "title" rename one session
   harness-kit sessions configure ID JSON update defaults for future turns
+  harness-kit sessions settings ID [JSON] read or update shared session settings
+  harness-kit sessions diff ID TURN      show the saved changes during a turn
+  harness-kit sessions remove-workspace ID remove a clean, owned worktree
   harness-kit mcp [list]                 MCP servers Harness Kit adds to every runtime
   harness-kit mcp add NAME -- CMD ARGS   add one (or --url URL); --project for this repo
   harness-kit mcp test [NAME]            start servers and list their tools
@@ -192,6 +196,7 @@ type runtimeFlags struct {
 	fakeDelay  time.Duration
 	codexPath  string
 	claudePath string
+	gitPath    string
 }
 
 func (rf *runtimeFlags) register(fs *flag.FlagSet) {
@@ -200,6 +205,7 @@ func (rf *runtimeFlags) register(fs *flag.FlagSet) {
 	fs.DurationVar(&rf.fakeDelay, "fake-delay", 5*time.Millisecond, "delay between words streamed by the fake runtime")
 	fs.StringVar(&rf.codexPath, "codex-path", "", "path to the codex binary (default: HARNESS_KIT_CODEX_PATH, PATH, well-known dirs)")
 	fs.StringVar(&rf.claudePath, "claude-path", "", "path to the claude binary (default: HARNESS_KIT_CLAUDE_PATH, PATH, well-known dirs)")
+	fs.StringVar(&rf.gitPath, "git-path", "", "path to git for optional workspace operations (default: PATH)")
 }
 
 func (rf *runtimeFlags) registry() (*agent.Registry, error) {
@@ -272,7 +278,7 @@ func serve(args []string) error {
 	}
 
 	initial := settings.Defaults()
-	initial.Process = settings.Process{Store: *storeDir, Runtimes: strings.Split(rf.runtimes, ","), CodexPath: rf.codexPath, ClaudePath: rf.claudePath, FakeDelayMs: rf.fakeDelay.Milliseconds(), KitMCP: *kitMCP, AllowUnsafe: *allowUnsafe, ShutdownTimeoutMs: 10000}
+	initial.Process = settings.Process{Store: *storeDir, Runtimes: strings.Split(rf.runtimes, ","), CodexPath: rf.codexPath, ClaudePath: rf.claudePath, GitPath: rf.gitPath, FakeDelayMs: rf.fakeDelay.Milliseconds(), KitMCP: *kitMCP, AllowUnsafe: *allowUnsafe, ShutdownTimeoutMs: 10000}
 	if rf.fake {
 		initial.Process.Runtimes = append(initial.Process.Runtimes, "fake")
 	}
@@ -299,6 +305,7 @@ func serve(args []string) error {
 	rf.runtimes, rf.fake = strings.Join(initial.Process.Runtimes, ","), false
 	rf.acp = initial.Process.ACP
 	rf.codexPath, rf.claudePath = initial.Process.CodexPath, initial.Process.ClaudePath
+	rf.gitPath = initial.Process.GitPath
 	rf.fakeDelay = time.Duration(initial.Process.FakeDelayMs) * time.Millisecond
 	*storeDir, *kitMCP, *allowUnsafe = initial.Process.Store, initial.Process.KitMCP, initial.Process.AllowUnsafe
 	*logSize, *eventBuffer = initial.Memory.EventLogSize, initial.Streams.MaxQueueEvents
@@ -335,6 +342,7 @@ func serve(args []string) error {
 		prepare, resolver = kitPrepare(r), &r
 	}
 	mgr := session.NewManager(reg, session.Options{
+		Workspace:       gitworkspace.New(rf.gitPath),
 		ToolServer:      host,
 		Prepare:         prepare,
 		Store:           store,

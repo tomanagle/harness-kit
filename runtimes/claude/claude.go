@@ -53,11 +53,15 @@ const Name = "claude"
 
 // TestedVersion is the newest Claude Code version the adapter was verified
 // against.
-const TestedVersion = "2.1.316"
+const TestedVersion = "2.1.317"
 
 // permissionPromptsVersion is the first version supporting
 // --permission-prompts.
 const permissionPromptsVersion = "2.1.259"
+
+// Claude began restoring session cost totals in resumed/forked print runs here.
+// --max-budget-usd still applies only to spend in the current invocation.
+const restoredCostVersion = "2.1.277"
 
 // Runtime is the Claude Code adapter.
 type Runtime struct {
@@ -922,13 +926,18 @@ func (t *turnReader) resultLine(m streamLine) {
 		CacheWriteTokens:  m.Usage.CacheCreationInputTokens,
 	}
 	usage.TotalTokens = usage.InputTokens + usage.OutputTokens + usage.CachedInputTokens + usage.CacheWriteTokens
-	if m.TotalCostUSD != nil {
+	if m.TotalCostUSD != nil && process.CompareVersions(t.s.version, restoredCostVersion) < 0 {
+		// Older print-mode invocations reset totals even when resuming. Each
+		// result is the current turn's cost, never a session snapshot.
+		cost := *m.TotalCostUSD
+		usage.CostUSD = &cost
+	} else if m.TotalCostUSD != nil {
 		// total_cost_usd is cumulative for the conversation; derive the
 		// turn's share when a baseline is known.
 		t.s.mu.Lock()
 		// A fresh session starts from zero; a resumed one has no baseline
 		// until its first turn reports a total.
-		if t.s.costBase || t.s.cfg.ResumeID == "" {
+		if t.s.costBase || (t.s.cfg.ResumeID == "" && t.s.cfg.ForkFrom == "") {
 			delta := *m.TotalCostUSD - t.s.lastCost
 			if delta >= 0 {
 				usage.CostUSD = &delta

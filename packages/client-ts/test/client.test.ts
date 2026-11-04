@@ -5,7 +5,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -32,6 +32,44 @@ test("LineDecoder splits chunked input", () => {
   const d = new LineDecoder();
   assert.deepEqual(d.push('{"a":1}\n{"b"'), ['{"a":1}']);
   assert.deepEqual(d.push(':2}\r\n\n{"c":3}\n'), ['{"b":2}', '{"c":3}']);
+});
+
+test("workspace settings, saved diff and explicit cleanup use the typed client", async () => {
+  const repo = mkdtempSync(join(binDir, "workspace-repo-"));
+  execFileSync("git", ["init", "-b", "main", repo], {stdio: "ignore"});
+  execFileSync("git", ["-C", repo, "-c", "user.name=Harness Test", "-c", "user.email=test@example.invalid",
+    "commit", "--allow-empty", "-m", "initial"], {stdio: "ignore"});
+  const root = mkdtempSync(join(binDir, "workspace-root-"));
+  const kit = await connect();
+  try {
+    assert.equal(kit.server.capabilities.workspace, true);
+    const conversation = await kit.sessions.create({
+      settings: {
+        session: {runtime: "fake", cwd: repo},
+        workspace: {mode: "worktree", root, captureDiff: true},
+      },
+    });
+    const binding = conversation.info.workspace!;
+    assert.equal(binding.owned, true);
+    assert.notEqual(binding.path, repo);
+    assert.equal(existsSync(binding.path), true);
+    const turn = conversation.prompt("no filesystem changes");
+    await turn.done;
+    const diff = await kit.sessions.diff(conversation.id, turn.id, {maxBytes: 64});
+    assert.equal(diff.complete, true);
+    assert.equal(diff.workingTree, "");
+    assert.equal(diff.index, "");
+    assert.equal(diff.turnId, turn.id);
+    const config = await kit.settings.get({sessionId: conversation.id});
+    assert.equal(config.values.workspace.captureDiff, true);
+    assert.equal(config.fields["workspace.captureDiff"]?.when, "nextTurn");
+    await conversation.close();
+    await kit.sessions.removeWorkspace(conversation.id);
+    assert.equal(existsSync(binding.path), false);
+    assert.equal((await kit.sessions.diff(conversation.id, turn.id)).complete, true);
+  } finally {
+    await kit.close();
+  }
 });
 
 test("handshake, discovery and a streamed turn", async () => {
@@ -545,5 +583,29 @@ test("catalog filters, tags, archive and independent forks", async () => {
     await kit.sessions.archive(parent.id, false);
     await kit.sessions.setTags(parent.id, []);
     assert.equal((await kit.sessions.list({ archived: true })).length, 0);
+  } finally { await kit.close(); }
+});
+
+test("budgets use shared settings, preserve totals and report observed stopping thresholds", async () => {
+  const kit = await connect();
+  try {
+    await kit.settings.configure({ patch: { budget: { maxTurnTokens: 0 } } });
+    const session = await kit.sessions.create({ runtime: "fake" });
+    await assert.rejects(session.prompt("blocked").done, (err: unknown) => err instanceof HarnessKitError && err.reason === "budget_exceeded");
+    const first = await session.prompt("hello", { settings: { budget: { maxTurnTokens: null } } }).done;
+    assert.equal(first.status, "completed");
+    const info = await session.refresh();
+    assert.equal(info.usage?.totalTokens, first.usage?.totalTokens);
+    const limit = info.usage!.totalTokens;
+    await kit.settings.configure({ target: { sessionId: session.id }, patch: { budget: { maxSessionTokens: limit, maxTurnTokens: null } } });
+    await assert.rejects(session.prompt("still blocked").done, (err: unknown) => err instanceof HarnessKitError && err.reason === "budget_exceeded");
+    await kit.settings.configure({ target: { sessionId: session.id }, patch: { budget: { maxSessionTokens: null } } });
+    const second = await session.prompt("again", { settings: { budget: { maxTurnTokens: 1 } } }).done;
+    // Fake usage arrives with the result: already completed work stays completed.
+    assert.equal(second.status, "completed");
+    assert.equal(second.budget?.scope, "turn");
+    assert.equal(second.budget?.metric, "tokens");
+    const latest = await session.refresh();
+    assert.equal(latest.usage?.totalTokens, limit + second.usage!.totalTokens!);
   } finally { await kit.close(); }
 });

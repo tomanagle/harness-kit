@@ -337,14 +337,19 @@
       case "session.updated":
         updateSession(ev);
         break;
-      case "turn.started":
-        transcript.append(el("div", "bubble user", d.text));
+      case "turn.started": {
+        const prompt = el("div", "bubble user", d.text);
+        for (const part of Array.isArray(d.input) ? d.input : []) {
+          if (part.type === "image") prompt.append(el("div", "attachment", `Image: ${part.path || "attachment"}`));
+        }
+        transcript.append(prompt);
         if (!current.title && d.text) {
           current.title = d.text.split(/\s+/).join(" ").slice(0, 80);
           $("#session-title").textContent = current.title;
         }
         setBusy(true);
         break;
+      }
       case "message.delta": {
         if (d.parentCallId) break;
         let m = messages.get(itemKey);
@@ -372,6 +377,24 @@
         row.append(el("span", "badge " + (d.status === "completed" ? "ok" : "warn"), d.status));
         const out = d.error || d.output;
         if (out) row.append(el("pre", "tool-output", out.length > 600 ? out.slice(0, 600) + "…" : out));
+        break;
+      }
+      case "workspace.diff": {
+        const changes = el("details", "workspace-diff");
+        changes.append(el("summary", "", "Changes during this turn"));
+        if (d.error || !d.complete) {
+          changes.append(el("p", "status error", d.error || "The change snapshot is incomplete."));
+        }
+        if (d.truncated) changes.append(el("p", "status", "Diff truncated by the configured size limit."));
+        if (d.encodingLossy) changes.append(el("p", "status", "Some file content could not be displayed as text."));
+        for (const [label, patch] of [["Working files", d.workingTree], ["Staged changes", d.index]]) {
+          if (typeof patch !== "string" || !patch) continue;
+          changes.append(el("p", "meta", label), el("pre", "diff-output", patch));
+        }
+        if (d.complete && !d.workingTree && !d.index) {
+          changes.append(el("p", "status", "No file changes during this turn."));
+        }
+        transcript.append(changes);
         break;
       }
       case "approval.requested":

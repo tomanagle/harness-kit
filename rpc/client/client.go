@@ -24,6 +24,7 @@ import (
 	"github.com/tomanagle/harness-kit/session"
 	"github.com/tomanagle/harness-kit/settings"
 	"github.com/tomanagle/harness-kit/tools"
+	"github.com/tomanagle/harness-kit/workspace"
 )
 
 // Options configure a Client.
@@ -290,6 +291,15 @@ func (c *Client) GetSession(ctx context.Context, id string) (session.Info, error
 	var res protocol.SessionResult
 	err := c.call(ctx, protocol.MethodSessionGet, protocol.SessionIDParams{SessionID: id}, &res)
 	return res.Session, err
+}
+
+func (c *Client) TurnDiff(ctx context.Context, p protocol.SessionDiffParams) (workspace.Diff, error) {
+	var result workspace.Diff
+	err := c.call(ctx, protocol.MethodSessionDiff, p, &result)
+	return result, err
+}
+func (c *Client) RemoveWorkspace(ctx context.Context, id string) error {
+	return c.call(ctx, protocol.MethodWorkspaceRemove, protocol.SessionIDParams{SessionID: id}, nil)
 }
 
 // QuerySessions filters stored conversations without starting runtimes.

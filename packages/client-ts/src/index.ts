@@ -202,6 +202,11 @@ export class HarnessKit {
   };
 
   readonly sessions = {
+	/** Reads a saved turn-boundary diff without starting an agent or running Git. */
+	diff: (sessionId: string, turnId: string, options: { maxBytes?: number } = {}): Promise<import("./protocol.ts").WorkspaceDiff> =>
+	  this.request("session.diff", {sessionId, turnId, ...options}),
+	/** Explicitly removes only a clean owned worktree; first close/suspend its runtime. */
+	removeWorkspace: (sessionId: string): Promise<void> => this.request("workspace.remove", {sessionId}),
     /** Starts a session (or resumes `resumeId`). */
     create: async (params: CreateSessionParams): Promise<Session> => {
       const { session } = await this.request<{ session: SessionInfo }>("session.create", params);

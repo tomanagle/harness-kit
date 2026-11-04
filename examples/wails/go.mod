@@ -3,7 +3,7 @@ module github.com/tomanagle/harness-kit/examples/wails
 go 1.26.0
 
 require (
-	github.com/tomanagle/harness-kit v0.1.0
+	github.com/tomanagle/harness-kit v0.2.0
 	github.com/wailsapp/wails/v2 v2.17.1
 )
 

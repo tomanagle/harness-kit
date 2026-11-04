@@ -20,7 +20,9 @@ import (
 	"time"
 
 	"github.com/tomanagle/harness-kit/agent"
+	"github.com/tomanagle/harness-kit/budget"
 	"github.com/tomanagle/harness-kit/event"
+	"github.com/tomanagle/harness-kit/workspace"
 )
 
 // State is a session's lifecycle state.
@@ -46,6 +48,10 @@ func (s State) Terminal() bool { return s == StateClosed || s == StateFailed }
 
 // Info describes a session.
 type Info struct {
+	Workspace         *workspace.Binding `json:"workspace,omitempty"`
+	WorkspaceSettings workspace.Settings `json:"workspaceSettings"`
+	Budget            budget.Limits      `json:"budget"`
+	Usage             budget.Usage       `json:"usage"`
 	// Archived hides a conversation only when a caller requests that filter.
 	// It is independent of runtime lifecycle and never cancels work.
 	Archived       bool   `json:"archived,omitempty"`
@@ -82,6 +88,9 @@ type Info struct {
 
 // Record is what a Store persists.
 type Record struct {
+	InitialWorkspace *workspace.Settings `json:"initialWorkspace,omitempty"`
+	Accounting       *budget.Ledger      `json:"accounting,omitempty"`
+	InitialBudget    *budget.Limits      `json:"initialBudget,omitempty"`
 	// ForkSourceRuntimeID is retained until a lazy native fork materializes.
 	ForkSourceRuntimeID string `json:"forkSourceRuntimeId,omitempty"`
 	// InitialConfig is the immutable parent of session.configure patches.
@@ -128,6 +137,24 @@ func NewMemoryStore() *MemoryStore { return &MemoryStore{recs: make(map[string]R
 // cloneRecord prevents callers from modifying the creation parent, native
 // defaults or current selections through a store snapshot.
 func cloneRecord(rec Record) (Record, error) {
+	if rec.Info.Workspace != nil {
+		v := *rec.Info.Workspace
+		rec.Info.Workspace = &v
+	}
+	if rec.InitialWorkspace != nil {
+		v := *rec.InitialWorkspace
+		rec.InitialWorkspace = &v
+	}
+	rec.Info.Budget = rec.Info.Budget.Clone()
+	rec.Info.Usage = rec.Info.Usage.Clone()
+	if rec.Accounting != nil {
+		v := *rec.Accounting
+		rec.Accounting = &v
+	}
+	if rec.InitialBudget != nil {
+		v := rec.InitialBudget.Clone()
+		rec.InitialBudget = &v
+	}
 	rec.Info.Metadata = maps.Clone(rec.Info.Metadata)
 	if rec.Info.Config != nil {
 		v := rec.Info.Config.Clone()

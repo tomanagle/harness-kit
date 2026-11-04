@@ -27,6 +27,7 @@ import (
 	"github.com/tomanagle/harness-kit/session"
 	"github.com/tomanagle/harness-kit/settings"
 	"github.com/tomanagle/harness-kit/tools"
+	"github.com/tomanagle/harness-kit/workspace"
 )
 
 // Options configure a Server.
@@ -212,6 +213,14 @@ func invalidParams(msg string) *jsonrpc.Error {
 func toRPCError(err error) error {
 	var re *jsonrpc.Error
 	switch {
+	case errors.Is(err, workspace.ErrNotFound):
+		return rpcErr(protocol.CodeSessionNotFound, "turn_diff_not_found", err.Error())
+	case errors.Is(err, workspace.ErrUnsupported):
+		return rpcErr(protocol.CodeUnsupported, protocol.ReasonUnsupported, err.Error())
+	case errors.Is(err, workspace.ErrInvalid):
+		return invalidParams(err.Error())
+	case errors.Is(err, workspace.ErrDirty) || errors.Is(err, workspace.ErrNotOwned):
+		return rpcErr(protocol.CodePolicyViolation, protocol.ReasonPolicyViolation, err.Error())
 	case err == nil:
 		return nil
 	case errors.As(err, &re):
@@ -248,6 +257,8 @@ func toRPCError(err error) error {
 		return rpcErr(protocol.CodeUnsupported, protocol.ReasonUnsupported, err.Error())
 	case errors.Is(err, session.ErrEventTooLarge):
 		return rpcErr(protocol.CodeEventTooLarge, protocol.ReasonEventTooLarge, err.Error())
+	case errors.Is(err, session.ErrBudgetExceeded):
+		return rpcErr(protocol.CodeBudgetExceeded, protocol.ReasonBudgetExceeded, err.Error())
 	case errors.Is(err, session.ErrForkSourceChanged):
 		return rpcErr(protocol.CodeForkSourceChanged, protocol.ReasonForkSourceChanged, err.Error())
 	case errors.Is(err, session.ErrNotResumable):
@@ -305,6 +316,7 @@ func (c *conn) initialize(req *jsonrpc.Request) (any, error) {
 			EventLogSize: snapshot.Values.Memory.EventLogSize,
 			Tools:        c.srv.opts.Tools != nil,
 			Settings:     true,
+			Workspace:    c.srv.mgr.WorkspaceSupported(),
 		},
 	}, nil
 }
@@ -416,6 +428,22 @@ func (c *conn) dispatch(ctx context.Context, req *jsonrpc.Request) (any, error) 
 			return nil, err
 		}
 		return protocol.Empty{}, mgr.Delete(ctx, p.SessionID)
+
+	case protocol.MethodSessionDiff:
+		var p protocol.SessionDiffParams
+		if err := strictParams(req, &p); err != nil {
+			return nil, err
+		}
+		if p.SessionID == "" || p.TurnID == "" {
+			return nil, invalidParams("sessionId and turnId are required")
+		}
+		return mgr.TurnDiff(ctx, p.SessionID, p.TurnID, p.DiffOptions)
+	case protocol.MethodWorkspaceRemove:
+		p, err := sessionID(req)
+		if err != nil {
+			return nil, err
+		}
+		return protocol.Empty{}, mgr.RemoveWorkspace(ctx, p.SessionID)
 
 	case protocol.MethodSessionRename:
 		var p protocol.SessionRenameParams

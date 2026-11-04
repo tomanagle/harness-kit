@@ -7,10 +7,12 @@ components: it supplies the infrastructure (runtime discovery, sessions,
 event streaming, approvals, process management, a sidecar protocol) and
 leaves the agent loop, orchestration, models, tools and interface to you.
 
-It drives locally installed **OpenAI Codex** and **Anthropic Claude Code**
-through their official, documented interfaces, using the user's existing
-sign-in. It never touches credentials; see
+It drives locally installed **OpenAI Codex**, **Anthropic Claude Code** and
+**ACP agents** through their documented interfaces. CLI adapters use the
+runtime's own authentication without reading credential stores; see
 [usage policies](docs/runtimes.md#authentication-and-usage-policies).
+For applications that own the agent loop, optional OpenAI and Anthropic SDK
+modules provide streaming inference with host-supplied API credentials.
 
 ```text
 Electron ─┐
@@ -24,16 +26,18 @@ Go apps ──────────────── import the packages dir
 - **Transport-neutral.** The core never knows whether it is called from
   Go, over RPC or, eventually, from WebAssembly. It builds for
   `wasip1`/`js` today.
-- **Zero dependencies.** The Go module uses only the standard library. The
+- **Zero dependencies in the core.** The root Go module uses only the standard library. The
   TypeScript client has no runtime dependencies.
 - **Safe by default.** Sandbox-disabling options are refused unless the
-  host opts in. Approvals deny on timeout. No shell or filesystem methods
-  are exposed.
+  host opts in. Approvals deny on timeout. The sidecar exposes typed kit operations.
 
 ## Status
 
-The MVP works and is tested: the core, the sidecar, the TypeScript client,
-and the Codex and Claude Code adapters.
+The core, sidecar, TypeScript client and runtime adapters are tested together.
+The kit includes persisted conversations, session updates, branching, archive,
+search, tags and live settings. Separate SDK modules support direct inference
+and caller-owned context management. Optional worktrees and turn diffs isolate
+and inspect changes; usage budgets stop work based on reported consumption.
 
 | | Codex | Claude Code | fake |
 | --- | --- | --- | --- |
@@ -41,8 +45,12 @@ and the Codex and Claude Code adapters.
 | interactive approvals | ✓ | ✓ (through the [tool bridge](docs/tools.md#claude-code-approvals)) | ✓ |
 | per-session MCP servers, host tools | ✓ | ✓ | ✓ |
 
-Roadmap: [docs/roadmap.md](docs/roadmap.md) covers tools, MCP, model
-providers, context management, persistent stores and more.
+See [session management](docs/sessions.md), [configuration](docs/configuration.md),
+[ACP](docs/acp.md), [direct models](docs/models.md) and the
+[roadmap](docs/roadmap.md). The [live test report](docs/live-tests.md) records
+which lifecycle behavior was verified against the real CLIs.
+The [budget guide](docs/budgets.md) explains reporting limits, and the
+[workspace guide](docs/workspaces.md) covers isolation and saved diffs.
 
 ## Quick start
 
@@ -305,6 +313,8 @@ rpc/              protocol types, server, Go client
 runtimes/         codex, claude, acp, fake adapters
 model/            dependency-free streaming inference contract
 contextwindow/    caller-owned history, limits, compaction and snapshots
+budget/           observed token/cost limits and accounting
+workspace/        portable workspace contract and native Git backend
 providers/        optional OpenAI and Anthropic SDK modules
 cmd/harness-kit/  the sidecar binary
 packages/client-ts/  @harness-kit/kit

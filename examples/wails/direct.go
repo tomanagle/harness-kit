@@ -21,6 +21,7 @@ import (
 	"github.com/tomanagle/harness-kit/session"
 	"github.com/tomanagle/harness-kit/toolhost"
 	"github.com/tomanagle/harness-kit/tools"
+	gitworkspace "github.com/tomanagle/harness-kit/workspace/git"
 )
 
 // Direct links Harness Kit into the Wails backend: no sidecar process. It
@@ -48,7 +49,7 @@ func NewDirect() *Direct {
 		trust, _ := mcp.TrustPath()
 		d.resolver = mcp.Resolver{UserFile: user, Project: true, Trust: mcp.TrustStore{Path: trust}}
 	}
-	opts := session.Options{ToolServer: d.host, Prepare: d.prepare}
+	opts := session.Options{ToolServer: d.host, Prepare: d.prepare, Workspace: gitworkspace.New("")}
 	if store, err := session.NewFileStore(storeDir()); err == nil {
 		opts.Store = store
 	}

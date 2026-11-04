@@ -14,6 +14,7 @@ import (
 	"github.com/tomanagle/harness-kit/permission"
 	"github.com/tomanagle/harness-kit/session"
 	"github.com/tomanagle/harness-kit/settings"
+	"github.com/tomanagle/harness-kit/workspace"
 )
 
 // Version is the protocol version implemented by this package. It is a
@@ -37,6 +38,8 @@ const (
 	MethodRuntimeSessions   = "runtime.sessions"
 	MethodSessionCreate     = "session.create"
 	MethodSessionGet        = "session.get"
+	MethodSessionDiff       = "session.diff"
+	MethodWorkspaceRemove   = "workspace.remove"
 	MethodSessionList       = "session.list"
 	MethodSessionPrompt     = "session.prompt"
 	MethodSessionCancel     = "session.cancel"
@@ -94,6 +97,7 @@ const (
 	CodeNewSessionRequired = -32016
 	CodeEventTooLarge      = -32017
 	CodeForkSourceChanged  = -32018
+	CodeBudgetExceeded     = -32019
 )
 
 // Reason strings for ErrorData.Reason.
@@ -119,6 +123,7 @@ const (
 	ReasonNewSessionRequired = "new_session_required"
 	ReasonEventTooLarge      = "event_too_large"
 	ReasonForkSourceChanged  = "fork_source_changed"
+	ReasonBudgetExceeded     = "budget_exceeded"
 )
 
 // ErrorData is the "data" member of Harness Kit errors.
@@ -147,7 +152,8 @@ type ServerInfo struct {
 
 // ServerCapabilities describe what the server offers.
 type ServerCapabilities struct {
-	Runtimes []agent.Info `json:"runtimes"`
+	Workspace bool         `json:"workspace"`
+	Runtimes  []agent.Info `json:"runtimes"`
 	// AllowUnsafe reports whether the sidecar accepts session options that
 	// disable runtime sandboxes or approvals.
 	AllowUnsafe bool `json:"allowUnsafe"`
@@ -157,6 +163,13 @@ type ServerCapabilities struct {
 	Tools bool `json:"tools"`
 	// Settings advertises the unified live settings API.
 	Settings bool `json:"settings"`
+}
+
+// SessionDiffParams reads a saved, bounded before/after turn diff.
+type SessionDiffParams struct {
+	SessionID string `json:"sessionId"`
+	TurnID    string `json:"turnId"`
+	workspace.DiffOptions
 }
 
 // InitializeResult is the result of "initialize".

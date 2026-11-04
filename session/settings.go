@@ -13,6 +13,7 @@ import (
 
 	"github.com/tomanagle/harness-kit/agent"
 	"github.com/tomanagle/harness-kit/settings"
+	"github.com/tomanagle/harness-kit/workspace"
 )
 
 // initSettings bridges constructor options into the unified settings document.
@@ -178,10 +179,29 @@ func (m *Manager) settingsSnapshotLocked(ctx context.Context, target settings.Ta
 	}
 	snapshot.Values.Session = settings.Session{Runtime: info.Runtime, SessionConfig: cfg}
 	snapshot.Values.Memory.Pinned = info.Pinned
+	snapshot.Values.Budget = info.Budget.Clone()
+	snapshot.Values.Workspace = workspacePolicy(info.WorkspaceSettings)
 	snapshot.Revision = max(uint64(1), info.SettingsRevision)
 	rt, _ := m.reg.Get(info.Runtime)
 	for path, f := range snapshot.Fields {
 		f.Writable = path == "memory.pinned"
+		if strings.HasPrefix(path, "budget.") {
+			f.Writable = true
+			f.When = "live"
+			if rt != nil {
+				caps := rt.Info().Capabilities
+				if strings.HasSuffix(path, "Tokens") && !caps.Usage || strings.HasSuffix(path, "CostUsd") && !caps.Cost {
+					f.Writable = false
+					f.When = "unsupported"
+				}
+			}
+		}
+		if strings.HasPrefix(path, "workspace.") {
+			if slices.Contains(f.Scopes, "turn") {
+				f.When = "nextTurn"
+				f.Writable = m.opts.Workspace != nil
+			}
+		}
 		if strings.HasPrefix(path, "session.") {
 			f.When = "newSession"
 			field := strings.TrimPrefix(path, "session.")
@@ -284,6 +304,9 @@ func (m *Manager) validateResourceSettings(v settings.Values) error {
 }
 
 func (m *Manager) validateSessionDefaults(ctx context.Context, v settings.Values) error {
+	if err := m.validateWorkspacePolicy(v.Workspace); err != nil {
+		return err
+	}
 	if v.Session.Cwd != "" && !filepath.IsAbs(v.Session.Cwd) {
 		return fmt.Errorf("%w: session.cwd must be absolute", settings.ErrInvalid)
 	}
@@ -384,7 +407,7 @@ func (m *Manager) createSettings(p CreateParams) (CreateParams, error) {
 						return p, fmt.Errorf("%w: memory.%s requires global scope", settings.ErrScope, field)
 					}
 				}
-			} else if group != "session" {
+			} else if group != "session" && group != "workspace" && group != "budget" {
 				return p, fmt.Errorf("%w: %s cannot be set during session creation", settings.ErrScope, group)
 			}
 		}
@@ -419,12 +442,17 @@ func (m *Manager) createSettings(p CreateParams) (CreateParams, error) {
 	p.Runtime = base.Session.Runtime
 	p.Config = base.Session.SessionConfig
 	p.pinned = base.Memory.Pinned
+	p.budget = base.Budget.Clone()
+	p.workspace = base.Workspace
 	return p, nil
 }
 
 func promptSettings(p settings.Patch) (agent.ConfigPatch, error) {
 	for group := range p {
-		if group != "session" {
+		if group == "workspace" {
+			continue
+		}
+		if group != "session" && group != "budget" {
 			return agent.ConfigPatch{}, fmt.Errorf("%w: %s cannot be set for one turn", settings.ErrScope, group)
 		}
 	}
@@ -463,10 +491,16 @@ func (m *Manager) configureSessionSettings(ctx context.Context, p settings.Confi
 		return settings.Snapshot{}, err
 	}
 	initial := current.Values.Clone()
+	if rec.InitialWorkspace != nil {
+		initial.Workspace = *rec.InitialWorkspace
+	}
 	if rec.InitialConfig != nil {
 		initial.Session.SessionConfig = *rec.InitialConfig
 	}
 	initial.Memory.Pinned = false
+	if rec.InitialBudget != nil {
+		initial.Budget = rec.InitialBudget.Clone()
+	}
 	next, paths, err := settings.Apply(current.Values, p.Patch, p.Reset, initial)
 	if err != nil {
 		return settings.Snapshot{}, err
@@ -474,7 +508,7 @@ func (m *Manager) configureSessionSettings(ctx context.Context, p settings.Confi
 	if reflect.DeepEqual(current.Values, next) {
 		return current, nil
 	}
-	var pin *bool
+	changes := sessionChanges{}
 	patch := agent.ConfigPatch{}
 	for _, path := range paths {
 		if sameSetting(current.Values, next, path) {
@@ -483,7 +517,19 @@ func (m *Manager) configureSessionSettings(ctx context.Context, p settings.Confi
 		switch {
 		case path == "memory.pinned":
 			v := next.Memory.Pinned
-			pin = &v
+			changes.pin = &v
+		case strings.HasPrefix(path, "budget."):
+			v := next.Budget.Clone()
+			changes.budget = &v
+		case strings.HasPrefix(path, "workspace."):
+			if !workspace.SameLocation(current.Values.Workspace, next.Workspace) {
+				return settings.Snapshot{}, fmt.Errorf("%w: %s", settings.ErrNewSessionRequired, path)
+			}
+			if err := m.validateWorkspacePolicy(next.Workspace); err != nil {
+				return settings.Snapshot{}, err
+			}
+			v := next.Workspace
+			changes.workspace = &v
 		case path == "session.model":
 			v := next.Session.Model
 			patch.Model = &v
@@ -525,7 +571,7 @@ func (m *Manager) configureSessionSettings(ctx context.Context, p settings.Confi
 			return settings.Snapshot{}, fmt.Errorf("%w: %s requires global scope", settings.ErrScope, path)
 		}
 	}
-	if _, err := m.configureLocked(ctx, p.Target.SessionID, patch, pin); err != nil {
+	if _, err := m.configureLocked(ctx, p.Target.SessionID, patch, changes); err != nil {
 		return settings.Snapshot{}, err
 	}
 	snapshot, err := m.settingsSnapshotLocked(ctx, p.Target)

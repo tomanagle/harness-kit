@@ -1,7 +1,7 @@
 # Harness Kit developer tasks.
 GO      ?= go
 BIN     := bin/harness-kit
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)
 
 .PHONY: all build install run test test-go test-ts test-providers test-live lint wasm-check cross client-ts clean
 
@@ -47,7 +47,7 @@ lint:
 
 # The transport-neutral core must build for WebAssembly and must never
 # import process-spawning code.
-CORE := ./config ./settings ./event ./permission ./mcp ./tools ./model ./contextwindow ./agent ./session ./runtimes/fake ./rpc/protocol ./rpc/server
+CORE := ./config ./budget ./workspace ./settings ./event ./permission ./mcp ./tools ./model ./contextwindow ./agent ./session ./runtimes/fake ./rpc/protocol ./rpc/server
 wasm-check:
 	GOOS=wasip1 GOARCH=wasm $(GO) build $(CORE)
 	GOOS=js GOARCH=wasm $(GO) build $(CORE)

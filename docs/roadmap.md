@@ -1,6 +1,6 @@
 # Implementation plan
 
-Status as of the initial MVP. ✅ done · 🔜 next · 📋 planned.
+Implementation status. ✅ done · 🔜 next · 📋 planned.
 
 ## Phase 1: Architecture ✅
 
@@ -83,8 +83,8 @@ Each is an independent package; none is required by the others.
    `approval: ask` on Claude Code (through the permission bridge).
    📋 Normalised MCP startup status events.
 6. **`skills`**: discovery and loading.
-7. **Budgets and routing**: token or cost budgets enforced from `usage`
-   events; model routing for the build-your-own track.
+7. **Budgets and routing**: ✅ observed token/cost budgets, durable accounting,
+   live settings and per-turn limits. 📋 Model routing for the build-your-own track.
 8. **Subagents**: modelling `parentCallId` trees; Codex multi-thread
    events.
 9. **ACP adapter** ✅: stable v1 agents over stdio, negotiated capabilities,
@@ -93,10 +93,19 @@ Each is an independent package; none is required by the others.
     manager, with runtimes implemented in JavaScript.
 11. **Remote execution environments**: runtimes whose process lives
     elsewhere (container, VM), reusing the same adapter contract.
+12. **Worktrees and turn diffs** ✅: optional Git worktrees, before/after snapshots,
+    bounded durable diffs, explicit safe cleanup and a reference dashboard view.
 
-## Open questions for the maintainers
+## Release tooling
 
-- Published identities: `github.com/tomanagle/harness-kit` and
+- ✅ Canonical GitHub/Go identity, initial commits and tagged platform binaries.
+- ✅ npm publishing workflow with bootstrap token and GitHub OIDC support.
+- 🔜 First npm publish: npm scope/token access must allow creating `@harness-kit/kit`.
+  The attempted bootstrap was rejected with `E404`; see [Releases](releases.md).
+
+## Identities and compatibility
+
+- Package identities: `github.com/tomanagle/harness-kit` and
   `@harness-kit/kit`. See [Releases](releases.md) for npm trusted publishing.
 - Minimum supported runtime versions: currently "tested with" rather than
   enforced, apart from Claude Code's `--permission-prompts` (2.1.259 and

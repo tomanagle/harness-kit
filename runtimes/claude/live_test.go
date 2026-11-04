@@ -9,6 +9,7 @@ import (
 
 	"github.com/tomanagle/harness-kit/agent"
 	"github.com/tomanagle/harness-kit/event"
+	"github.com/tomanagle/harness-kit/mcp"
 )
 
 // TestLive runs against the real, locally installed and signed-in Claude
@@ -33,11 +34,13 @@ func TestLive(t *testing.T) {
 		model = "haiku"
 	}
 	noTools := []string{}
+	inheritMCP := false
 	rec := &recorder{}
-	s, err := rt.Start(ctx, agent.SessionConfig{Cwd: t.TempDir(), Model: model, Options: Options{Tools: &noTools}}, rec)
+	s, err := rt.Start(ctx, agent.SessionConfig{Cwd: t.TempDir(), Model: model, MCP: &mcp.Config{InheritNative: &inheritMCP}, Options: Options{Tools: &noTools, MaxTurns: 2, MaxBudgetUSD: .5}}, rec)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer s.Close(context.Background())
 	reply := func(turnID string) string {
 		var b strings.Builder
 		for _, e := range rec.ofType(event.MessageDelta) {
@@ -63,5 +66,11 @@ func TestLive(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToUpper(reply("t2")), "PINEAPPLE") {
 		t.Fatalf("resume lost context: %q", reply("t2"))
+	}
+	for _, ev := range rec.ofType(event.Usage) {
+		usage := ev.Data.(event.UsageData)
+		if usage.CostUSD != nil {
+			t.Logf("turn=%s scope=%s cost_usd=%.8f", ev.TurnID, usage.Scope, *usage.CostUSD)
+		}
 	}
 }

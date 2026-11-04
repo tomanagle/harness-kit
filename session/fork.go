@@ -67,6 +67,19 @@ func (m *Manager) Fork(ctx context.Context, id string, p ForkParams) (Info, erro
 	if err != nil {
 		return Info{}, err
 	}
+	if _, live := m.lookup(id); !live {
+		// Get may have recovered events newer than the record checkpoint. The
+		// child's checkpoint must include that same history before advancing its
+		// LastSeq, or restoring the branch would skip the recovered usage.
+		recovered, err := m.newManaged(ctx, parent, rec.Config, true)
+		if err != nil {
+			return Info{}, err
+		}
+		ledger := recovered.accounting
+		rec.Accounting = &ledger
+		parent.LastSeq = recovered.log.LastSeq()
+		parent.Usage = ledger.Usage()
+	}
 	cfg := rec.Config
 	if parent.Config != nil {
 		cfg = cfg.WithSettings(*parent.Config)
@@ -75,13 +88,34 @@ func (m *Manager) Fork(ctx context.Context, id string, p ForkParams) (Info, erro
 	cfg.ResumeID = ""
 	values := m.currentSettings()
 	values.Session.Runtime, values.Session.SessionConfig = parent.Runtime, cfg
+	values.Workspace = workspacePolicy(parent.WorkspaceSettings)
+	if parent.Workspace != nil && parent.Workspace.Owned {
+		raw, explicit := p.Settings["workspace"]
+		var fields map[string]json.RawMessage
+		if explicit {
+			_ = json.Unmarshal(raw, &fields)
+		}
+		_, pathSet := fields["path"]
+		_, rootSet := fields["root"]
+		if !explicit || (!pathSet && !rootSet) {
+			return Info{}, fmt.Errorf("%w: forking an owned worktree requires an explicit new workspace path or root", settings.ErrScope)
+		}
+		values.Workspace.Path, values.Workspace.Root = "", ""
+	}
 	values.Memory.Pinned = false
+	values.Budget = parent.Budget.Clone()
 	for group, raw := range p.Settings {
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
 			return Info{}, fmt.Errorf("%w: %s must be an object", settings.ErrInvalid, group)
 		}
 		for field := range fields {
+			if group == "workspace" {
+				continue
+			}
+			if group == "budget" {
+				continue
+			}
 			if group == "memory" && field == "pinned" {
 				continue
 			}
@@ -99,6 +133,12 @@ func (m *Manager) Fork(ctx context.Context, id string, p ForkParams) (Info, erro
 		}
 	}
 	cfg = next.Session.SessionConfig
+	if parent.Workspace != nil && parent.Workspace.Owned && next.Workspace.Mode != "worktree" {
+		return Info{}, fmt.Errorf("%w: an owned-worktree fork needs worktree mode", settings.ErrScope)
+	}
+	if err := m.validateWorkspacePolicy(next.Workspace); err != nil {
+		return Info{}, err
+	}
 	cfg.NativeDefaults, cfg.ForkFrom = rec.NativeDefaults, parent.RuntimeSessionID
 	name := p.Title
 	if name == "" {
@@ -109,8 +149,9 @@ func (m *Manager) Fork(ctx context.Context, id string, p ForkParams) (Info, erro
 		return Info{}, err
 	}
 	now := time.Now().UTC()
-	child := Info{ID: NewID("ses_"), Runtime: parent.Runtime, State: StateSuspended,
-		Cwd: cfg.Cwd, Model: cfg.Model, Title: name, Metadata: maps.Clone(parent.Metadata), Pinned: next.Memory.Pinned,
+	child := Info{Budget: next.Budget.Clone(), Usage: parent.Usage.Clone(), ID: NewID("ses_"), Runtime: parent.Runtime, State: StateSuspended,
+		WorkspaceSettings: next.Workspace,
+		Cwd:               cfg.Cwd, Model: cfg.Model, Title: name, Metadata: maps.Clone(parent.Metadata), Pinned: next.Memory.Pinned,
 		CreatedAt: now, UpdatedAt: now, Turns: parent.Turns, LastStatus: parent.LastStatus,
 		LastSeq: parent.LastSeq, ForkedFrom: id, ForkedAtSeq: parent.LastSeq,
 		InheritedTurns: parent.Turns, ForkPending: true}
@@ -118,7 +159,9 @@ func (m *Manager) Fork(ctx context.Context, id string, p ForkParams) (Info, erro
 	if err != nil {
 		return Info{}, err
 	}
-	childRecord := Record{Info: child, Config: cfg, InitialConfig: &initial, NativeDefaults: rec.NativeDefaults, ForkSourceRuntimeID: cfg.ForkFrom}
+	initialBudget := next.Budget.Clone()
+	initialWorkspace := next.Workspace
+	childRecord := Record{InitialWorkspace: &initialWorkspace, Accounting: rec.Accounting, InitialBudget: &initialBudget, Info: child, Config: cfg, InitialConfig: &initial, NativeDefaults: rec.NativeDefaults, ForkSourceRuntimeID: cfg.ForkFrom}
 	_, atomicCopy := m.store.(EventCopier)
 	if !atomicCopy {
 		if err = m.store.Put(ctx, childRecord); err != nil {
@@ -126,6 +169,9 @@ func (m *Manager) Fork(ctx context.Context, id string, p ForkParams) (Info, erro
 		}
 	}
 	cleanup := func() {
+		if retained, err := m.store.Get(context.Background(), child.ID); err == nil && retained.Info.Workspace != nil && retained.Info.Workspace.Owned {
+			return
+		}
 		m.mu.Lock()
 		delete(m.sessions, child.ID)
 		m.mu.Unlock()

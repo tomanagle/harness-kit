@@ -12,7 +12,9 @@ import (
 	"strings"
 
 	"github.com/tomanagle/harness-kit/agent"
+	"github.com/tomanagle/harness-kit/budget"
 	"github.com/tomanagle/harness-kit/config"
+	"github.com/tomanagle/harness-kit/workspace"
 )
 
 var (
@@ -29,13 +31,15 @@ var (
 // limit; a zero cache budget retains no cached events. These are data budgets,
 // not limits on process RSS or memory owned by child processes.
 type Values struct {
-	Process   Process   `json:"process"`
-	Logging   Logging   `json:"logging"`
-	Approvals Approvals `json:"approvals"`
-	Memory    Memory    `json:"memory"`
-	History   History   `json:"history"`
-	Streams   Streams   `json:"streams"`
-	Session   Session   `json:"session"`
+	Workspace workspace.Settings `json:"workspace"`
+	Budget    budget.Limits      `json:"budget"`
+	Process   Process            `json:"process"`
+	Logging   Logging            `json:"logging"`
+	Approvals Approvals          `json:"approvals"`
+	Memory    Memory             `json:"memory"`
+	History   History            `json:"history"`
+	Streams   Streams            `json:"streams"`
+	Session   Session            `json:"session"`
 }
 
 type Process struct {
@@ -44,6 +48,7 @@ type Process struct {
 	Runtimes          []string              `json:"runtimes"`
 	CodexPath         string                `json:"codexPath"`
 	ClaudePath        string                `json:"claudePath"`
+	GitPath           string                `json:"gitPath"`
 	FakeDelayMs       int64                 `json:"fakeDelayMs"`
 	KitMCP            bool                  `json:"kitMcp"`
 	AllowUnsafe       bool                  `json:"allowUnsafe"`
@@ -133,11 +138,12 @@ type Snapshot struct {
 func Defaults() Values {
 	pageBytes := int64(1024 * 1024)
 	return Values{
-		Process: Process{Store: "memory", Runtimes: []string{}, ShutdownTimeoutMs: 10000},
-		Logging: Logging{Level: "info"},
-		Memory:  Memory{EventLogSize: 2048, MaxClosedSessions: 64},
-		History: History{MaxPageEvents: 200, MaxPageBytes: &pageBytes},
-		Streams: Streams{MaxQueueEvents: 4096},
+		Workspace: workspace.Defaults(),
+		Process:   Process{Store: "memory", Runtimes: []string{}, ShutdownTimeoutMs: 10000},
+		Logging:   Logging{Level: "info"},
+		Memory:    Memory{EventLogSize: 2048, MaxClosedSessions: 64},
+		History:   History{MaxPageEvents: 200, MaxPageBytes: &pageBytes},
+		Streams:   Streams{MaxQueueEvents: 4096},
 	}
 }
 
@@ -147,7 +153,16 @@ func Describe() map[string]Field {
 		out[path] = Field{Type: typ, Unit: unit, When: when, Nullable: nullable, Minimum: min, Writable: when != "restart", Scopes: scopes}
 	}
 	zero, one := int64(0), int64(1)
-	for _, p := range []string{"store", "codexPath", "claudePath"} {
+	for _, p := range []string{"mode", "repo", "base", "path", "root"} {
+		add("workspace."+p, "string", "", "newSession", false, nil, "global", "session")
+	}
+	add("workspace.captureDiff", "boolean", "", "newSession", false, nil, "global", "session", "turn")
+	for _, p := range []string{"maxDiffBytes", "maxSnapshotBytes"} {
+		add("workspace."+p, "integer", "bytes", "newSession", false, &one, "global", "session", "turn")
+	}
+	add("workspace.maxFiles", "integer", "files", "newSession", false, &one, "global", "session", "turn")
+	add("workspace.timeoutMs", "integer", "milliseconds", "newSession", false, &one, "global", "session", "turn")
+	for _, p := range []string{"store", "codexPath", "claudePath", "gitPath"} {
 		add("process."+p, "string", "", "restart", false, nil, "global")
 	}
 	add("process.runtimes", "array", "", "restart", false, nil, "global")
@@ -186,6 +201,20 @@ func Describe() map[string]Field {
 	add("session.mcp", "object", "", "newSession", true, nil, "global", "session")
 	add("session.hostTools", "array", "", "newSession", true, nil, "global", "session")
 	add("session.options", "object", "", "newSession", false, nil, "global", "session", "turn")
+	for _, field := range []string{"maxSessionTokens", "maxTurnTokens"} {
+		scopes := []string{"global", "session"}
+		if field == "maxTurnTokens" {
+			scopes = append(scopes, "turn")
+		}
+		add("budget."+field, "integer", "tokens", "newSession", true, &zero, scopes...)
+	}
+	for _, field := range []string{"maxSessionCostUsd", "maxTurnCostUsd"} {
+		scopes := []string{"global", "session"}
+		if field == "maxTurnCostUsd" {
+			scopes = append(scopes, "turn")
+		}
+		add("budget."+field, "number", "USD", "newSession", true, &zero, scopes...)
+	}
 	return out
 }
 
@@ -366,6 +395,9 @@ func Apply(base Values, patch Patch, reset []string, defaults Values) (Values, [
 }
 
 func Validate(v Values) error {
+	if err := workspace.Validate(v.Workspace); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
 	if err := validateACP(v.Process.ACP); err != nil {
 		return err
 	}
@@ -380,6 +412,12 @@ func Validate(v Values) error {
 		value, ok := group[parts[1]]
 		if !ok || bytes.Equal(value, []byte("null")) {
 			continue
+		}
+		if field.Type == "number" {
+			var n float64
+			if err := json.Unmarshal(value, &n); err != nil || n < 0 || n > 9007199254740991 {
+				return fmt.Errorf("%w: %s must be a nonnegative finite number", ErrInvalid, path)
+			}
 		}
 		if field.Type == "integer" {
 			var n int64

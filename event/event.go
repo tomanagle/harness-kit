@@ -15,8 +15,10 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/tomanagle/harness-kit/budget"
 	"github.com/tomanagle/harness-kit/config"
 	"github.com/tomanagle/harness-kit/permission"
+	"github.com/tomanagle/harness-kit/workspace"
 )
 
 // Type identifies an event.
@@ -24,6 +26,7 @@ type Type string
 
 const (
 	SessionStarted     Type = "session.started"
+	WorkspaceDiff      Type = "workspace.diff"
 	SessionUpdated     Type = "session.updated"
 	SessionClosed      Type = "session.closed"
 	TurnStarted        Type = "turn.started"
@@ -38,6 +41,7 @@ const (
 	ApprovalRequested  Type = "approval.requested"
 	ApprovalResolved   Type = "approval.resolved"
 	Usage              Type = "usage"
+	BudgetExceeded     Type = "budget.exceeded"
 	RuntimeStatus      Type = "runtime.status"
 	Error              Type = "error"
 	// RuntimeRaw carries an unmapped native runtime message. Only emitted
@@ -97,6 +101,7 @@ func decodeAs[T any](b json.RawMessage) (any, error) {
 }
 
 var payloadTypes = map[Type]func(json.RawMessage) (any, error){
+	WorkspaceDiff:      decodeAs[workspace.Diff],
 	SessionStarted:     decodeAs[SessionStartedData],
 	SessionUpdated:     decodeAs[SessionUpdatedData],
 	SessionClosed:      decodeAs[SessionClosedData],
@@ -112,6 +117,7 @@ var payloadTypes = map[Type]func(json.RawMessage) (any, error){
 	ApprovalRequested:  decodeAs[permission.Request],
 	ApprovalResolved:   decodeAs[ApprovalResolvedData],
 	Usage:              decodeAs[UsageData],
+	BudgetExceeded:     decodeAs[budget.Exceeded],
 	RuntimeStatus:      decodeAs[RuntimeStatusData],
 	Error:              decodeAs[ErrorData],
 	RuntimeRaw:         decodeAs[RawData],
@@ -138,6 +144,8 @@ type SessionStartedData struct {
 // fields that are absent have been cleared, rather than left unchanged.
 // State uses the session lifecycle names (idle, running, closing, ...).
 type SessionUpdatedData struct {
+	Budget      *budget.Limits    `json:"budget,omitempty"`
+	Usage       *budget.Usage     `json:"usage,omitempty"`
 	Archived    bool              `json:"archived,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	ForkPending bool              `json:"forkPending,omitempty"`
@@ -164,6 +172,8 @@ type SessionClosedData struct {
 
 // TurnStartedData is the payload of turn.started.
 type TurnStartedData struct {
+	Workspace *workspace.Settings `json:"workspace,omitempty"`
+	Budget    *budget.Limits      `json:"budget,omitempty"`
 	// Config is the accepted effective turn selection after native resolution.
 	Config *config.Settings `json:"config,omitempty"`
 	// Text is the concatenated text of the prompt input.
@@ -192,10 +202,11 @@ const (
 // TurnCompletedData is the payload of turn.completed. Exactly one
 // turn.completed is emitted for every turn.started.
 type TurnCompletedData struct {
-	Status        TurnStatus `json:"status"`
-	Error         *ErrorInfo `json:"error,omitempty"`
-	Usage         *UsageData `json:"usage,omitempty"`
-	RuntimeTurnID string     `json:"runtimeTurnId,omitempty"`
+	Budget        *budget.Exceeded `json:"budget,omitempty"`
+	Status        TurnStatus       `json:"status"`
+	Error         *ErrorInfo       `json:"error,omitempty"`
+	Usage         *UsageData       `json:"usage,omitempty"`
+	RuntimeTurnID string           `json:"runtimeTurnId,omitempty"`
 }
 
 // MessageDeltaData is an incremental chunk of an agent message.
@@ -288,6 +299,12 @@ type ApprovalResolvedData struct {
 
 // UsageData reports token usage and, where the runtime provides it, cost.
 type UsageData struct {
+	// Mode is "snapshot" (default) or "delta". Snapshots are cumulative within
+	// Scope and repeated snapshots are not additional usage. Deltas are increments.
+	Mode string `json:"mode,omitempty"`
+	// TokensKnown distinguishes a reported zero from unknown token accounting.
+	// ContextWindow is never a token-usage measurement.
+	TokensKnown bool `json:"tokensKnown,omitempty"`
 	// Scope is "turn" (this turn only) or "session" (cumulative).
 	Scope             string `json:"scope"`
 	InputTokens       int64  `json:"inputTokens,omitempty"`
@@ -295,8 +312,11 @@ type UsageData struct {
 	CachedInputTokens int64  `json:"cachedInputTokens,omitempty"`
 	CacheWriteTokens  int64  `json:"cacheWriteTokens,omitempty"`
 	ReasoningTokens   int64  `json:"reasoningTokens,omitempty"`
-	TotalTokens       int64  `json:"totalTokens,omitempty"`
-	ContextWindow     int64  `json:"contextWindow,omitempty"`
+	// TotalTokens is the normalized consumed-token total, including cache reads
+	// and writes where they are separate. Cached/reasoning counts may be subsets
+	// of input/output; consumers must not add those fields to TotalTokens.
+	TotalTokens   int64 `json:"totalTokens,omitempty"`
+	ContextWindow int64 `json:"contextWindow,omitempty"`
 	// CostUSD is the runtime's own estimate, not a bill.
 	CostUSD *float64 `json:"costUsd,omitempty"`
 }

@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tomanagle/harness-kit/budget"
 	"github.com/tomanagle/harness-kit/config"
 	"github.com/tomanagle/harness-kit/event"
 	"github.com/tomanagle/harness-kit/mcp"
@@ -75,7 +76,7 @@ type Capabilities struct {
 	ForkDeferred bool `json:"forkDeferred,omitempty"`
 	// Cancel: an in-progress turn can be interrupted gracefully.
 	Cancel bool `json:"cancel"`
-	// Usage: reports token usage.
+	// Usage: reports consumed token usage, not just context-window occupancy.
 	Usage bool `json:"usage"`
 	// Cost: reports an estimated cost.
 	Cost bool `json:"cost"`
@@ -225,6 +226,7 @@ func JoinText(in []InputPart) string {
 
 // TurnResult is the outcome of Prompt.
 type TurnResult struct {
+	Budget        *budget.Exceeded `json:"budget,omitempty"`
 	Status        event.TurnStatus `json:"status"`
 	Error         *event.ErrorInfo `json:"error,omitempty"`
 	Usage         *event.UsageData `json:"usage,omitempty"`

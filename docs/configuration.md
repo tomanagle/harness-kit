@@ -9,7 +9,7 @@ interface. The optional CLI/MCP configuration loaders remain host conveniences.
 
 The `settings` package is the shared configuration contract for Go hosts, the
 sidecar and clients. The document has `process`, `logging`, `approvals`,
-`memory`, `history`, `streams`, and `session` sections. The same validated
+`memory`, `history`, `streams`, `budget`, `workspace`, and `session` sections. The same validated
 document initializes the sidecar and supplies runtime patches. The kit does
 not write application preferences to a second settings store.
 
@@ -28,6 +28,8 @@ not write application preferences to a second settings store.
   },
   "history": { "maxPageEvents": 200, "maxPageBytes": 1048576 },
   "streams": { "maxQueueEvents": 4096, "maxQueueBytes": 2097152 },
+  "budget": { "maxSessionTokens": null, "maxSessionCostUsd": null, "maxTurnTokens": null, "maxTurnCostUsd": null },
+  "workspace": { "mode": "existing", "captureDiff": false },
   "session": { "model": "", "effort": "" }
 }
 ```
@@ -52,8 +54,10 @@ returns the new snapshot. `settings.updated` broadcasts changes to connected
 clients separately from session transcripts. The Go manager exposes
 `Settings`, `ConfigureSettings`, and `InitializeSettings` using the same types.
 
-A global patch to `session` changes defaults for newly created sessions.
-Supply `target: {sessionId}` to configure an existing session's future turns.
+A global patch to `session`, `budget` or `workspace` changes defaults for newly
+created sessions. Supply `target: {sessionId}` to configure an existing session
+according to each field's lifetime: model and diff-capture settings apply to the
+next turn, while usage-budget changes apply live.
 Session creation and prompting also accept a `settings` envelope, restricted
 to fields supported at that lifetime. Existing `session.configure` and prompt
 `config` remain available for compatibility.
@@ -76,6 +80,12 @@ change requiring a process restart is rejected as a whole; the kit never
 silently restarts itself. Reconnecting clients should read the existing
 settings, not reapply startup preferences. Only the owner explicitly supplies
 initial settings.
+
+The same envelope configures [usage budgets](budgets.md) and optional
+[worktrees and saved turn diffs](workspaces.md). `process.acp` describes named
+[ACP agent commands](acp.md), and `process.gitPath` selects Git for the native
+workspace backend. These process-wiring fields require a restart; the field
+metadata tells settings interfaces which changes can apply immediately.
 
 In Node/Electron, the owning transport accepts the same settings object at
 spawn time, including process wiring. A connected client can then apply live

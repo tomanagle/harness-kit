@@ -100,6 +100,27 @@ test("dashboard applies remote rename and lifecycle updates without fetching ses
   assert.equal(ui.lists(), fetched);
 });
 
+test("dashboard replays bounded turn diffs with their completeness status", async () => {
+  const patch = "diff --git a/example.txt b/example.txt\n+<script>literal file content</script>\n";
+  const diff = event(5, "workspace.diff", { complete: true, workingTree: patch, index: "+staged\n", truncated: true });
+  const ui = await dashboard({ history: async () => ({ events: [...transcript, diff], truncated: false }) });
+  (ui.get("sessions").children[0] as Element).click();
+  await flush();
+  ui.receive(diff); // overlapping live delivery must not duplicate the saved diff
+  assert.equal(ui.rows("workspace-diff").length, 1);
+  assert.deepEqual(ui.rows("diff-output").map((e) => e.textContent), [patch, "+staged\n"]);
+  assert.match(ui.rows("workspace-diff")[0]!.textContent, /truncated by the configured size limit/);
+  ui.receive(event(6, "workspace.diff", { complete: false, error: "snapshot limit exceeded" }, "turn_b"));
+  assert.match(ui.rows("workspace-diff")[1]!.textContent, /snapshot limit exceeded/);
+});
+
+test("dashboard retains image references in saved prompts", async () => {
+  const ui = await dashboard({ history: async () => ({ events: [event(1, "turn.started", { input: [{ type: "image", path: "diagram.png" }] })], truncated: false }) });
+  (ui.get("sessions").children[0] as Element).click();
+  await flush();
+  assert.equal(ui.rows("user")[0]!.textContent, "Image: diagram.png");
+});
+
 test("a slower session open cannot replace the more recently selected session", async () => {
   let finishA!: (value: unknown) => void;
   const ui = await dashboard({
