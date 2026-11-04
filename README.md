@@ -7,8 +7,11 @@ This repository has two product components:
 
 | Component | Source directories | Status |
 | --- | --- | --- |
-| SDK for building harness applications | [`core/`](core/README.md) contains the Go packages, local runtimes, CLI/sidecar and examples; [`packages/`](packages) contains clients, including the TypeScript package | Usable independently today |
+| SDK for building harness applications | [`core/`](core/README.md) contains the Go packages, local runtimes and CLI/sidecar; [`packages/`](packages) contains clients, including the TypeScript package | Usable independently today |
 | Server for coordinating sessions across devices | [`server/`](server/README.md) | Planned placeholder; no implementation yet |
+
+Runnable applications live in root [`examples/`](examples), alongside `core/` and
+`packages/`. They demonstrate the SDK without adding another product component.
 
 The kit can power applications you distribute to your own users without a Harness
 Kit server. Its existing `harness-kit serve` command is a local stdio sidecar for
@@ -20,13 +23,16 @@ Build the current source checkout:
 git clone https://github.com/tomanagle/harness-kit.git
 cd harness-kit
 make build                         # writes core/bin/harness-kit
-./hk prompt --runtime fake "Hello" # offline example
+./hk prompt --runtime fake "Hello" # offline local runtime
+go -C examples/cli run . -runtime fake "Hello" # standalone Go example
 ```
 
-The root `Makefile` and `hk` forward to `core/`. Go commands run inside that
+The root `Makefile` and `hk` forward to `core/`. Core Go commands run inside that
 directory, for example `cd core && go test ./...`. See the
 [SDK guide](core/README.md) for Go, TypeScript, Electron and Wails examples, and
 [configuration](core/docs/configuration.md) for startup and runtime settings.
+`make example <name>` runs the example applications; `make test-examples` tests
+their separate Go modules.
 
 Current Go source uses `github.com/tomanagle/harness-kit/core`; its new module paths
 have not been tagged yet. Build from a checkout until a `core/v…` release exists.

@@ -3,7 +3,7 @@ GO      ?= go
 BIN     := bin/harness-kit
 VERSION ?= $(patsubst core/%,%,$(shell git describe --tags --match 'core/v[0-9]*' --always --dirty 2>/dev/null || echo dev))
 
-.PHONY: all build install run test test-go test-ts test-providers test-live lint wasm-check cross client-ts clean
+.PHONY: all build install run test test-go test-ts test-providers test-examples test-live lint wasm-check cross client-ts clean
 
 # Where `make install` puts the binary (must be on your PATH).
 INSTALL_DIR ?= $(HOME)/.local/bin
@@ -23,7 +23,7 @@ install: build
 run: build
 	@./$(BIN) $(ARGS)
 
-test: test-go test-ts test-providers
+test: test-go test-ts test-providers test-examples
 
 test-go:
 	$(GO) test -race ./...
@@ -32,7 +32,11 @@ test-go:
 test-providers:
 	cd providers/openai && $(GO) vet ./... && $(GO) test -race ./... && $(GO) build ./...
 	cd providers/anthropic && $(GO) vet ./... && $(GO) test -race ./... && $(GO) build ./...
-	cd examples/model && $(GO) vet ./... && $(GO) test -race ./... && $(GO) build -o ../../bin/model-example .
+
+test-examples:
+	cd ../examples/cli && $(GO) vet ./... && $(GO) test -race ./... && $(GO) build -o ../../core/bin/cli-example .
+	cd ../examples/model && $(GO) vet ./... && $(GO) test -race ./... && $(GO) build -o ../../core/bin/model-example .
+	cd ../examples/wails && $(GO) vet ./... && $(GO) test -race ./...
 
 test-ts:
 	cd ../packages/client-ts && npm install --no-audit --no-fund && npm run typecheck && npm test
@@ -42,7 +46,7 @@ test-live:
 	HARNESS_KIT_LIVE=1 $(GO) test -count=1 -run TestLive -v ./runtimes/...
 
 lint:
-	@test -z "$$(gofmt -l .)" || (gofmt -l . && echo "run gofmt -w ." && exit 1)
+	@test -z "$$(gofmt -l . ../examples)" || (gofmt -l . ../examples && echo "run gofmt -w ." && exit 1)
 	$(GO) vet ./...
 
 # The transport-neutral core must build for WebAssembly and must never
@@ -67,7 +71,7 @@ client-ts:
 
 clean:
 	rm -rf bin ../packages/client-ts/dist
-	find examples/wails/frontend/dist -mindepth 1 ! -name .gitkeep -exec rm -rf {} +
+	find ../examples/wails/frontend/dist -mindepth 1 ! -name .gitkeep -exec rm -rf {} +
 
 # ---- examples -----------------------------------------------------------------
 #
@@ -112,38 +116,38 @@ examples:
 	@echo "  e.g.  make example tools RUNTIME=codex"
 
 example-overview: build
-	@node examples/node/overview.ts $(if $(JSON),--json)
+	@node ../examples/node/overview.ts $(if $(JSON),--json)
 
 # A prompt on the command line runs one turn; otherwise it's a chat.
 example-cli:
-	$(GO) run ./examples/cli -runtime $(RUNTIME) $(if $(filter command line,$(origin PROMPT)),"$(PROMPT)")
+	$(GO) -C ../examples/cli run . -runtime $(RUNTIME) $(if $(filter command line,$(origin PROMPT)),"$(PROMPT)")
 
 example-node: build
-	node examples/node/index.ts $(RUNTIME) "$(PROMPT)"
+	node ../examples/node/index.ts $(RUNTIME) "$(PROMPT)"
 
 example-tools: build
-	node examples/node/tools.ts $(RUNTIME)
+	node ../examples/node/tools.ts $(RUNTIME)
 
 # ELECTRON_RUN_AS_NODE leaks from Electron-based terminals and editors and
 # would run main.js as plain Node, so clear it.
 example-electron: build client-ts
-	cd examples/electron && npm install --no-audit --no-fund && env -u ELECTRON_RUN_AS_NODE npx electron .
+	cd ../examples/electron && npm install --no-audit --no-fund && env -u ELECTRON_RUN_AS_NODE npx electron .
 
 # Runs the Electron app with a hidden window and drives its UI bridge
 # (preload -> IPC -> sidecar -> fake runtime, including an approval).
 example-electron-smoke: build client-ts
-	cd examples/electron && npm install --no-audit --no-fund --silent && env -u ELECTRON_RUN_AS_NODE HARNESS_KIT_SMOKE=1 npx electron .
+	cd ../examples/electron && npm install --no-audit --no-fund --silent && env -u ELECTRON_RUN_AS_NODE HARNESS_KIT_SMOKE=1 npx electron .
 
 # Builds the Wails app with plain `go build` (no wails CLI needed), with the
-# shared dashboard from examples/ui, and runs it in sidecar mode;
+# shared dashboard from ../examples/ui, and runs it in sidecar mode;
 # HARNESS_KIT_MODE=direct links Harness Kit in-process instead.
 # On Linux, Wails also needs the webkit2gtk development packages.
 WAILS_LDFLAGS := $(if $(filter Darwin,$(shell uname -s)),-framework UniformTypeIdentifiers)
-WAILS_DIST := examples/wails/frontend/dist
+WAILS_DIST := ../examples/wails/frontend/dist
 example-wails: build client-ts
 	mkdir -p $(WAILS_DIST)/vendor
 	cp ../packages/client-ts/dist/*.js $(WAILS_DIST)/vendor/
-	cp examples/ui/app.js examples/ui/style.css examples/ui/api.js examples/ui/demo-tools.js examples/ui/wails-bridge.js $(WAILS_DIST)/
-	cp examples/ui/wails.html $(WAILS_DIST)/index.html
-	cd examples/wails && CGO_LDFLAGS="$(WAILS_LDFLAGS)" $(GO) build -tags desktop,production -o ../../bin/wails-example .
+	cp ../examples/ui/app.js ../examples/ui/style.css ../examples/ui/api.js ../examples/ui/demo-tools.js ../examples/ui/wails-bridge.js $(WAILS_DIST)/
+	cp ../examples/ui/wails.html $(WAILS_DIST)/index.html
+	cd ../examples/wails && CGO_LDFLAGS="$(WAILS_LDFLAGS)" $(GO) build -tags desktop,production -o ../../core/bin/wails-example .
 	HARNESS_KIT_BIN=$(CURDIR)/$(BIN) ./bin/wails-example

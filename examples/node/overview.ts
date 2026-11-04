@@ -1,18 +1,18 @@
 // Everything Harness Kit knows about, from Node.js: runtimes, your session
 // history, host tools and MCP servers. The same calls the dashboards make.
 //
-// From core/:
-//   go build -o bin/harness-kit ./cmd/harness-kit
+// From the repository root:
+//   go -C core build -o bin/harness-kit ./cmd/harness-kit
 //   node examples/node/overview.ts            # readable
 //   node examples/node/overview.ts --json     # one JSON document (pipe to jq)
 
-import { createHarnessKit } from "../../../packages/client-ts/src/index.ts";
-import { stdio } from "../../../packages/client-ts/src/node.ts";
+import { createHarnessKit } from "../../packages/client-ts/src/index.ts";
+import { stdio } from "../../packages/client-ts/src/node.ts";
 // @ts-ignore: plain JavaScript shared with the Electron and Wails examples
 import { demoTools } from "../ui/demo-tools.js";
 
 const asJSON = process.argv.includes("--json");
-const bin = process.env.HARNESS_KIT_BIN ?? new URL("../../bin/harness-kit", import.meta.url).pathname;
+const bin = process.env.HARNESS_KIT_BIN ?? new URL("../../core/bin/harness-kit", import.meta.url).pathname;
 const kit = await createHarnessKit({
   // --store default: read the same session history as the harness-kit CLI.
   transport: stdio({ command: bin, args: ["serve", "--fake-runtime", "--kit-mcp", "--store", "default", "--log-level", "warn"] }),

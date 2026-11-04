@@ -23,11 +23,11 @@ const smoke = Boolean(process.env.HARNESS_KIT_SMOKE);
 // Sessions start in this directory (the repo, when run with make).
 const cwd = process.env.HARNESS_KIT_EXAMPLE_CWD || process.cwd();
 
-// In development the binary is built into ../../bin. When packaging, ship
+// In development the binary is built into ../../core/bin. When packaging, ship
 // it as an extra resource (electron-builder "extraResources") per platform.
 function sidecarPath() {
   const exe = process.platform === "win32" ? "harness-kit.exe" : "harness-kit";
-  return app.isPackaged ? path.join(process.resourcesPath, exe) : path.join(here, "..", "..", "bin", exe);
+  return app.isPackaged ? path.join(process.resourcesPath, exe) : path.join(here, "..", "..", "core", "bin", exe);
 }
 
 let kit;

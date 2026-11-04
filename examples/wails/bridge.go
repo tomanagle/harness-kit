@@ -145,13 +145,13 @@ func sidecarPath() string {
 	if runtime.GOOS == "windows" {
 		exe += ".exe"
 	}
-	// Next to the app binary when packaged, else the repo's bin/.
+	// Next to the app binary when packaged, else the repo's core/bin/.
 	if self, err := os.Executable(); err == nil {
 		if p := filepath.Join(filepath.Dir(self), exe); fileExists(p) {
 			return p
 		}
 	}
-	return filepath.Join("..", "..", "bin", exe)
+	return filepath.Join("..", "..", "core", "bin", exe)
 }
 
 func fileExists(p string) bool {

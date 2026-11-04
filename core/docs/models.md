@@ -32,7 +32,7 @@ already-running HTTP request; cancel its context to stop it.
 
 `MaxOutputTokens` is an explicit request limit (required by Anthropic). Hosts can
 keep it and `contextwindow.Config` alongside `config.Settings` in their one
-settings document, as the [model example](../examples/model) does. `config.Apply` supports inherited
+settings document, as the [model example](../../examples/model) does. `config.Apply` supports inherited
 session defaults and per-request patches. Configuration does not read files or
 environment variables on the application's behalf.
 
@@ -137,11 +137,14 @@ of inference/tool loops and any retry policy.
 
 ## Runnable example and validation
 
-From the repository root, enter `core/examples/model` and run with an explicitly
-chosen model and the appropriate SDK environment credential:
+From the repository root, enter `examples/model` and run with an explicitly
+chosen model and the appropriate SDK environment credential. This standalone
+example module is `github.com/tomanagle/harness-kit/examples/model`; its local
+replacements resolve the core in `../../core` and SDK adapters in
+`../../core/providers/`.
 
 ```sh
-cd core/examples/model
+cd examples/model
 go run . -provider openai -model "$MODEL" -prompt 'What is the UTC time?' -max-steps 4
 go run . -provider anthropic -model "$MODEL" -prompt 'What is the UTC time?' -max-output 1024
 ```
@@ -151,7 +154,9 @@ shared tool registry, handles tool errors and supports cancellation and configur
 request/context limits. Running it makes paid API requests. Automated tests use
 local HTTP servers with real SDK request/stream code; they do not contact paid
 endpoints. Provider availability, model compatibility and live quotas require
-separate opt-in integration testing with a host's credentials.
+separate opt-in integration testing with a host's credentials. Run
+`make test-examples` from the repository root or `core/` to validate the separate
+Go example modules.
 
 Official references: [OpenAI streaming Responses](https://developers.openai.com/api/docs/guides/streaming-responses),
 [OpenAI tool calling](https://developers.openai.com/api/docs/guides/function-calling),

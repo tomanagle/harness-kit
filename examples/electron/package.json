@@ -6,11 +6,11 @@
   "type": "module",
   "main": "main.js",
   "scripts": {
-    "prestart": "npm --prefix ../../../packages/client-ts run build && go build -o ../../bin/harness-kit ../../cmd/harness-kit",
+    "prestart": "npm --prefix ../../packages/client-ts run build && go -C ../../core build -o bin/harness-kit ./cmd/harness-kit",
     "start": "electron ."
   },
   "dependencies": {
-    "@tomanagle/harness-kit": "file:../../../packages/client-ts"
+    "@tomanagle/harness-kit": "file:../../packages/client-ts"
   },
   "devDependencies": {
     "electron": "^45.2.1"

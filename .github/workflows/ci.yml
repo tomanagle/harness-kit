@@ -29,16 +29,18 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        module: [providers/openai, providers/anthropic, examples/model]
+        module: [core/providers/openai, core/providers/anthropic, examples/model, examples/cli]
     defaults:
       run:
-        working-directory: core/${{ matrix.module }}
+        working-directory: ${{ matrix.module }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: core/${{ matrix.module }}/go.mod
-          cache-dependency-path: core/${{ matrix.module }}/go.sum
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: |
+            ${{ matrix.module }}/go.*
+            core/go.mod
       - run: go vet ./...
       - run: go test -race ./...
       - run: go build ./...

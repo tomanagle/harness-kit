@@ -1,8 +1,8 @@
 // Drives the harness-kit sidecar from Node.js with the TypeScript client:
 // the same code an Electron main process runs.
 //
-// From core/:
-//   go build -o bin/harness-kit ./cmd/harness-kit
+// From the repository root:
+//   go -C core build -o bin/harness-kit ./cmd/harness-kit
 //   node examples/node/index.ts fake "[approve] hello"
 //   node examples/node/index.ts codex "Explain this repository in one paragraph"
 //
@@ -10,12 +10,12 @@
 // "@tomanagle/harness-kit" and "@tomanagle/harness-kit/node" instead.)
 
 import { createInterface } from "node:readline/promises";
-import { createHarnessKit } from "../../../packages/client-ts/src/index.ts";
-import { stdio } from "../../../packages/client-ts/src/node.ts";
+import { createHarnessKit } from "../../packages/client-ts/src/index.ts";
+import { stdio } from "../../packages/client-ts/src/node.ts";
 
 const [runtime = "fake", ...words] = process.argv.slice(2);
 const prompt = words.join(" ") || "Hello!";
-const bin = process.env.HARNESS_KIT_BIN ?? new URL("../../bin/harness-kit", import.meta.url).pathname;
+const bin = process.env.HARNESS_KIT_BIN ?? new URL("../../core/bin/harness-kit", import.meta.url).pathname;
 
 const kit = await createHarnessKit({
   transport: stdio({ command: bin, args: ["serve", "--fake-runtime", "--log-level", "warn"] }),

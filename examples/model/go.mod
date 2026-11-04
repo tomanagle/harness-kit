@@ -1,4 +1,4 @@
-module github.com/tomanagle/harness-kit/core/examples/model
+module github.com/tomanagle/harness-kit/examples/model
 
 go 1.26.0
 
@@ -31,8 +31,8 @@ require (
 	golang.org/x/sync v0.23.0 // indirect
 )
 
-replace github.com/tomanagle/harness-kit/core => ../..
+replace github.com/tomanagle/harness-kit/core => ../../core
 
-replace github.com/tomanagle/harness-kit/core/providers/openai => ../../providers/openai
+replace github.com/tomanagle/harness-kit/core/providers/openai => ../../core/providers/openai
 
-replace github.com/tomanagle/harness-kit/core/providers/anthropic => ../../providers/anthropic
+replace github.com/tomanagle/harness-kit/core/providers/anthropic => ../../core/providers/anthropic

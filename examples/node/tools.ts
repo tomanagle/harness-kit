@@ -1,7 +1,7 @@
 // Host tools: register functions from Node and let an agent call them.
 //
-// From core/:
-//   go build -o bin/harness-kit ./cmd/harness-kit
+// From the repository root:
+//   go -C core build -o bin/harness-kit ./cmd/harness-kit
 //   node examples/node/tools.ts fake      # offline, no account needed
 //   node examples/node/tools.ts codex     # real Codex (uses a little quota)
 //   node examples/node/tools.ts claude    # real Claude Code
@@ -10,11 +10,11 @@
 // through Harness Kit's MCP bridge; "refund" asks for approval first.
 
 import { createInterface } from "node:readline/promises";
-import { createHarnessKit } from "../../../packages/client-ts/src/index.ts";
-import { stdio } from "../../../packages/client-ts/src/node.ts";
+import { createHarnessKit } from "../../packages/client-ts/src/index.ts";
+import { stdio } from "../../packages/client-ts/src/node.ts";
 
 const runtime = process.argv[2] ?? "fake";
-const bin = process.env.HARNESS_KIT_BIN ?? new URL("../../bin/harness-kit", import.meta.url).pathname;
+const bin = process.env.HARNESS_KIT_BIN ?? new URL("../../core/bin/harness-kit", import.meta.url).pathname;
 const kit = await createHarnessKit({
   transport: stdio({ command: bin, args: ["serve", "--fake-runtime", "--store", "memory", "--log-level", "warn"] }),
 });

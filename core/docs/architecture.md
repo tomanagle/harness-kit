@@ -9,7 +9,8 @@ runtime integrations and their usage policies are in
 
 This document covers the standalone SDK: Go packages and local runtime support
 in `core/`, with clients in root `packages/`. Source paths below are relative to
-`core/` unless stated otherwise. The Go module is
+`core/` unless stated otherwise; runnable applications live in root `examples/`,
+with independent Go modules for CLI, model and Wails examples. The core module is
 `github.com/tomanagle/harness-kit/core`.
 The existing local stdio sidecar belongs to this SDK. The separate
 [`server/`](../../server/README.md) directory is a placeholder for future

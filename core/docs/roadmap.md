@@ -1,8 +1,9 @@
 # Implementation plan
 
 Implementation status for the standalone SDK in `core/` and root `packages/`.
-✅ done · 🔜 next · 📋 planned. Go package and example paths below are relative
-to `core/`; the TypeScript client lives in root `packages/client-ts`.
+✅ done · 🔜 next · 📋 planned. Go package paths below are relative to `core/`.
+Example paths start at repository-root `examples/`; the TypeScript client lives
+in root `packages/client-ts`.
 The separate [server directory](../../server/README.md) is a placeholder for a
 planned deployable product that coordinates sessions across devices; it has no
 implementation yet. The kit is usable independently.

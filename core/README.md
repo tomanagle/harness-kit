@@ -3,8 +3,9 @@
 Headless, composable primitives for building your own AI agent harness applications.
 
 The standalone SDK spans `core/` for Go packages, local runtime adapters,
-CLI/sidecar and examples, and root [`packages/`](../packages) for clients such as
-[TypeScript](../packages/client-ts). You can build and distribute applications
+CLI/sidecar, and root [`packages/`](../packages) for clients such as
+[TypeScript](../packages/client-ts). Runnable apps live in root
+[`examples/`](../examples). You can build and distribute applications
 with it independently of the [planned coordination server](../server/README.md),
 which has no implementation yet. See the [monorepo overview](../README.md).
 
@@ -101,10 +102,10 @@ for ev, err := range mgr.Stream(ctx, info.ID, session.PromptParams{Input: agent.
 
 Approvals arrive as `approval.requested` events. Answer them with
 `mgr.RespondApproval`. A complete terminal harness with interactive
-approvals is [examples/cli](examples/cli/main.go):
+approvals is [examples/cli](../examples/cli/main.go):
 
 ```sh
-go run ./examples/cli -runtime codex "Explain this codebase"
+go -C ../examples/cli run . -runtime codex "Explain this codebase"
 ```
 
 ### Command line
@@ -264,8 +265,18 @@ The root entry point has no Node dependencies. In a browser, Electron
 renderer or Wails frontend, pass a `callbackTransport` over your own
 channel instead of `stdio`.
 
-Run any example with `make example <name>` (or `make example-<name>`).
-`make example` lists them. They default to the offline fake runtime; add
+Examples live at repository-root `examples/`, outside the core module. The Go
+CLI is a standalone module in `examples/cli`, with a local replacement pointing
+to `../../core`. Its module identity is
+`github.com/tomanagle/harness-kit/examples/cli`; the model and Wails examples use
+`github.com/tomanagle/harness-kit/examples/model` and
+`github.com/tomanagle/harness-kit/examples/wails` respectively. From the repository
+root, run the CLI with `go -C examples/cli run .`; from `core/`, use
+`go -C ../examples/cli run .` as shown above.
+
+Use `make example` to list targets, then `make example <name>` (or
+`make example-<name>`) from either the repository root or `core/`.
+These targets default to the offline fake runtime; add
 `RUNTIME=codex` or `RUNTIME=claude` to use a real one, and `PROMPT="..."`
 for `cli` and `node`.
 
@@ -282,7 +293,7 @@ make example-electron-smoke           # Electron with a hidden window, driven en
 ![The example dashboard](docs/images/dashboard.png)
 
 The Electron and Wails apps share one dashboard
-([examples/ui](examples/ui)): runtimes with their status, your sessions
+([examples/ui](../examples/ui)): runtimes with their status, your sessions
 (click one to reopen it), the registered host tools, the kit and native MCP
 servers, and a chat pane that shows tool calls and asks for approvals.
 Rename a session with the header's Rename button or by double-clicking its
@@ -292,12 +303,12 @@ through `session.updated`.
 
 | Example | Shows |
 | --- | --- |
-| [examples/cli](examples/cli) | A minimal harness of your own: about 150 lines linking the Go packages |
-| [examples/node](examples/node) | Node.js sidecar client (the Electron main-process code path), and `tools.ts`: host tools with approvals |
-| [examples/ui](examples/ui) | The dashboard shared by Electron and Wails, written against one small API (`api.js`) |
-| [examples/electron](examples/electron) | Electron app; the main process mediates typed IPC (the renderer never sees raw RPC) and registers the demo tools |
-| [examples/wails](examples/wails) | Wails app: sidecar mode with the *same* TS client (tools registered in the webview), or in-process mode with Go tools |
-| [examples/node/overview.ts](examples/node/overview.ts) | Everything at a glance from Node.js; `--json` for one document |
+| [examples/cli](../examples/cli) | A minimal harness of your own: about 150 lines linking the Go packages |
+| [examples/node](../examples/node) | Node.js sidecar client (the Electron main-process code path), and `tools.ts`: host tools with approvals |
+| [examples/ui](../examples/ui) | The dashboard shared by Electron and Wails, written against one small API (`api.js`) |
+| [examples/electron](../examples/electron) | Electron app; the main process mediates typed IPC (the renderer never sees raw RPC) and registers the demo tools |
+| [examples/wails](../examples/wails) | Wails app: sidecar mode with the *same* TS client (tools registered in the webview), or in-process mode with Go tools |
+| [examples/node/overview.ts](../examples/node/overview.ts) | Everything at a glance from Node.js; `--json` for one document |
 
 ## Documentation
 
@@ -317,12 +328,13 @@ through `session.updated`.
 ## Development
 
 ```sh
-make test        # Go tests (race detector) + TypeScript client tests
+make test        # default offline test suite
 make lint        # gofmt + go vet
 make wasm-check  # the core must build for WebAssembly and never spawn processes
 make cross       # build the sidecar for macOS, Linux and Windows
 make test-live   # real Codex/Claude CLIs; uses a little of your quota
-make test-providers # isolated SDK adapters and direct-model example, using local test servers
+make test-providers # isolated SDK adapters, using local test servers
+make test-examples # separate Go example modules at repository-root examples/
 make install     # put the harness-kit CLI on your PATH (INSTALL_DIR=~/.local/bin)
 ```
 
@@ -356,11 +368,11 @@ core/
   workspace/        portable workspace contract and native Git backend
   providers/        optional OpenAI and Anthropic SDK modules
   cmd/harness-kit/  the local sidecar binary
-  examples/         cli, node, electron, wails
   docs/             SDK documentation
   bin/              local build output
 packages/
   client-ts/        @tomanagle/harness-kit
+examples/           cli, model, node, electron, wails and shared dashboard
 server/             planned coordination server; placeholder only
 .github/workflows/  repository CI and release workflows
 ```

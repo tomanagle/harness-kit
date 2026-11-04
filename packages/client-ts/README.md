@@ -20,7 +20,9 @@ To build the current checkout, run `make -C core build` from the repository root
 `github.com/tomanagle/harness-kit/core/...`; see the
 [module migration notes](https://github.com/tomanagle/harness-kit/blob/main/core/docs/releases.md)
 before switching from the published v0.2.0 Go module. The future coordination
-server is separate from this local sidecar.
+server is separate from this local sidecar. Runnable applications live in the
+repository-root `examples/` directory; `make example node` and
+`make example electron` work from the repository root.
 
 ```ts
 import { createHarnessKit } from "@tomanagle/harness-kit";
@@ -59,4 +61,4 @@ Settings describe their application timing, including live changes, next-turn
 changes, and process wiring that requires a restart. See the
 [configuration guide](https://github.com/tomanagle/harness-kit/blob/main/core/docs/configuration.md),
 [protocol](https://github.com/tomanagle/harness-kit/blob/main/core/docs/protocol.md), and
-[examples](https://github.com/tomanagle/harness-kit/tree/main/core/examples).
+[examples](https://github.com/tomanagle/harness-kit/tree/main/examples).

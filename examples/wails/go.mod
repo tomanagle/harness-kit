@@ -1,4 +1,4 @@
-module github.com/tomanagle/harness-kit/core/examples/wails
+module github.com/tomanagle/harness-kit/examples/wails
 
 go 1.26.0
 
@@ -38,4 +38,4 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 )
 
-replace github.com/tomanagle/harness-kit/core => ../..
+replace github.com/tomanagle/harness-kit/core => ../../core

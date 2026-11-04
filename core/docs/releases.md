@@ -39,9 +39,10 @@ go build -o bin/harness-kit ./cmd/harness-kit
 
 The root `make` and `hk` wrappers also build into `core/bin/`. To migrate a Go
 application, add `/core` after the repository path in its core and provider imports.
-While the new modules are untagged, work from a checkout: the included examples
-resolve their local modules, or a host application can use explicit local Go
-module replacements. For example, from an application's module directory:
+While the new modules are untagged, work from a checkout: the standalone Go
+modules in root `examples/cli`, `examples/model` and `examples/wails` resolve the
+core through local replacements to `../../core`. A host application can likewise
+use explicit local Go module replacements. For example, from an application's module directory:
 
 ```sh
 go mod edit -require=github.com/tomanagle/harness-kit/core@v0.0.0

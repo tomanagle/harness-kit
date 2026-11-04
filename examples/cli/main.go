@@ -2,15 +2,15 @@
 // Kit Go packages, with no sidecar and no RPC. It streams the agent's reply
 // and asks for approvals on the terminal.
 //
-//	go run ./examples/cli -runtime codex "Explain this codebase"
-//	go run ./examples/cli -runtime claude -model sonnet "What does main.go do?"
-//	go run ./examples/cli -runtime fake "[approve] hello"
+//	go -C examples/cli run . -runtime codex "Explain this codebase"
+//	go -C examples/cli run . -runtime claude -model sonnet "What does main.go do?"
+//	go -C examples/cli run . -runtime fake "[approve] hello"
 //
 // Omit the prompt to chat interactively; resume with -resume <runtime id>.
 //
 // This is sample code showing how to build your own harness on the
 // library. For a ready-made CLI, use `harness-kit prompt` and
-// `harness-kit chat` (cmd/harness-kit).
+// `harness-kit chat` (core/cmd/harness-kit).
 package main
 
 import (

@@ -7,6 +7,6 @@ node_modules/
 *.test
 coverage.out
 .DS_Store
-/core/examples/wails/frontend/dist/*
-!/core/examples/wails/frontend/dist/.gitkeep
-/core/examples/electron/node_modules/
+/examples/wails/frontend/dist/*
+!/examples/wails/frontend/dist/.gitkeep
+/examples/electron/node_modules/
