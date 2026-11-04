@@ -12,12 +12,12 @@ import { join, resolve } from "node:path";
 import { createHarnessKit, HarnessKitError, LineDecoder, type HarnessEvent, type HarnessKit } from "../src/index.ts";
 import { stdio } from "../src/node.ts";
 
-const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
+const coreRoot = resolve(import.meta.dirname, "..", "..", "..", "core");
 const binDir = mkdtempSync(join(tmpdir(), "hk-ts-"));
 const bin = join(binDir, process.platform === "win32" ? "harness-kit.exe" : "harness-kit");
 
 before(() => {
-  execFileSync("go", ["build", "-o", bin, "./cmd/harness-kit"], { cwd: repoRoot, stdio: "inherit" });
+  execFileSync("go", ["build", "-o", bin, "./cmd/harness-kit"], { cwd: coreRoot, stdio: "inherit" });
 });
 after(() => rmSync(binDir, { recursive: true, force: true }));
 
@@ -307,68 +307,76 @@ test("per-session MCP servers reach the runtime", async () => {
   }
 });
 
-test("host tools: registered in TypeScript, called by the runtime", async () => {
+test("host tools: registered in TypeScript, called by the runtime", { timeout: 30_000 }, async (t) => {
   const kit = await connect();
-  try {
-    assert.equal(kit.server.capabilities.tools, true);
-    const calls: { args: unknown; sessionId: string; turnId?: string }[] = [];
-    let abortedBy: unknown;
-    await kit.tools.register([
-      {
-        name: "lookup",
-        description: "Look up an order",
-        inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
-        handler: (args: { id: string }, ctx) => {
-          calls.push({ args, sessionId: ctx.sessionId, turnId: ctx.turnId });
-          return { id: args.id, status: "shipped" };
-        },
+  t.after(() => kit.close());
+  assert.equal(kit.server.capabilities.tools, true);
+  const calls: { args: unknown; sessionId: string; turnId?: string }[] = [];
+  let abortedBy: unknown;
+  let started!: () => void;
+  let aborted!: () => void;
+  const toolStarted = new Promise<void>((resolve) => { started = resolve; });
+  const toolAborted = new Promise<void>((resolve) => { aborted = resolve; });
+  await kit.tools.register([
+    {
+      name: "lookup",
+      description: "Look up an order",
+      inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      handler: (args: { id: string }, ctx) => {
+        calls.push({ args, sessionId: ctx.sessionId, turnId: ctx.turnId });
+        return { id: args.id, status: "shipped" };
       },
-      { name: "refund", approval: "ask", handler: () => "refunded" },
-      { name: "explode", handler: () => { throw new Error("database offline"); } },
-      {
-        name: "wait",
-        handler: (_args, ctx) =>
-          new Promise((_resolve, reject) => ctx.signal.addEventListener("abort", () => { abortedBy = ctx.signal.reason; reject(new Error("aborted")); })),
-      },
-    ]);
-    await assert.rejects(kit.tools.register({ name: "lookup", handler: () => "x" }), /already registered/);
-    assert.deepEqual((await kit.tools.list()).map((t) => t.name), ["lookup", "refund", "explode", "wait"]);
+    },
+    { name: "refund", approval: "ask", handler: () => "refunded" },
+    { name: "explode", handler: () => { throw new Error("database offline"); } },
+    {
+      name: "wait",
+      handler: (_args, ctx) => new Promise((_resolve, reject) => {
+        ctx.signal.addEventListener("abort", () => {
+          abortedBy = ctx.signal.reason;
+          aborted();
+          reject(new Error("aborted"));
+        }, { once: true });
+        started();
+      }),
+    },
+  ]);
+  await assert.rejects(kit.tools.register({ name: "lookup", handler: () => "x" }), /already registered/);
+  assert.deepEqual((await kit.tools.list()).map((t) => t.name), ["lookup", "refund", "explode", "wait"]);
 
-    const session = await kit.sessions.create({ runtime: "fake" });
-    const outputs: string[] = [];
-    const turn = session.prompt('[call lookup {"id":"A7"}] [call refund] [call explode]');
-    for await (const ev of turn) {
-      if (ev.type === "approval.requested") {
-        assert.equal(ev.data.tool, "refund");
-        await kit.approvals.respond(ev.data.approvalId, "allow");
-      }
-      if (ev.type === "tool.completed") outputs.push(`${ev.data.status}:${ev.data.output ?? ""}${ev.data.error ?? ""}`);
+  const session = await kit.sessions.create({ runtime: "fake" });
+  const outputs: string[] = [];
+  const turn = session.prompt('[call lookup {"id":"A7"}] [call refund] [call explode]');
+  for await (const ev of turn) {
+    if (ev.type === "approval.requested") {
+      assert.equal(ev.data.tool, "refund");
+      await kit.approvals.respond(ev.data.approvalId, "allow");
     }
-    assert.deepEqual(outputs, ['completed:{"id":"A7","status":"shipped"}', "completed:refunded", "failed:database offline"]);
-    assert.deepEqual(calls[0], { args: { id: "A7" }, sessionId: session.id, turnId: turn.id });
-
-    // Cancelling the turn aborts the in-flight tool call in the app.
-    const waiting = session.prompt("[call wait]");
-    while (abortedBy === undefined) {
-      await new Promise((r) => setTimeout(r, 20));
-      if (calls.length && !abortedBy) await waiting.cancel().catch(() => {});
-    }
-    assert.equal((await waiting.done).status, "cancelled");
-
-    // Sessions can be limited to some tools, or have none.
-    const limited = await kit.sessions.create({ runtime: "fake", hostTools: ["lookup"] });
-    const r = await limited.prompt("[call refund]").done;
-    assert.equal(r.status, "completed");
-    const none = await kit.sessions.create({ runtime: "fake", disableHostTools: true });
-    let failed = "";
-    for await (const ev of none.prompt('[call lookup {"id":"1"}]')) if (ev.type === "tool.completed") failed = ev.data.error ?? "";
-    assert.match(failed, /no host tools/);
-
-    await kit.tools.unregister("explode");
-    assert.equal((await kit.tools.list()).length, 3);
-  } finally {
-    await kit.close();
+    if (ev.type === "tool.completed") outputs.push(`${ev.data.status}:${ev.data.output ?? ""}${ev.data.error ?? ""}`);
   }
+  assert.deepEqual(outputs, ['completed:{"id":"A7","status":"shipped"}', "completed:refunded", "failed:database offline"]);
+  assert.deepEqual(calls[0], { args: { id: "A7" }, sessionId: session.id, turnId: turn.id });
+
+  // Cancelling the turn aborts the in-flight tool call in the app.
+  const waiting = session.prompt("[call wait]");
+  // Under load, cancelling after a fixed delay can precede the tool call.
+  await toolStarted;
+  await waiting.cancel();
+  await toolAborted;
+  assert.ok(abortedBy);
+  assert.equal((await waiting.done).status, "cancelled");
+
+  // Sessions can be limited to some tools, or have none.
+  const limited = await kit.sessions.create({ runtime: "fake", hostTools: ["lookup"] });
+  const r = await limited.prompt("[call refund]").done;
+  assert.equal(r.status, "completed");
+  const none = await kit.sessions.create({ runtime: "fake", disableHostTools: true });
+  let failed = "";
+  for await (const ev of none.prompt('[call lookup {"id":"1"}]')) if (ev.type === "tool.completed") failed = ev.data.error ?? "";
+  assert.match(failed, /no host tools/);
+
+  await kit.tools.unregister("explode");
+  assert.equal((await kit.tools.list()).length, 3);
 });
 
 test("pending requests reject when the sidecar dies", async () => {

@@ -1,10 +1,12 @@
 /bin/
 /dist/
+/core/bin/
+/core/dist/
 node_modules/
-packages/client-ts/dist/
+/packages/client-ts/dist/
 *.test
 coverage.out
 .DS_Store
-examples/wails/frontend/dist/*
-!examples/wails/frontend/dist/.gitkeep
-examples/electron/node_modules/
+/core/examples/wails/frontend/dist/*
+!/core/examples/wails/frontend/dist/.gitkeep
+/core/examples/electron/node_modules/

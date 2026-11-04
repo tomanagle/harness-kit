@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
-import { makeApi } from "../../../examples/ui/api.js";
+import { makeApi } from "../../../core/examples/ui/api.js";
 
 class Element {
   children: (Element | string)[] = [];
@@ -60,7 +60,7 @@ async function dashboard(opts: Record<string, unknown> = {}) {
     onEvent: (fn: typeof receive) => { receive = fn; },
     ...opts,
   };
-  runInNewContext(readFileSync(new URL("../../../examples/ui/app.js", import.meta.url), "utf8"), {
+  runInNewContext(readFileSync(new URL("../../../core/examples/ui/app.js", import.meta.url), "utf8"), {
     document, window: { harnessKit: api }, Option: Element, setTimeout, clearTimeout,
   });
   await flush();

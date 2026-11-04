@@ -1,0 +1,18 @@
+{
+  "name": "harness-kit-electron-example",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Electron app driving agent runtimes through the harness-kit sidecar.",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "prestart": "npm --prefix ../../../packages/client-ts run build && go build -o ../../bin/harness-kit ../../cmd/harness-kit",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@tomanagle/harness-kit": "file:../../../packages/client-ts"
+  },
+  "devDependencies": {
+    "electron": "^45.2.1"
+  }
+}

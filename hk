@@ -1,10 +1,5 @@
 #!/bin/sh
-# Development wrapper: rebuilds the harness-kit CLI from this checkout if
-# needed (fast when nothing changed) and runs it with your arguments.
-#
-#   ./hk runtimes discover --output json
-#   ./hk prompt -runtime fake "[approve] hello"
+# Keep the checkout shortcut while the CLI implementation lives in core/.
 set -e
-root=$(cd "$(dirname "$0")" && pwd)
-(cd "$root" && go build -o bin/harness-kit ./cmd/harness-kit)
-exec "$root/bin/harness-kit" "$@"
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$repo_dir/core/hk" "$@"

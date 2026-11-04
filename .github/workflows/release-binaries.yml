@@ -2,7 +2,7 @@ name: Release binaries
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["core/v*"]
 
 permissions:
   contents: read
@@ -15,21 +15,32 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: core
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version-file: core/go.mod
+          cache: false
       - name: Validate release tag
+        id: tag
         env:
-          RELEASE_VERSION: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          if [[ ! "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo '::error::Expected a semantic version tag such as v0.1.0.'
+          numeric='(0|[1-9][0-9]*)'
+          prerelease='(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+          pattern="^core/v${numeric}\.${numeric}\.${numeric}(-${prerelease}(\.${prerelease})*)?$"
+          if [[ ! "$RELEASE_TAG" =~ $pattern ]]; then
+            echo '::error::Expected a canonical Go version tag such as core/v0.1.0 or core/v0.2.0-rc.1, without build metadata.'
             exit 1
           fi
+          printf 'version=%s\n' "${RELEASE_TAG#core/}" >> "$GITHUB_OUTPUT"
       - run: make lint wasm-check
       - run: go test -race ./...
 
@@ -37,6 +48,9 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: core
     strategy:
       fail-fast: false
       matrix:
@@ -46,14 +60,15 @@ jobs:
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
       CGO_ENABLED: 0
-      RELEASE_VERSION: ${{ github.ref_name }}
+      RELEASE_VERSION: ${{ needs.test.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version-file: core/go.mod
+          cache: false
       - name: Build and archive
         run: |
           directory="harness-kit_${RELEASE_VERSION}_${GOOS}_${GOARCH}"
@@ -72,12 +87,12 @@ jobs:
         with:
           name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
-            dist/*.tar.gz
-            dist/*.zip
+            core/dist/*.tar.gz
+            core/dist/*.zip
           if-no-files-found: error
 
   release:
-    needs: build
+    needs: [test, build]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -95,8 +110,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_VERSION: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ needs.test.outputs.version }}
         run: |
           flags=()
           if [[ "$RELEASE_VERSION" == *-* ]]; then flags+=(--prerelease); fi
-          gh release create "$RELEASE_VERSION" dist/* --verify-tag --generate-notes --title "$RELEASE_VERSION" "${flags[@]}"
+          gh release create "$RELEASE_TAG" dist/* --verify-tag --generate-notes --title "$RELEASE_VERSION" "${flags[@]}"

@@ -1,17 +1,26 @@
 # @tomanagle/harness-kit
 
 The TypeScript client for [Harness Kit](https://github.com/tomanagle/harness-kit):
-a Go library and sidecar that gives applications one API for coding-agent
+a Go library and local sidecar that gives applications one API for coding-agent
 sessions, streamed events, approvals, tools, and settings.
 
 ```sh
 npm install @tomanagle/harness-kit
-go install github.com/tomanagle/harness-kit/cmd/harness-kit@latest
+# The published v0.2.0 sidecar uses the original Go module path.
+go install github.com/tomanagle/harness-kit/cmd/harness-kit@v0.2.0
 ```
 
 The npm package contains the client. The `harness-kit` sidecar and the agent CLI
 you choose must be installed separately. Node.js 22.18 or newer is required for
 the Node transport.
+
+The Go SDK source lives in `core/`; clients live in the root `packages/` directory.
+To build the current checkout, run `make -C core build` from the repository root; the binary is
+`core/bin/harness-kit`. New Go source imports use
+`github.com/tomanagle/harness-kit/core/...`; see the
+[module migration notes](https://github.com/tomanagle/harness-kit/blob/main/core/docs/releases.md)
+before switching from the published v0.2.0 Go module. The future coordination
+server is separate from this local sidecar.
 
 ```ts
 import { createHarnessKit } from "@tomanagle/harness-kit";
@@ -48,6 +57,6 @@ transport for Node and Electron's main process.
 
 Settings describe their application timing, including live changes, next-turn
 changes, and process wiring that requires a restart. See the
-[configuration guide](https://github.com/tomanagle/harness-kit/blob/main/docs/configuration.md),
-[protocol](https://github.com/tomanagle/harness-kit/blob/main/docs/protocol.md), and
-[examples](https://github.com/tomanagle/harness-kit/tree/main/examples).
+[configuration guide](https://github.com/tomanagle/harness-kit/blob/main/core/docs/configuration.md),
+[protocol](https://github.com/tomanagle/harness-kit/blob/main/core/docs/protocol.md), and
+[examples](https://github.com/tomanagle/harness-kit/tree/main/core/examples).

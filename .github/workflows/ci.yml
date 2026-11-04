@@ -6,18 +6,24 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: core
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: stable }
+        with: { go-version: stable, cache: false }
       - run: go vet ./...
       - run: go test -race ./...
   portability:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: stable }
+        with: { go-version: stable, cache: false }
       - run: make lint wasm-check cross
   providers:
     runs-on: ubuntu-latest
@@ -26,13 +32,13 @@ jobs:
         module: [providers/openai, providers/anthropic, examples/model]
     defaults:
       run:
-        working-directory: ${{ matrix.module }}
+        working-directory: core/${{ matrix.module }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: ${{ matrix.module }}/go.mod
-          cache-dependency-path: ${{ matrix.module }}/go.sum
+          go-version-file: core/${{ matrix.module }}/go.mod
+          cache-dependency-path: core/${{ matrix.module }}/go.sum
       - run: go vet ./...
       - run: go test -race ./...
       - run: go build ./...
@@ -44,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: stable }
+        with: { go-version: stable, cache: false }
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
       - working-directory: packages/client-ts

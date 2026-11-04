@@ -1,5 +1,5 @@
 // Wire types for the Harness Kit sidecar protocol (version 1).
-// Mirrors github.com/tomanagle/harness-kit/rpc/protocol. See docs/protocol.md.
+// Mirrors github.com/tomanagle/harness-kit/core/rpc/protocol. See core/docs/protocol.md.
 
 export const PROTOCOL_VERSION = 1;
 
