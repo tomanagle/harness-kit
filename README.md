@@ -1,55 +1,574 @@
 # Harness Kit
 
-Build your own AI agent harness applications with a standalone SDK, local runtime
-adapters, session persistence, approvals and configurable settings.
+Build your own AI agent harness: a desktop app, CLI, editor integration, or other
+product that runs coding agents for your users. Harness Kit provides the runtime
+adapters, session lifecycle, saved conversations, event streams, approvals, host
+tools and resource controls behind that product.
 
-This repository has two product components:
+You choose the interface, workflow, models and defaults. Settings can come from
+code, a file, a database, CLI flags or your own settings screen. The kit accepts
+one settings object at startup and exposes the same configuration surface at
+runtime.
 
-| Component | Source directories | Status |
+## What the kit handles for you
+
+| You need | The kit provides |
+| --- | --- |
+| Run different agents | Adapters for Codex, Claude Code and configured ACP agents, plus an offline fake runtime |
+| Manage processes and conversations | Session creation, cancellation, close, suspend, restore and native conversation forks |
+| Show what an agent is doing | Typed streams for messages, tool calls, approvals, usage and lifecycle changes |
+| Reopen a conversation | Durable session records and JSONL transcripts, paginated replay and transcript search |
+| Build a session browser | Titles, tags, metadata, archive filters and updates for connected clients |
+| Build a settings screen | One startup/runtime settings object, field metadata, scope/lifetime information, revisions and change notifications |
+| Control resource usage | Bounded event caches and queues, idle eviction, runtime suspension, pinning and resource statistics |
+| Let users approve actions | Normalized approval requests, supported decisions and recovery of pending approvals |
+| Give agents your app's capabilities | Host tool registration, argument validation, timeouts, cancellation and an MCP bridge |
+| Connect MCP servers | Portable server definitions translated into each supported runtime's configuration |
+| Send images | A shared text/image input format translated by image-capable adapters |
+| Track usage and spending | Normalized usage, durable accounting and configurable token/cost stopping thresholds |
+| Isolate coding work | Optional Git worktrees and saved diffs between turn boundaries |
+| Build source control | Status, working/staged diffs, branches, history, staging, commits, fetch, pull and push |
+| Integrate with your application | Schema-generated TypeScript and Go clients, a local stdio sidecar, and an embeddable Go SDK |
+| Build your own agent loop | Go model-provider interfaces, optional OpenAI/Anthropic adapters, and caller-controlled context management |
+
+Features vary by runtime. Capabilities describe what each adapter supports;
+the kit does not assume every agent offers the same models, permissions, usage
+reporting or resume behavior.
+
+## The kit and the server
+
+There are two product components in this repository:
+
+| Component | Location | Status |
 | --- | --- | --- |
-| SDK for building harness applications | [`core/`](core/README.md) contains the Go packages, local runtimes and CLI/sidecar; [`packages/`](packages) contains TypeScript and Go clients | Usable independently today |
-| Server for coordinating sessions across devices | [`server/`](server/README.md) | Planned placeholder; no implementation yet |
+| Kit for building harness applications | [`core/`](core/README.md) and [`packages/`](packages) | Implemented and usable independently |
+| Deployable server for coordinating sessions across devices | [`server/`](server/README.md) | Planned placeholder; no implementation yet |
 
-Runnable applications live in root [`examples/`](examples), alongside `core/` and
-`packages/`. They demonstrate the SDK without adding another product component.
+The existing `harness-kit serve` command is a **local stdio sidecar**. Your app
+can ship with it and work without a Harness Kit server. Cross-device sharing,
+accounts and coordination belong to the future server and your product design.
+Runnable applications live in root [`examples/`](examples).
 
-The kit can power applications you distribute to your own users without a Harness
-Kit server. Its existing `harness-kit serve` command is a local stdio sidecar for
-an application; cross-device coordination belongs to the planned server product.
+## Start with TypeScript
 
-Build the current source checkout:
+The examples below target the **current checkout**. Build the client and sidecar
+from the same revision; newer APIs such as Git are not in the published npm
+`@tomanagle/harness-kit@0.2.0` release.
+
+Requires Go 1.24+ and Node.js 22.18+ for the sidecar and Node transport:
 
 ```sh
 git clone https://github.com/tomanagle/harness-kit.git
 cd harness-kit
-make build                         # writes core/bin/harness-kit
-./hk prompt --runtime fake "Hello" # offline local runtime
-go -C examples/cli run . -runtime fake "Hello" # standalone Go example
+make build client-ts
 ```
 
-The root `Makefile` and `hk` forward to `core/`. Core Go commands run inside that
-directory, for example `cd core && go test ./...`. See the
-[SDK guide](core/README.md) for Go, TypeScript, Electron and Wails examples, and
-[configuration](core/docs/configuration.md) for startup and runtime settings.
-`make example <name>` runs the example applications; `make test-examples` tests
-their separate Go modules.
+In your application's directory, install the built local client:
 
-The [TypeScript client](packages/client-ts/README.md) and standalone
-[Go client](packages/client-go/README.md) have generated wire types and methods
-from one [protocol schema](protocol/README.md). Run `make generate` after a
-protocol change; `make check-generated` checks that committed output is current.
-Their transports and application-level helpers remain handwritten.
+```sh
+npm install /absolute/path/to/harness-kit/packages/client-ts
+```
 
-Optional [Git APIs](core/docs/git.md) provide status, diffs, branches, staging,
-commits and remote operations with runtime-configurable policy. The desktop
-examples show how a harness can compose these into its own source-control UI.
-See [package boundaries](core/docs/packages.md) for the public Go building blocks
-and the implementation kept under `core/internal/`.
+Save this as `demo.ts` and run `node demo.ts`. Replace the binary path with your
+checkout location. The fake runtime runs offline and needs no account or model
+API key.
 
-Current Go source uses `github.com/tomanagle/harness-kit/core`; its new module paths
-have not been tagged yet. Build from a checkout until a `core/v…` release exists.
-Existing root-module `v0.2.0` tags and the published npm package
-`@tomanagle/harness-kit@0.2.0` remain available. The npm package name is unchanged.
-See [release and migration details](core/docs/releases.md).
+```ts
+import { createHarnessKit } from "@tomanagle/harness-kit";
+import { stdio } from "@tomanagle/harness-kit/node";
+
+const kit = await createHarnessKit({
+  transport: stdio({
+    command: "/absolute/path/to/harness-kit/core/bin/harness-kit",
+    settings: {
+      process: {
+        store: "./sessions",
+        runtimes: ["fake", "codex", "claude"],
+      },
+    },
+  }),
+});
+
+try {
+  const session = await kit.sessions.create({
+    title: "My first conversation",
+    metadata: { project: "demo" },
+    settings: { session: { runtime: "fake", cwd: process.cwd() } },
+  });
+
+  const turn = session.prompt("Hello from my harness!");
+  for await (const event of turn) {
+    if (event.type === "message.delta") process.stdout.write(event.data.text);
+  }
+  const result = await turn.done;
+  console.log("\n", result.status, "Saved session:", session.id);
+} finally {
+  await kit.close();
+}
+```
+
+For a real agent, install and authenticate its CLI, then select `"codex"` or
+`"claude"`. The TypeScript package contains the client; the sidecar and selected
+agent are separate executables. Add approval handling before real-agent prompts,
+as shown below. `kit.close()` shuts down the host and all its sessions, so the
+application that owns the sidecar should control its lifetime.
+
+The following snippets are independent examples within an open connection's
+lifetime. `kit` refers to the connected client and `session` to a session handle.
+
+## Runtime discovery, streaming and cancellation
+
+The kit translates each runtime's protocol into a common event stream. Tool
+activity, usage and completion retain typed payloads alongside message text.
+The turn iterator handles stream-gap recovery from retained history; raw event
+listeners can use paginated replay when they receive `stream.gap`.
+
+```ts
+const registered = await kit.runtimes.list();
+const discovered = await kit.runtimes.discover({ runtimes: ["codex", "claude"] });
+console.log(registered, discovered); // Capabilities, installation and auth status.
+
+const controller = new AbortController();
+const turn = session.prompt("Explain the architecture", {
+  signal: controller.signal,
+});
+// Your Stop button can call controller.abort() or turn.cancel().
+for await (const event of turn) {
+  if (event.type === "message.delta") process.stdout.write(event.data.text);
+  if (event.type === "tool.started") console.log("Tool:", event.data.name);
+  if (event.type === "usage") console.log("Usage:", event.data);
+}
+console.log((await turn.done).status);
+```
+
+Images use the same prompt method on an image-capable runtime:
+
+```ts
+await session.prompt([
+  { type: "text", text: "Explain the layout in this screenshot" },
+  { type: "image", path: "/absolute/path/to/screenshot.png" },
+]).done;
+```
+
+Image paths refer to files on the sidecar's machine. Transcripts retain the
+references, not copies of the image files. See [runtime adapters](core/docs/runtimes.md).
+
+## One settings object, including your settings UI
+
+Use `stdio({ settings })` for startup and `kit.settings.configure()` for updates.
+Global session settings supply defaults for new sessions; a session target
+changes an existing session, and prompt settings apply to one turn.
+
+```ts
+// Inspect scope, timing and current values before rendering settings controls.
+const current = await kit.settings.get();
+console.log(current.fields["memory.evictAfterIdleMs"]);
+
+// Revision checking prevents one settings window overwriting newer changes.
+await kit.settings.configure({
+  expectedRevision: current.revision,
+  patch: { memory: { evictAfterIdleMs: 10 * 60_000 } },
+});
+
+// Change this session's defaults for future turns.
+await kit.settings.configure({
+  target: { sessionId: session.id },
+  patch: { session: { effort: "high" } },
+});
+
+// Override just one prompt, without changing those defaults.
+await session.prompt("Give me a quick summary", {
+  settings: { session: { effort: "low" } },
+}).done;
+
+// Use the same session field to select a supported model:
+// patch: { session: { model: selectedModel } }
+```
+
+Subscribe with `kit.settings.onChanged()` before reading the initial snapshot;
+use target revisions to ignore stale reads and refresh on `resync`. Updates
+preserve omitted fields; `reset` restores inherited values. Your application
+saves accepted preferences for its next launch.
+
+Memory controls apply live, model/effort changes apply to future turns, and Git
+policy applies to the next operation. Process wiring such as the store directory
+or executable paths requires a restart; the kit reports that requirement and
+rejects the patch without partially applying it. Field metadata lets your UI
+explain these lifetimes. See [configuration](core/docs/configuration.md).
+
+## Saved conversations, replay and session organization
+
+With a file store, the kit writes each session record and its events as they
+arrive. You can reopen a transcript without starting an agent process. History
+is paginated so your UI can load a conversation incrementally.
+
+```ts
+const page = await kit.sessions.eventsPage(session.id, {
+  afterSeq: 0,
+  limit: 100,
+});
+for (const event of page.events) console.log(event.type, event.data);
+// If page.hasMore, request the next page with afterSeq: page.nextSeq.
+// page.truncated reports a gap in retained history.
+
+await session.close(); // Stops the runtime; keeps the saved conversation.
+const resumed = await kit.sessions.restore(session.id);
+// You can now send the next prompt through resumed.
+```
+
+`attach(id)` obtains a handle without restoring the runtime. `restore(id)` resumes
+its native conversation under the same kit ID, including after a sidecar restart
+when both kit storage and the runtime's own history are available.
+
+```ts
+await session.rename("Fix authentication");
+await kit.sessions.setTags(session.id, ["backend", "review"]);
+const matches = await kit.sessions.list({
+  query: "authentication",
+  searchTranscript: true,
+  tags: ["backend"],
+  archived: false,
+  limit: 20,
+});
+console.log(matches);
+
+await kit.sessions.archive(session.id);        // Hide with an archive filter.
+await kit.sessions.archive(session.id, false); // Unarchive.
+
+const unsubscribe = kit.onEvent((event) => {
+  if (event.type === "session.updated") {
+    console.log("Update session UI:", event.sessionId, event.data);
+  }
+});
+// Call unsubscribe() when the view unmounts.
+```
+
+Archiving affects catalog visibility; it does not stop or delete the session.
+`Session.info` is the last fetched snapshot; use events or `session.refresh()`
+for changes. Creation also accepts application-owned `metadata`.
+
+Branch an idle conversation after a completed turn:
+
+```ts
+const alternate = await kit.sessions.fork(session.id, {
+  title: "Try a different approach",
+});
+await alternate.prompt("Solve the same problem using a smaller change").done;
+```
+
+Forking uses the runtime's native support and branches the whole conversation.
+Claude materializes its fork on the child's first prompt; prompt the child before
+advancing its source. Worktree forks need their own explicit workspace root/path.
+See [session behavior and protocol](core/docs/protocol.md).
+
+## Memory controls and idle suspension
+
+Disk persistence and memory retention are separate. With a durable store,
+transcripts are already on disk before eviction. Evicting a cache releases event
+data; suspending an idle runtime releases its process resources. These policies
+measure inactivity, so an old conversation being used is not evicted just
+because it was created a long time ago.
+
+```ts
+await kit.settings.configure({
+  patch: {
+    memory: {
+      maxCacheBytes: 64 * 1024 * 1024,
+      maxSessionCacheBytes: 8 * 1024 * 1024,
+      maxCachedSessions: 20,
+      evictAfterIdleMs: 10 * 60_000,
+      suspendAfterIdleMs: 10 * 60_000,
+      resumeOnPrompt: true,
+    },
+    history: { maxPageEvents: 200, maxPageBytes: 1024 * 1024 },
+    streams: { maxQueueEvents: 4096, maxQueueBytes: 2 * 1024 * 1024 },
+  },
+});
+
+// Exempt a session from automatic eviction and suspension.
+await kit.settings.configure({
+  target: { sessionId: session.id },
+  patch: { memory: { pinned: true } },
+});
+console.log(await kit.settings.stats());
+```
+
+You can also explicitly call `sessions.evict(id)` or `sessions.suspend(id)`.
+Saved pages remain readable; with `resumeOnPrompt`, the next prompt restores a
+suspended session. Active turns, pending approvals and unsaved data are protected,
+and statistics report deferred cleanup. Cache/queue byte limits measure encoded
+event data, not exact process RSS or the agent's own memory. Use `eventsPage()`
+to bound your application's history loading too; `events()` collects its result
+in application memory. See [resource policy](core/docs/configuration.md#resource-policy).
+
+## Approvals and application tools
+
+The kit turns runtime-specific approval messages into one request format. Your
+application chooses the approval UI and returns a supported outcome. Register
+that handling before a prompt can request permission. A request's `outcomes`
+restricts the available decisions; an omitted or empty list allows the common
+`allow`, `allow_session`, `deny` and `abort` outcomes:
+
+```ts
+import type { ApprovalRequest, Outcome } from "@tomanagle/harness-kit";
+
+async function promptWithApprovals(
+  text: string,
+  choose: (request: ApprovalRequest) => Promise<Outcome>,
+) {
+  for await (const event of session.prompt(text)) {
+    if (event.type === "approval.requested") {
+      // choose() is your UI; offer the choices in event.data.outcomes.
+      const decision = await choose(event.data);
+      await kit.approvals.respond(event.data.approvalId, decision);
+    } else if (event.type === "message.delta") {
+      process.stdout.write(event.data.text);
+    }
+  }
+}
+
+// Rebuild an approval panel after a UI reload.
+const pending = await kit.approvals.list(session.id);
+console.log(pending);
+```
+
+Register your own functions as tools before creating the sessions that use them.
+Handlers execute in your application, and the kit handles argument validation,
+result conversion, approval routing, timeouts and cancellation propagation.
+
+```ts
+const projects = new Map([["demo", { name: "Demo project", status: "active" }]]);
+await kit.tools.register({
+  name: "lookup_project",
+  description: "Read project details from this application",
+  inputSchema: {
+    type: "object",
+    properties: { id: { type: "string" } },
+    required: ["id"],
+  },
+  readOnly: true,
+  approval: "ask",
+  timeoutMs: 10_000,
+  handler: ({ id }: { id: string }, context) => {
+    context.signal.throwIfAborted();
+    return projects.get(id) ?? { error: "Project not found" };
+  },
+});
+
+const withTools = await kit.sessions.create({
+  settings: {
+    session: { runtime: "codex", cwd: process.cwd(), hostTools: ["lookup_project"] },
+  },
+});
+```
+
+The MCP bridge makes those tools available to compatible runtimes without a
+separate implementation for each CLI. See [host tools](core/docs/tools.md).
+
+## MCP servers and additional agents
+
+Pass MCP definitions in the same settings object. The adapter translates them
+for the selected runtime; your app can control native-server inheritance and
+whether a server's tools ask for approval.
+
+```ts
+const withMcp = await kit.sessions.create({
+  settings: {
+    session: {
+      runtime: "claude",
+      cwd: process.cwd(),
+      mcp: {
+        inheritNative: false,
+        mcpServers: {
+          docs: {
+            type: "http",
+            url: "https://mcp.example.com/mcp", // Your MCP server.
+            headers: { Authorization: "Bearer ${DOCS_TOKEN}" },
+            approval: "ask",
+          },
+        },
+      },
+    },
+  },
+});
+```
+
+Environment references are resolved when the runtime starts. Optional kit
+user/project config loading is enabled through `process.kitMcp`; project configs
+use the CLI's trust flow. See [MCP configuration](core/docs/mcp.md).
+
+For an agent that speaks ACP, configure its command at sidecar startup and then
+select it like any other runtime:
+
+```ts
+import type { SettingsPatch } from "@tomanagle/harness-kit";
+
+const acpSettings = {
+  process: {
+    runtimes: ["my-agent"],
+    acp: {
+      "my-agent": {
+        command: "/absolute/path/to/your-agent",
+        args: ["--acp"], // Use this agent's documented ACP arguments.
+      },
+    },
+  },
+} satisfies SettingsPatch;
+// Pass acpSettings to stdio({ command: sidecarPath, settings: acpSettings }).
+// Then create a session with settings.session.runtime: "my-agent".
+```
+
+ACP capabilities are negotiated with the installed agent. The kit does not
+install or authenticate it automatically. See [ACP support](core/docs/acp.md).
+
+## Usage and budgets
+
+The kit reconciles usage snapshots and persists accounting across restore. Set
+session-wide and per-turn thresholds through the same settings API. This example
+uses Claude, which reports both token usage and estimated USD cost:
+
+```ts
+const budgeted = await kit.sessions.create({
+  settings: {
+    session: { runtime: "claude", cwd: process.cwd() },
+    budget: {
+      maxSessionTokens: 100_000,
+      maxSessionCostUsd: 5,
+      maxTurnTokens: 20_000,
+      maxTurnCostUsd: 1,
+    },
+  },
+});
+
+// Raise an existing session's limit without restarting its runtime.
+await kit.settings.configure({
+  target: { sessionId: budgeted.id },
+  patch: { budget: { maxSessionCostUsd: 10 } },
+});
+console.log((await kit.sessions.get(budgeted.id)).usage);
+```
+
+Limits reject new work when exhausted and request cancellation when reported
+usage reaches a threshold. They are **observed stopping thresholds**, not hard
+billing caps: delayed usage reporting can overshoot. Unsupported metrics are
+rejected, and unknown cost stays unknown. Codex does not report USD cost; ACP
+context occupancy is not consumed-token usage. See [budgets](core/docs/budgets.md).
+
+## Git worktrees, turn diffs and source control
+
+Give a session an isolated checkout and capture what changed between the start
+and end of each turn:
+
+```ts
+const isolated = await kit.sessions.create({
+  settings: {
+    session: { runtime: "codex", cwd: "/absolute/path/to/repository" },
+    workspace: {
+      mode: "worktree",
+      root: "/absolute/path/to/agent-worktrees",
+      base: "HEAD",
+      captureDiff: true,
+    },
+  },
+});
+const turn = isolated.prompt("Add tests for the parser");
+await turn.done;
+const diff = await kit.sessions.diff(isolated.id, turn.id, { maxBytes: 65536 });
+console.log(diff.workingTree, diff.index, diff.complete, diff.truncated);
+```
+
+These are boundary observations, including concurrent external edits, rather
+than proof of which actor changed each file. Saved diffs can be read without
+restarting the runtime. Worktrees are never removed automatically: close or
+suspend the runtime, then explicitly call `sessions.removeWorkspace(id)` when
+it is clean and its commits are retained. See [worktrees](core/docs/workspaces.md).
+
+The optional Git API also works with ordinary sessions in existing repositories:
+
+```ts
+if (kit.server.capabilities.git) {
+  const status = await kit.git.status(session.id);
+  const working = await kit.git.diff(session.id, { path: "src/parser.ts" });
+  console.log(status.branch, status.files, working.patch);
+
+  // Invoke these in response to your application's explicit user actions.
+  await kit.git.checkout(session.id, { branch: "fix/parser", create: true });
+  await kit.git.stage(session.id, ["src/parser.ts"]);
+  const commit = await kit.git.commit(session.id, "Fix parser edge case");
+  console.log(commit.commit);
+  await kit.git.push(session.id, {
+    remote: "origin", branch: "fix/parser", setUpstream: true,
+  });
+}
+
+await kit.settings.configure({
+  patch: { git: { readOnly: true, allowRemote: false, maxOutputBytes: 262144 } },
+});
+```
+
+Unstage, branch listing, history, fetch and fast-forward pull use the same API.
+Git policy updates apply to the next operation without a restart. The kit bounds
+output, validates repository identity and coordinates writes with agent turns;
+your harness owns branch naming, commit timing, approval UI and forge/PR workflows.
+See [Git integration](core/docs/git.md).
+
+## Embedding, clients and the direct-model track
+
+Use the TypeScript client from Node or Electron's main process with `stdio()`.
+For renderer/browser code or Wails, supply a transport over your host's message
+bridge; the main client has no Node imports or runtime dependencies. The desktop
+examples demonstrate those boundaries. Keep process spawning in the native host.
+
+Go applications can embed the core manager directly or use the standalone
+[Go client](packages/client-go/README.md). Both clients' wire types and RPC methods
+are generated from one [protocol schema](protocol/README.md). Typed helpers sit
+above those methods, and `kit.protocol` exposes their exact request/result shapes.
+
+For applications that own their inference loop, the Go-only
+[`model.Provider` and `model/contextwindow`](core/docs/models.md) packages provide
+streamed model calls, history, token estimation, compaction and snapshots.
+OpenAI and Anthropic SDK adapters live in separate modules so the core stays
+dependency-free. This track leaves agent orchestration to your application;
+there is no TypeScript direct-model API in the sidecar today.
+
+## Examples and repository layout
+
+```sh
+make example node RUNTIME=fake PROMPT="Hello"
+make example tools RUNTIME=fake
+make example electron
+make example wails                    # HARNESS_KIT_MODE=direct embeds Go in-process
+```
+
+Electron and Wails share a dashboard with session history, streaming chat,
+approvals, tools, saved turn diffs and source control. The examples are reference
+applications you can adapt to your own product.
+
+```text
+core/                Go SDK, adapters, CLI/sidecar, optional providers and docs
+  internal/          Private accounting, process supervision and RPC plumbing
+packages/client-ts/  @tomanagle/harness-kit
+packages/client-go/  Standalone Go sidecar client
+protocol/            Generated schema and generation guide
+examples/            CLI, model, Node, Electron, Wails and shared dashboard
+server/              Future cross-device coordination server
+```
+
+See the [SDK guide](core/README.md), [package boundaries](core/docs/packages.md)
+and [examples](examples/README.md) for details. The root `Makefile` and `hk` forward
+to `core/`; for example, `./hk prompt --runtime fake "Hello"` runs the local CLI.
+
+```sh
+make test              # Offline core, clients, providers and Go examples
+make generate          # Regenerate schema and both client contracts
+make check-generated   # Detect stale generated files
+make lint wasm-check cross
+```
+
+The optional OpenAI provider and direct-model example require Go 1.26+.
+Current core imports use `github.com/tomanagle/harness-kit/core`; the new module
+paths have not been tagged yet. Historical root-module `v0.2.0` tags and npm
+`@tomanagle/harness-kit@0.2.0` remain available. See
+[release and migration details](core/docs/releases.md).
 
 [MIT license](LICENSE).
