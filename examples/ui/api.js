@@ -1,9 +1,9 @@
-// The small API the dashboard (app.js) uses, built on @harness-kit/kit.
+// The small API the dashboard (app.js) uses, built on @tomanagle/harness-kit.
 // Electron exposes it from the main process over IPC; the Wails example
 // builds it in the webview. Pure JavaScript: no Node.js or DOM APIs.
 
 /**
- * @param {import("@harness-kit/kit").HarnessKit} kit
+ * @param {import("@tomanagle/harness-kit").HarnessKit} kit
  * @param {{ cwd?: string, nativeMcpRuntimes?: string[] }} [opts]
  */
 export function makeApi(kit, opts = {}) {

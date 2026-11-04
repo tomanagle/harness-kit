@@ -101,7 +101,7 @@ ordering, replay and cancellation are specified in
 
 - `createHarnessKit` cannot be synchronous, because spawning the sidecar
   and handshaking is asynchronous. It is `await createHarnessKit({ transport })`.
-  Process spawning lives in a separate `@harness-kit/kit/node` entry
+  Process spawning lives in a separate `@tomanagle/harness-kit/node` entry
   point, so the core client stays usable in browsers, Electron renderers
   and Wails frontends.
 - macOS apps launched from Finder or the Dock do not inherit the user's
@@ -131,7 +131,7 @@ ordering, replay and cancellation are specified in
 ```text
  Electron (TS)    Wails frontend (TS)      Go CLI / Wails backend / services
       │                  │                              │
- @harness-kit/kit ────┘ (same client, any Transport) │ (import packages directly)
+ @tomanagle/harness-kit ──┘ (same client, any Transport)   │ (import packages directly)
       │ JSON-RPC 2.0, NDJSON over stdio                 │
 ┌─────▼────────────────────────────────────────┐        │
 │ cmd/harness-kit  (sidecar binary)            │        │
@@ -178,7 +178,7 @@ dependencies.
 | `workspace`, `workspace/git` | Portable workspace contract and optional native Git worktree/diff backend |
 | `providers/openai`, `providers/anthropic` | Separate modules using official provider SDKs |
 | `cmd/harness-kit` | The sidecar binary |
-| `packages/client-ts` | `@harness-kit/kit` (browser-safe) and `@harness-kit/kit/node` (stdio transport) |
+| `packages/client-ts` | `@tomanagle/harness-kit` (browser-safe) and `@tomanagle/harness-kit/node` (stdio transport) |
 
 ### 2.2 Public interfaces
 

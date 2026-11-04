@@ -1,5 +1,5 @@
 {
-  "name": "@harness-kit/kit",
+  "name": "@tomanagle/harness-kit",
   "version": "0.2.0",
   "description": "TypeScript client for the Harness Kit sidecar (JSON-RPC over stdio).",
   "license": "MIT",

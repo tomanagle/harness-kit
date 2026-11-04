@@ -1,11 +1,11 @@
-# @harness-kit/kit
+# @tomanagle/harness-kit
 
 The TypeScript client for [Harness Kit](https://github.com/tomanagle/harness-kit):
 a Go library and sidecar that gives applications one API for coding-agent
 sessions, streamed events, approvals, tools, and settings.
 
 ```sh
-npm install @harness-kit/kit
+npm install @tomanagle/harness-kit
 go install github.com/tomanagle/harness-kit/cmd/harness-kit@latest
 ```
 
@@ -14,8 +14,8 @@ you choose must be installed separately. Node.js 22.18 or newer is required for
 the Node transport.
 
 ```ts
-import { createHarnessKit } from "@harness-kit/kit";
-import { stdio } from "@harness-kit/kit/node";
+import { createHarnessKit } from "@tomanagle/harness-kit";
+import { stdio } from "@tomanagle/harness-kit/node";
 
 const kit = await createHarnessKit({
   transport: stdio({
@@ -42,8 +42,8 @@ try {
 }
 ```
 
-`@harness-kit/kit` has no Node.js imports or runtime dependencies. Bring your own
-`Transport` for browsers and other hosts; `@harness-kit/kit/node` supplies a stdio
+`@tomanagle/harness-kit` has no Node.js imports or runtime dependencies. Bring your own
+`Transport` for browsers and other hosts; `@tomanagle/harness-kit/node` supplies a stdio
 transport for Node and Electron's main process.
 
 Settings describe their application timing, including live changes, next-turn

@@ -1,14 +1,15 @@
 # Releases
 
-The TypeScript client's npm package name is [`@harness-kit/kit`](https://www.npmjs.com/package/@harness-kit/kit).
+The TypeScript client's npm package name is [`@tomanagle/harness-kit`](https://www.npmjs.com/package/@tomanagle/harness-kit).
 Its publishing workflow is [`.github/workflows/publish-npm.yml`](../.github/workflows/publish-npm.yml).
 The npm package contains the client and type declarations; install the Go sidecar separately.
 
 ## First npm publish
 
 Before a package exists on npm, use the `NPM_TOKEN` GitHub repository secret to
-bootstrap it. The token must have permission to create a public package in the
-`@harness-kit` organization and must satisfy the organization's publishing policy.
+bootstrap it. The token must belong to the npm account `tomanagle`, have permission
+to create a public package in its personal `@tomanagle` scope, and satisfy the
+account's publishing policy.
 
 In GitHub Actions, select **Publish npm → Run workflow**, use `main`, and enable
 **bootstrap**. From the CLI:
@@ -22,9 +23,10 @@ integration tests, builds the client, and installs and imports the packed tarbal
 before publishing that same artifact. The token is exposed only to the bootstrap
 publish step.
 
-If npm rejects the first scoped publish with `E404`, check that the `harness-kit`
-npm organization exists and that the token can create public packages in that
-organization. Creating the GitHub repository does not create the npm scope.
+If npm rejects the first scoped publish with `E404`, check that the token belongs
+to the npm account `tomanagle` and can create public packages in its personal
+`@tomanagle` scope. The package uses that account's scope; no npm organization is
+required.
 Update the GitHub repository secret and rerun the bootstrap workflow; no source
 change or version bump is needed for a version that was never published.
 
@@ -64,7 +66,7 @@ git push origin npm-v0.2.1
 ```
 
 The `npm-v` prefix keeps client releases independent from Go binary releases and
-future packages in the `@harness-kit` scope. The workflow rejects tags that do not
+future packages in the `@tomanagle` scope. The workflow rejects tags that do not
 match `package.json`. Stable versions publish to `latest`; prereleases publish to
 `next`. You can also run the workflow manually on the release commit with
 **bootstrap disabled**. Every publish requires a new package version.

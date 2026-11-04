@@ -10,7 +10,7 @@
     "start": "electron ."
   },
   "dependencies": {
-    "@harness-kit/kit": "file:../../packages/client-ts"
+    "@tomanagle/harness-kit": "file:../../packages/client-ts"
   },
   "devDependencies": {
     "electron": "^45.2.1"

@@ -6,7 +6,7 @@
 //   node examples/node/index.ts codex "Explain this repository in one paragraph"
 //
 // (Node >= 22.18 runs TypeScript directly. Published apps import
-// "@harness-kit/kit" and "@harness-kit/kit/node" instead.)
+// "@tomanagle/harness-kit" and "@tomanagle/harness-kit/node" instead.)
 
 import { createInterface } from "node:readline/promises";
 import { createHarnessKit } from "../../packages/client-ts/src/index.ts";

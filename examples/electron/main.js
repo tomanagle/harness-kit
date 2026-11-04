@@ -3,7 +3,7 @@
 // renderer never sees raw JSON-RPC, so web content can only do what this
 // API allows.
 //
-//   dashboard (../ui/app.js) -> preload -> ipcMain -> @harness-kit/kit -> stdio -> harness-kit
+//   dashboard (../ui/app.js) -> preload -> ipcMain -> @tomanagle/harness-kit -> stdio -> harness-kit
 //
 // The demo host tools (../ui/demo-tools.js) are registered here, so their
 // handlers run in this process.
@@ -13,8 +13,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createHarnessKit } from "@harness-kit/kit";
-import { stdio } from "@harness-kit/kit/node";
+import { createHarnessKit } from "@tomanagle/harness-kit";
+import { stdio } from "@tomanagle/harness-kit/node";
 import { makeApi } from "../ui/api.js";
 import { demoTools } from "../ui/demo-tools.js";
 

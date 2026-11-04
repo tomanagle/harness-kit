@@ -1,8 +1,8 @@
-// @harness-kit/kit: a typed client for the Harness Kit sidecar protocol.
+// @tomanagle/harness-kit: a typed client for the Harness Kit sidecar protocol.
 //
 // This entry point has no Node.js dependencies, so it works in Electron
 // main and renderer processes, Wails frontends and browsers alike. To spawn
-// the sidecar from Node.js, use `stdio()` from "@harness-kit/kit/node".
+// the sidecar from Node.js, use `stdio()` from "@tomanagle/harness-kit/node".
 
 import { JsonRpcConnection, type RequestOptions, type Transport } from "./rpc.ts";
 import {
@@ -75,7 +75,7 @@ function toToolResult(v: unknown): ToolResult {
 export async function createHarnessKit(options: HarnessKitOptions): Promise<HarnessKit> {
   const kit = new HarnessKit(options.transport);
   try {
-    await kit._initialize(options.clientInfo ?? { name: "@harness-kit/kit" });
+    await kit._initialize(options.clientInfo ?? { name: "@tomanagle/harness-kit" });
     if (options.initialSettings !== undefined) await kit.settings.configure({ patch: options.initialSettings });
     return kit;
   } catch (error) {

@@ -52,7 +52,7 @@ jobs:
           import { readFileSync, appendFileSync } from 'node:fs';
           const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
           const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
-          assert.equal(pkg.name, '@harness-kit/kit');
+          assert.equal(pkg.name, '@tomanagle/harness-kit');
           assert.equal(pkg.private, undefined);
           assert.equal(lock.name, pkg.name);
           assert.equal(lock.version, pkg.version);
@@ -95,8 +95,8 @@ jobs:
           npm install --ignore-scripts --no-audit --no-fund "$PACKAGE_TARBALL"
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
-          import { createHarnessKit } from '@harness-kit/kit';
-          import { stdio } from '@harness-kit/kit/node';
+          import { createHarnessKit } from '@tomanagle/harness-kit';
+          import { stdio } from '@tomanagle/harness-kit/node';
           assert.equal(typeof createHarnessKit, 'function');
           assert.equal(typeof stdio, 'function');
           NODE

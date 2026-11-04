@@ -29,7 +29,7 @@ Implementation status. ✅ done · 🔜 next · 📋 planned.
   through the sidecar)
 - ✅ Session history: `session.FileStore`, restore under the same ID,
   runtime-native listing (`agent.SessionLister`; Codex `thread/list`)
-- ✅ `@harness-kit/kit` (TypeScript), with automatic gap recovery
+- ✅ `@tomanagle/harness-kit` (TypeScript), with automatic gap recovery
 - ✅ Portable session forks, archive/unarchive, title/transcript search and metadata tags
 - ✅ Host-owned configuration: startup settings, future-turn defaults,
   per-turn overrides, explicit inheritance/reset, capability discovery,
@@ -100,13 +100,13 @@ Each is an independent package; none is required by the others.
 
 - ✅ Canonical GitHub/Go identity, initial commits and tagged platform binaries.
 - ✅ npm publishing workflow with bootstrap token and GitHub OIDC support.
-- 🔜 First npm publish: npm scope/token access must allow creating `@harness-kit/kit`.
-  The attempted bootstrap was rejected with `E404`; see [Releases](releases.md).
+- 🔜 First npm publish: `@tomanagle/harness-kit` uses the personal `@tomanagle` scope.
+  Publication is pending verification; see [Releases](releases.md).
 
 ## Identities and compatibility
 
 - Package identities: `github.com/tomanagle/harness-kit` and
-  `@harness-kit/kit`. See [Releases](releases.md) for npm trusted publishing.
+  `@tomanagle/harness-kit`. See [Releases](releases.md) for npm trusted publishing.
 - Minimum supported runtime versions: currently "tested with" rather than
   enforced, apart from Claude Code's `--permission-prompts` (2.1.259 and
   later).

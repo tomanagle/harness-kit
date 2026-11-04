@@ -1,7 +1,7 @@
 // Wails example: the shared Harness Kit dashboard (../ui) in a Wails app.
 //
 // By default the backend runs the harness-kit sidecar and relays raw
-// protocol lines to the frontend, which uses the same @harness-kit/kit
+// protocol lines to the frontend, which uses the same @tomanagle/harness-kit
 // as the Electron example (see bridge.go); the demo tools are registered
 // in the webview. Set HARNESS_KIT_MODE=direct to link Harness Kit
 // in-process instead, with typed Wails bindings and Go demo tools (see

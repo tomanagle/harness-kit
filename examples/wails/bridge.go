@@ -37,7 +37,7 @@ var allowed = map[string]bool{
 }
 
 // Bridge runs the harness-kit sidecar and forwards protocol lines between
-// it and the frontend unchanged, so the frontend can use @harness-kit/kit
+// it and the frontend unchanged, so the frontend can use @tomanagle/harness-kit
 // exactly as an Electron app does.
 type Bridge struct {
 	bin   string

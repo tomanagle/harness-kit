@@ -16,9 +16,9 @@ modules provide streaming inference with host-supplied API credentials.
 
 ```text
 Electron ─┐
-Wails ────┼─ @harness-kit/kit ── JSON-RPC over stdio ── harness-kit ──┬─ codex app-server
-CLI/Node ─┘                                                              ├─ claude -p (stream-json)
-Go apps ──────────────── import the packages directly ───────────────────┴─ your own adapter
+Wails ────┼─ @tomanagle/harness-kit ── JSON-RPC over stdio ── harness-kit ──┬─ codex app-server
+CLI/Node ─┘                                                                 ├─ claude -p (stream-json)
+Go apps ──────────────── import the packages directly ──────────────────────┴─ your own adapter
 ```
 
 - **Composable.** `event`, `permission`, `agent`, `session` and the
@@ -205,8 +205,8 @@ lifetime. See [configuration](docs/configuration.md#one-settings-document).
 ### TypeScript (Electron main, Node, or any Transport)
 
 ```ts
-import { createHarnessKit } from "@harness-kit/kit";
-import { stdio } from "@harness-kit/kit/node";
+import { createHarnessKit } from "@tomanagle/harness-kit";
+import { stdio } from "@tomanagle/harness-kit/node";
 
 const kit = await createHarnessKit({ transport: stdio({ command: "./bin/harness-kit" }) });
 
@@ -317,7 +317,7 @@ budget/           observed token/cost limits and accounting
 workspace/        portable workspace contract and native Git backend
 providers/        optional OpenAI and Anthropic SDK modules
 cmd/harness-kit/  the sidecar binary
-packages/client-ts/  @harness-kit/kit
+packages/client-ts/  @tomanagle/harness-kit
 examples/         cli, node, electron, wails
 docs/             architecture, protocol, runtimes, security, roadmap
 ```

@@ -1,6 +1,6 @@
 // Builds window.harnessKit for the Wails example.
 //
-//   Sidecar mode (default): the frontend uses the same @harness-kit/kit
+//   Sidecar mode (default): the frontend uses the same @tomanagle/harness-kit
 //   as Electron; lines go out through the Bridge.Send binding and come back
 //   as "harness-kit:rpc" events. The demo tools are registered here, so
 //   their handlers run in the webview.

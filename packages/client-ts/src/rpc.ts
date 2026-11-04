@@ -6,7 +6,7 @@ import type { ErrorReason } from "./protocol.ts";
  * A bidirectional message channel to a Harness Kit server. Each message is
  * one complete JSON-RPC message (without the trailing newline).
  *
- * Implementations: `stdio()` from "@harness-kit/kit/node" spawns the
+ * Implementations: `stdio()` from "@tomanagle/harness-kit/node" spawns the
  * sidecar; `callbackTransport()` adapts any message channel (Electron IPC,
  * Wails events, a WebSocket you operate yourself).
  */
