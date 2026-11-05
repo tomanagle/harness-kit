@@ -820,6 +820,8 @@ The optional OpenAI provider and direct-model example require Go 1.26+.
 Current core imports use `github.com/tomanagle/harness-kit/core`; the new module
 paths have not been tagged yet. Historical root-module `v0.2.0` tags and npm
 `@tomanagle/harness-kit@0.2.0` remain available. See
-[release and migration details](core/docs/releases.md).
+[release and migration details](core/docs/releases.md). TypeScript client changes
+on `main` automatically publish a tested npm patch release; deliberate minor,
+major, and prerelease versions remain configurable.
 
 [MIT license](LICENSE).

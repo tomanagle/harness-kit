@@ -126,27 +126,66 @@ provenance. A newly added trusted publisher currently needs a successful publish
 within two days; configure it when the next version is ready. See
 [npm's trusted publishing documentation](https://docs.npmjs.com/trusted-publishers/).
 
-## Subsequent npm releases
+## Automatic npm releases
 
-When preparing a future npm release, update the package and lockfile together,
-commit the change, and push a matching tag. From the repository root:
+Pushing changes under `packages/client-ts/` to `main` runs **Publish npm**.
+Changes to the publishing workflow or `scripts/npm-release*.mjs` also run it.
+Other branches and pull requests never publish. Core-only changes run CI without
+creating an npm version.
+
+The workflow reads the public npm registry, selects the next stable patch version,
+and updates the package and lockfile in its temporary checkout. For example,
+when npm has `0.2.0`, a client change publishes `0.2.1`; the next publishes `0.2.2`.
+The version committed in `package.json` is a release floor: explicitly raising it
+above the published versions selects that version instead. This supports deliberate
+minor/major releases without requiring a version bump for every change.
+
+There are no bot version commits or release loops. The published tarball contains
+the selected version and `harnessKitRelease` metadata identifying the source
+commit and client Git tree. The repository's version floor can therefore lag the
+published patch version. To see the current public version:
 
 ```sh
-cd packages/client-ts
-npm version patch --no-git-tag-version
-cd ../..
-git add packages/client-ts/package.json packages/client-ts/package-lock.json
-git commit -m "Release npm client 0.2.1"
-git push origin main
-git tag npm-v0.2.1
-git push origin npm-v0.2.1
+npm view @tomanagle/harness-kit version
 ```
 
-The `npm-v` prefix keeps client releases independent from Go binary releases and
-future packages in the `@tomanagle` scope. The workflow rejects tags that do not
-match `package.json`. Stable versions publish to `latest`; prereleases publish to
-`next`. You can also run the workflow manually on the release commit with
-**bootstrap disabled**. Every publish requires a new package version.
+Publishing is serialized. A retry with an already-published client tree skips
+publishing, including after publication succeeded but a workflow was interrupted.
+Outdated or divergent automatic runs cannot publish over a newer recorded source
+commit. Pending GitHub runs may coalesce; the next selected push contains the
+accumulated client changes. Each run checks out its exact source revision for
+provenance. Registry outages fail the workflow rather than guessing a version.
+
+Before publishing, the workflow checks release logic and generated contracts,
+runs client type checks and sidecar integration tests, builds the client, and
+installs/imports the exact packed artifact in a clean directory. Releases continue
+to use [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/), with
+`publish-npm.yml` authorized for direct publishing. No publishing token or 2FA
+prompt is needed for this configured path.
+
+### Explicit releases and retries
+
+Tagged and manual releases still use the exact version in the package and lockfile.
+For a prerelease, set both files to a new version such as `0.3.0-rc.1`, commit them,
+and push the matching `npm-v0.3.0-rc.1` tag. Prereleases publish to `next`; stable
+releases publish to `latest`. Keep prerelease manifests on a release branch:
+automatic `main` releases require a stable version floor.
+
+For a deliberate stable minor or major release, update both version fields and
+push to `main`; automatic publication handles it. A matching `npm-v...` tag is
+optional. Tags must match the manifest, and stable releases must advance the
+highest published stable version. Existing versions with different or unknown
+source metadata are rejected instead of being overwritten.
+
+Use **Re-run jobs** to retry a failed automatic release with the same source.
+A manual run with **bootstrap disabled** publishes the exact committed version,
+so select a release commit with a new version or one already published by this
+workflow. Bootstrap staging remains available solely for the initial package
+setup and still requires npm approval.
+
+`make test-release` exercises version selection, retry deduplication, manifest
+consistency, prereleases and registry failure handling without publishing.
+These tests also run in CI and the publish workflow.
 
 ## Future Go releases
 

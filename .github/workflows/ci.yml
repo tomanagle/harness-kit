@@ -9,6 +9,9 @@ jobs:
         with: { go-version: stable, cache: false }
       - working-directory: core
         run: go run ./cmd/protocolgen -check
+      - uses: actions/setup-node@v6
+        with: { node-version: 24 }
+      - run: node --test scripts/npm-release.test.mjs
   go:
     strategy:
       matrix:

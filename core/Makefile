@@ -6,7 +6,7 @@ GO_MODULES := . providers/openai providers/anthropic ../packages/client-go ../ex
 BIN     := bin/harness-kit
 VERSION ?= $(patsubst core/%,%,$(shell git describe --tags --match 'core/v[0-9]*' --always --dirty 2>/dev/null || echo dev))
 
-.PHONY: all build install run generate check-generated architecture-check test test-go test-ts test-client-go test-clients test-providers test-examples test-live setup format fmt format-go format-web format-check lint lint-go lint-ts hooks wasm-check cross client-ts clean
+.PHONY: all build install run generate check-generated architecture-check test test-release test-go test-ts test-client-go test-clients test-providers test-examples test-live setup format fmt format-go format-web format-check lint lint-go lint-ts hooks wasm-check cross client-ts clean
 
 # Where `make install` puts the binary (must be on your PATH).
 INSTALL_DIR ?= $(HOME)/.local/bin
@@ -38,7 +38,10 @@ check-generated:
 architecture-check:
 	$(GO) test ./internal/architecture
 
-test: check-generated test-go test-clients test-providers test-examples
+test: check-generated test-release test-go test-clients test-providers test-examples
+
+test-release:
+	node --test ../scripts/npm-release.test.mjs
 
 test-go:
 	$(GO) test -race ./...
