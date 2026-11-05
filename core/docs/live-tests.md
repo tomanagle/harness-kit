@@ -21,7 +21,7 @@ HARNESS_KIT_LIVE_CODEX_MODEL="$CODEX_MODEL" \
 HARNESS_KIT_LIVE_CODEX_OVERRIDE_MODEL="$CODEX_OVERRIDE_MODEL" \
 HARNESS_KIT_LIVE_CLAUDE_MODEL="$CLAUDE_MODEL" \
 HARNESS_KIT_LIVE_CLAUDE_OVERRIDE_MODEL="$CLAUDE_OVERRIDE_MODEL" \
-go test -count=1 -v -run TestLiveLifecycle ./runtimes/integration
+go test -count=1 -v -run TestLiveLifecycle ./internal/integration
 ```
 
 Filter one runtime with `-run 'TestLiveLifecycle/claude'` or

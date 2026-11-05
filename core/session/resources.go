@@ -115,7 +115,7 @@ func (m *Manager) evictLocked(ms *managed) error {
 	ms.emitMu.Lock()
 	defer ms.emitMu.Unlock()
 	ms.mu.Lock()
-	busy := ms.turn != nil || ms.compaction != nil || ms.nativeCompaction != nil || ms.info.State == StateStarting || ms.info.State == StateClosing || ms.info.State == StateSuspending
+	busy := m.hookAdmissionActive(ms.info.ID) || ms.turn != nil || ms.compaction != nil || ms.nativeCompaction != nil || ms.info.State == StateStarting || ms.info.State == StateClosing || ms.info.State == StateSuspending
 	pin := ms.info.Pinned
 	terminal := ms.info.State.Terminal()
 	ms.mu.Unlock()
@@ -188,7 +188,7 @@ func (m *Manager) suspendLocked(ctx context.Context, id string) error {
 		ms.emitMu.Unlock()
 		return nil
 	}
-	if ms.info.State != StateIdle || ms.turn != nil || ms.info.Pinned {
+	if m.hookAdmissionActive(ms.info.ID) || ms.info.State != StateIdle || ms.turn != nil || ms.info.Pinned {
 		ms.mu.Unlock()
 		ms.emitMu.Unlock()
 		return ErrBusy
@@ -274,7 +274,7 @@ func (m *Manager) enforceResources(ctx context.Context) []string {
 		ms.emitMu.Lock()
 		ms.mu.Lock()
 		idle := maxTime(ms.info.UpdatedAt, ms.lastAccess)
-		eligible := ms.turn == nil && ms.compaction == nil && ms.nativeCompaction == nil && ms.info.State != StateStarting && ms.info.State != StateClosing && ms.info.State != StateSuspending && !ms.info.Pinned && !ms.eventWriteFailed && !ms.recordWriteFailed
+		eligible := !m.hookAdmissionActive(ms.info.ID) && ms.turn == nil && ms.compaction == nil && ms.nativeCompaction == nil && ms.info.State != StateStarting && ms.info.State != StateClosing && ms.info.State != StateSuspending && !ms.info.Pinned && !ms.eventWriteFailed && !ms.recordWriteFailed
 		state := ms.info.State
 		pinned := ms.info.Pinned
 		ms.mu.Unlock()

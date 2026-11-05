@@ -79,6 +79,11 @@ func (m *Manager) InitializeSettings(ctx context.Context, v settings.Values) err
 	if err := m.validateSessionDefaults(ctx, copy); err != nil {
 		return err
 	}
+	if m.opts.SettingsStore != nil {
+		if err := m.opts.SettingsStore.Save(ctx, copy.Clone()); err != nil {
+			return fmt.Errorf("%w: %w", settings.ErrPersistence, err)
+		}
+	}
 	m.opts.AllowUnsafe = copy.Process.AllowUnsafe
 	if m.opts.LogLevel != nil {
 		var level slog.Level
@@ -125,7 +130,11 @@ func (m *Manager) globalSnapshotLocked() settings.Snapshot {
 			fields[name] = f
 		}
 	}
-	return settings.Snapshot{Revision: m.settingsRevision, Values: m.settings.Clone(), Fields: fields}
+	snapshot := settings.Snapshot{Revision: m.settingsRevision, Values: m.settings.Clone(), Fields: fields}
+	if rt, ok := m.reg.Get(snapshot.Values.Session.Runtime); ok {
+		applyRuntimeFields(&snapshot, rt.Info(), false)
+	}
+	return snapshot
 }
 
 // Settings returns effective values and descriptions for the global host or a
@@ -136,8 +145,28 @@ func (m *Manager) Settings(ctx context.Context, target settings.Target) (setting
 		return settings.Snapshot{}, err
 	}
 	m.lifecycleMu.Lock()
-	defer m.lifecycleMu.Unlock()
-	return m.settingsSnapshotLocked(ctx, target)
+	snapshot, err := m.settingsSnapshotLocked(ctx, target)
+	m.lifecycleMu.Unlock()
+	if err != nil {
+		return snapshot, err
+	}
+	if target.Runtime != "" {
+		rt, _ := m.reg.Get(target.Runtime)
+		if describer, ok := rt.(agent.ConfigurationDescriber); ok {
+			cfg := agent.SessionConfig{Model: target.Model, Cwd: snapshot.Values.Session.Cwd}
+			descriptors, err := describer.DescribeConfiguration(ctx, cfg)
+			if err != nil {
+				snapshot.Warnings = append(snapshot.Warnings, err.Error())
+			} else {
+				for name, descriptor := range descriptors {
+					field := snapshot.Fields["session."+name]
+					describeField(&field, descriptor)
+					snapshot.Fields["session."+name] = field
+				}
+			}
+		}
+	}
+	return snapshot, ctx.Err()
 }
 
 func (m *Manager) settingsSnapshotLocked(ctx context.Context, target settings.Target) (settings.Snapshot, error) {
@@ -145,7 +174,26 @@ func (m *Manager) settingsSnapshotLocked(ctx context.Context, target settings.Ta
 	snapshot := m.globalSnapshotLocked()
 	m.settingsMu.RUnlock()
 	snapshot.Target = target
+	if target.Runtime != "" || target.Model != "" {
+		if target.Runtime == "" || target.SessionID != "" {
+			return settings.Snapshot{}, fmt.Errorf("%w: runtime discovery requires runtime and no sessionId", settings.ErrScope)
+		}
+		rt, ok := m.reg.Get(target.Runtime)
+		if !ok {
+			return settings.Snapshot{}, fmt.Errorf("%w: %s", ErrRuntimeNotFound, target.Runtime)
+		}
+		applyRuntimeFields(&snapshot, rt.Info(), false)
+		for name, field := range snapshot.Fields {
+			field.Writable = false
+			snapshot.Fields[name] = field
+		}
+
+		return snapshot, nil
+	}
 	if target.SessionID == "" {
+		if rt, ok := m.reg.Get(snapshot.Values.Session.Runtime); ok {
+			applyRuntimeFields(&snapshot, rt.Info(), false)
+		}
 		return snapshot, nil
 	}
 	var cfg agent.SessionConfig
@@ -230,12 +278,18 @@ func (m *Manager) settingsSnapshotLocked(ctx context.Context, target settings.Ta
 			snapshot.Fields["session."+path] = f
 		}
 	}
+	if rt != nil {
+		applyRuntimeFields(&snapshot, rt.Info(), true)
+	}
 	return snapshot, nil
 }
 
 // ConfigureSettings is the single mutation path for host resource policy and
 // session settings. Validation and revision checks precede any change.
 func (m *Manager) ConfigureSettings(ctx context.Context, p settings.ConfigureParams) (settings.Snapshot, error) {
+	if p.Target.Runtime != "" || p.Target.Model != "" {
+		return settings.Snapshot{}, fmt.Errorf("%w: runtime/model targets are read-only discovery", settings.ErrScope)
+	}
 	if err := ctx.Err(); err != nil {
 		return settings.Snapshot{}, err
 	}
@@ -276,6 +330,11 @@ func (m *Manager) ConfigureSettings(ctx context.Context, p settings.ConfigurePar
 	}
 	if err := m.validateSessionDefaults(ctx, next); err != nil {
 		return settings.Snapshot{}, err
+	}
+	if m.opts.SettingsStore != nil {
+		if err := m.opts.SettingsStore.Save(ctx, next.Clone()); err != nil {
+			return settings.Snapshot{}, fmt.Errorf("%w: %w", settings.ErrPersistence, err)
+		}
 	}
 	m.settingsMu.Lock()
 	m.settings = next.Clone()
@@ -366,6 +425,8 @@ func cloneSettingsSnapshot(s settings.Snapshot) settings.Snapshot {
 	fields := make(map[string]settings.Field, len(s.Fields))
 	for k, v := range s.Fields {
 		v.Scopes = slices.Clone(v.Scopes)
+		v.Choices = slices.Clone(v.Choices)
+		v.Default = slices.Clone(v.Default)
 		if v.Minimum != nil {
 			n := *v.Minimum
 			v.Minimum = &n
@@ -374,6 +435,7 @@ func cloneSettingsSnapshot(s settings.Snapshot) settings.Snapshot {
 	}
 	s.Fields = fields
 	s.Deferred = slices.Clone(s.Deferred)
+	s.Warnings = slices.Clone(s.Warnings)
 	return s
 }
 
@@ -635,4 +697,44 @@ func sameSetting(a, b settings.Values, path string) bool {
 	_ = json.Unmarshal(read(a), &av)
 	_ = json.Unmarshal(read(b), &bv)
 	return reflect.DeepEqual(av, bv)
+}
+
+func describeField(field *settings.Field, descriptor config.Descriptor) {
+	if descriptor.Type != "" {
+		field.Type = descriptor.Type
+	}
+	field.Description, field.Source, field.AllowCustom = descriptor.Description, descriptor.Source, descriptor.AllowCustom
+	field.Choices = slices.Clone(descriptor.Choices)
+	field.Default = slices.Clone(descriptor.Default)
+}
+func applyRuntimeFields(snapshot *settings.Snapshot, info agent.Info, scoped bool) {
+	// A scoped target may use a different runtime from the host defaults.
+	for path := range snapshot.Fields {
+		if strings.HasPrefix(path, "session.options.") {
+			delete(snapshot.Fields, path)
+		}
+	}
+	for name, support := range info.Capabilities.Configuration {
+		path := "session." + name
+		field := snapshot.Fields[path]
+		if field.Type == "" {
+			field.Type = "native"
+		}
+		field.When, field.Writable = "newSession", support.Startup
+		field.Scopes = []string{"global"}
+		if support.Session {
+			field.Scopes = append(field.Scopes, "session")
+		}
+		if support.Turn {
+			field.Scopes = append(field.Scopes, "turn")
+		}
+		if scoped {
+			field.Writable = support.Session
+			if support.Session {
+				field.When = "nextTurn"
+			}
+		}
+		describeField(&field, support.Descriptor)
+		snapshot.Fields[path] = field
+	}
 }

@@ -17,6 +17,7 @@ const (
 	CodeForkSourceChanged       = -32018
 	CodeGitConflict             = -32021
 	CodeGitError                = -32020
+	CodeHookFailed              = -32022
 	CodeInternalError           = -32603
 	CodeInvalidDecision         = -32010
 	CodeInvalidParams           = -32602
@@ -36,6 +37,7 @@ const (
 	CodeSessionClosed           = -32006
 	CodeSessionNotFound         = -32001
 	CodeSettingsConflict        = -32014
+	CodeSettingsPersistence     = -32023
 	CodeUnsupported             = -32012
 	CodeUnsupportedVersion      = -32008
 	MethodApprovalList          = "approval.list"
@@ -51,6 +53,9 @@ const (
 	MethodGitStage              = "git.stage"
 	MethodGitStatus             = "git.status"
 	MethodGitUnstage            = "git.unstage"
+	MethodHooksList             = "hooks.list"
+	MethodHooksRegister         = "hooks.register"
+	MethodHooksUnregister       = "hooks.unregister"
 	MethodInitialize            = "initialize"
 	MethodLogsSubscribe         = "logs.subscribe"
 	MethodLogsUnsubscribe       = "logs.unsubscribe"
@@ -99,6 +104,7 @@ const (
 	ReasonForkSourceChanged     = "fork_source_changed"
 	ReasonGitConflict           = "git_conflict"
 	ReasonGitError              = "git_error"
+	ReasonHookFailed            = "hook_failed"
 	ReasonInvalidDecision       = "invalid_decision"
 	ReasonInvalidParams         = "invalid_params"
 	ReasonNewSessionRequired    = "new_session_required"
@@ -113,8 +119,10 @@ const (
 	ReasonSessionClosed         = "session_closed"
 	ReasonSessionNotFound       = "session_not_found"
 	ReasonSettingsConflict      = "settings_conflict"
+	ReasonSettingsPersistence   = "settings_persistence_failed"
 	ReasonUnsupported           = "unsupported"
 	ReasonUnsupportedVersion    = "unsupported_version"
+	RequestHookCall             = "hook.call"
 	RequestToolCall             = "tool.call"
 )
 
@@ -291,10 +299,66 @@ type Capabilities struct {
 	Usage bool `json:"usage"`
 }
 
+// Options are per-session options (agent.SessionConfig.Options).
+type ClaudeOptions struct {
+	// AddDirs grants tool access to additional directories.
+	AddDirs []string `json:"addDirs,omitempty"`
+	// AllowedTools run without prompting, in Claude Code permission-rule
+	// syntax, e.g. "Read", "Bash(git diff *)".
+	AllowedTools []string `json:"allowedTools,omitempty"`
+	// Bare skips hooks, plugins, MCP servers, CLAUDE.md and auto memory
+	// for reproducible runs. Bare mode authenticates only with
+	// ANTHROPIC_API_KEY or an apiKeyHelper, never with a Claude.ai login.
+	Bare bool `json:"bare,omitempty"`
+	// DisablePartialMessages turns off token-level streaming.
+	DisablePartialMessages bool `json:"disablePartialMessages,omitempty"`
+	// DisallowedTools are deny rules.
+	DisallowedTools []string `json:"disallowedTools,omitempty"`
+	// Effort: "low", "medium", "high", "xhigh" or "max".
+	Effort string `json:"effort,omitempty"`
+	// ForkOnResume continues a resumed session under a new session ID.
+	ForkOnResume bool `json:"forkOnResume,omitempty"`
+	// MaxBudgetUSD stops a prompt when estimated spend reaches it.
+	MaxBudgetUSD float64 `json:"maxBudgetUsd,omitempty"`
+	// MaxImageBytes optionally bounds each input image before encoding. Nil
+	// imposes no kit limit; zero refuses image bytes. Native limits still apply.
+	MaxImageBytes *int64 `json:"maxImageBytes,omitempty"`
+	// MaxTurns limits agentic turns per prompt.
+	MaxTurns int `json:"maxTurns,omitempty"`
+	// PermissionMode: "default"/"manual", "acceptEdits", "plan", "auto",
+	// "dontAsk" or "bypassPermissions" (requires AllowUnsafe).
+	PermissionMode string `json:"permissionMode,omitempty"`
+	// Tools restricts the built-in tool set; an empty list disables all
+	// built-in tools. Nil keeps the default set.
+	Tools *[]string `json:"tools,omitempty"`
+}
+
 // ClientInfo identifies the client.
 type ClientInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
+}
+
+// Options are per-session options (agent.SessionConfig.Options).
+type CodexOptions struct {
+	// AddDirs selects additional writable roots in workspace-write mode.
+	// It does not change the inherited sandbox mode or approval policy.
+	AddDirs []string `json:"addDirs,omitempty"`
+	// ApprovalPolicy: "untrusted", "on-request" or "never". Empty inherits Codex configuration.
+	ApprovalPolicy string `json:"approvalPolicy,omitempty"`
+	// ApprovalsReviewer routes eligible approvals to "user" or "auto_review".
+	// Empty inherits native configuration. "guardian_subagent" is a legacy alias.
+	ApprovalsReviewer string `json:"approvalsReviewer,omitempty"`
+	// Config passes thread configuration overrides through verbatim.
+	// Overrides touching sandbox or approval settings require AllowUnsafe.
+	Config map[string]json.RawMessage `json:"config,omitempty"`
+	// Effort overrides the reasoning effort, e.g. "low", "medium", "high".
+	Effort string `json:"effort,omitempty"`
+	// Ephemeral threads are not persisted by Codex and cannot be resumed.
+	Ephemeral bool `json:"ephemeral,omitempty"`
+	// Sandbox: "read-only", "workspace-write" or
+	// "danger-full-access" (requires AllowUnsafe). Empty inherits Codex configuration.
+	Sandbox string `json:"sandbox,omitempty"`
 }
 
 // CompactionSettings controls additional host-requested compaction before a
@@ -323,14 +387,39 @@ type ConfigPatch struct {
 	Reset   []string                   `json:"reset,omitempty"`
 }
 
+// Choice is a provider value, not an application permission preset.
+type ConfigurationChoice struct {
+	Description string `json:"description,omitempty"`
+	Label       string `json:"label"`
+	Value       string `json:"value"`
+}
+
+// Descriptor supplies UI metadata without prescribing a settings interface.
+// Source is "declared", "reported" or "unknown". Reported choices describe
+// what the installed runtime returned, not a guarantee of account entitlement.
+type ConfigurationDescriptor struct {
+	AllowCustom bool                  `json:"allowCustom,omitempty"`
+	Choices     []ConfigurationChoice `json:"choices,omitempty"`
+	Default     json.RawMessage       `json:"default,omitempty"`
+	Description string                `json:"description,omitempty"`
+	Source      string                `json:"source,omitempty"`
+	Type        string                `json:"type,omitempty"`
+}
+
 // Support describes where a setting can be supplied. Session changes apply to
 // future turns, even when submitted during a turn. Live requires an explicit
 // active-turn API; a setting without Live never changes a running turn.
 type ConfigurationSupport struct {
-	Live    bool `json:"live"`
-	Session bool `json:"session"`
-	Startup bool `json:"startup"`
-	Turn    bool `json:"turn"`
+	AllowCustom bool                  `json:"allowCustom,omitempty"`
+	Choices     []ConfigurationChoice `json:"choices,omitempty"`
+	Default     json.RawMessage       `json:"default,omitempty"`
+	Description string                `json:"description,omitempty"`
+	Live        bool                  `json:"live"`
+	Session     bool                  `json:"session"`
+	Source      string                `json:"source,omitempty"`
+	Startup     bool                  `json:"startup"`
+	Turn        bool                  `json:"turn"`
+	Type        string                `json:"type,omitempty"`
 }
 
 type ConfigureSettingsParams struct {
@@ -429,30 +518,32 @@ type ErrorInfo struct {
 type ErrorReason string
 
 const (
-	ErrorReasonApprovalNotFound   ErrorReason = "approval_not_found"
-	ErrorReasonBudgetExceeded     ErrorReason = "budget_exceeded"
-	ErrorReasonDuplicateTool      ErrorReason = "duplicate_tool"
-	ErrorReasonDuplicateTurn      ErrorReason = "duplicate_turn"
-	ErrorReasonEventTooLarge      ErrorReason = "event_too_large"
-	ErrorReasonForkSourceChanged  ErrorReason = "fork_source_changed"
-	ErrorReasonGitConflict        ErrorReason = "git_conflict"
-	ErrorReasonGitError           ErrorReason = "git_error"
-	ErrorReasonInvalidDecision    ErrorReason = "invalid_decision"
-	ErrorReasonInvalidParams      ErrorReason = "invalid_params"
-	ErrorReasonNewSessionRequired ErrorReason = "new_session_required"
-	ErrorReasonNotInitialized     ErrorReason = "not_initialized"
-	ErrorReasonNotResumable       ErrorReason = "not_resumable"
-	ErrorReasonPolicyViolation    ErrorReason = "policy_violation"
-	ErrorReasonRestartRequired    ErrorReason = "restart_required"
-	ErrorReasonRuntimeError       ErrorReason = "runtime_error"
-	ErrorReasonRuntimeNotFound    ErrorReason = "runtime_not_found"
-	ErrorReasonRuntimeUnavailable ErrorReason = "runtime_unavailable"
-	ErrorReasonSessionBusy        ErrorReason = "session_busy"
-	ErrorReasonSessionClosed      ErrorReason = "session_closed"
-	ErrorReasonSessionNotFound    ErrorReason = "session_not_found"
-	ErrorReasonSettingsConflict   ErrorReason = "settings_conflict"
-	ErrorReasonUnsupported        ErrorReason = "unsupported"
-	ErrorReasonUnsupportedVersion ErrorReason = "unsupported_version"
+	ErrorReasonApprovalNotFound          ErrorReason = "approval_not_found"
+	ErrorReasonBudgetExceeded            ErrorReason = "budget_exceeded"
+	ErrorReasonDuplicateTool             ErrorReason = "duplicate_tool"
+	ErrorReasonDuplicateTurn             ErrorReason = "duplicate_turn"
+	ErrorReasonEventTooLarge             ErrorReason = "event_too_large"
+	ErrorReasonForkSourceChanged         ErrorReason = "fork_source_changed"
+	ErrorReasonGitConflict               ErrorReason = "git_conflict"
+	ErrorReasonGitError                  ErrorReason = "git_error"
+	ErrorReasonHookFailed                ErrorReason = "hook_failed"
+	ErrorReasonInvalidDecision           ErrorReason = "invalid_decision"
+	ErrorReasonInvalidParams             ErrorReason = "invalid_params"
+	ErrorReasonNewSessionRequired        ErrorReason = "new_session_required"
+	ErrorReasonNotInitialized            ErrorReason = "not_initialized"
+	ErrorReasonNotResumable              ErrorReason = "not_resumable"
+	ErrorReasonPolicyViolation           ErrorReason = "policy_violation"
+	ErrorReasonRestartRequired           ErrorReason = "restart_required"
+	ErrorReasonRuntimeError              ErrorReason = "runtime_error"
+	ErrorReasonRuntimeNotFound           ErrorReason = "runtime_not_found"
+	ErrorReasonRuntimeUnavailable        ErrorReason = "runtime_unavailable"
+	ErrorReasonSessionBusy               ErrorReason = "session_busy"
+	ErrorReasonSessionClosed             ErrorReason = "session_closed"
+	ErrorReasonSessionNotFound           ErrorReason = "session_not_found"
+	ErrorReasonSettingsConflict          ErrorReason = "settings_conflict"
+	ErrorReasonSettingsPersistenceFailed ErrorReason = "settings_persistence_failed"
+	ErrorReasonUnsupported               ErrorReason = "unsupported"
+	ErrorReasonUnsupportedVersion        ErrorReason = "unsupported_version"
 )
 
 // EventPage is a bounded transcript page. NextSeq is the last returned event's
@@ -485,6 +576,7 @@ const (
 	EventTypeSessionStarted     EventType = "session.started"
 	EventTypeSessionUpdated     EventType = "session.updated"
 	EventTypeStreamGap          EventType = "stream.gap"
+	EventTypeSubagentUpdated    EventType = "subagent.updated"
 	EventTypeToolCompleted      EventType = "tool.completed"
 	EventTypeToolOutput         EventType = "tool.output"
 	EventTypeToolStarted        EventType = "tool.started"
@@ -492,6 +584,14 @@ const (
 	EventTypeTurnStarted        EventType = "turn.started"
 	EventTypeUsage              EventType = "usage"
 	EventTypeWorkspaceDiff      EventType = "workspace.diff"
+)
+
+// FailurePolicy controls whether a failed callback stops its lifecycle phase.
+type FailurePolicy string
+
+const (
+	FailurePolicyContinue FailurePolicy = "continue"
+	FailurePolicyFail     FailurePolicy = "fail"
 )
 
 // ForkParams branch the complete conversation. Arbitrary turn cutoffs are not
@@ -685,6 +785,91 @@ type HistorySettings struct {
 }
 
 type HistorySettingsPatch map[string]json.RawMessage
+
+type HookCreate struct {
+	Config   SessionConfig     `json:"config"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+	Runtime  string            `json:"runtime"`
+	Title    string            `json:"title,omitempty"`
+}
+
+type HookName string
+
+const (
+	HookNameSessionBeforeCreate HookName = "session.beforeCreate"
+	HookNameTurnAfter           HookName = "turn.after"
+	HookNameTurnBefore          HookName = "turn.before"
+)
+
+type HookRequest struct {
+	// ConcurrencyLimit also bounds callbacks retained by a remote client after timeout.
+	ConcurrencyLimit int          `json:"concurrencyLimit"`
+	Config           *ConfigPatch `json:"config,omitempty"`
+	Create           *HookCreate  `json:"create,omitempty"`
+	HookID           string       `json:"hookId"`
+	Input            []InputPart  `json:"input,omitempty"`
+	InvocationID     string       `json:"invocationId"`
+	IsFirstTurn      bool         `json:"isFirstTurn"`
+	Name             HookName     `json:"name"`
+	Result           *TurnResult  `json:"result,omitempty"`
+	Session          *HookSession `json:"session,omitempty"`
+	TurnID           string       `json:"turnId,omitempty"`
+}
+
+// Response is a patch. Omitted values preserve the previous handler's output.
+// Before-create accepts Create; before-turn accepts Input and Config; after-turn
+// is observational and must return an empty response.
+type HookResponse struct {
+	Config *ConfigPatch `json:"config,omitempty"`
+	Create *HookCreate  `json:"create,omitempty"`
+	Input  *[]InputPart `json:"input,omitempty"`
+}
+
+type HookSession struct {
+	Config   SessionConfig     `json:"config"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+	Runtime  string            `json:"runtime"`
+	ID       string            `json:"sessionId"`
+	Title    string            `json:"title"`
+	Turns    int               `json:"turns"`
+}
+
+// Settings belongs to the shared settings document. Required IDs must be
+// registered while hooks are enabled. This prevents a disconnected owner from
+// silently removing application-required preparation or validation.
+type HookSettings struct {
+	Enabled       bool          `json:"enabled"`
+	MaxConcurrent int           `json:"maxConcurrent"`
+	OnError       FailurePolicy `json:"onError"`
+	Required      []string      `json:"required"`
+	TimeoutMs     int64         `json:"timeoutMs"`
+}
+
+// Settings belongs to the shared settings document. Required IDs must be
+// registered while hooks are enabled. This prevents a disconnected owner from
+// silently removing application-required preparation or validation.
+type HookSettingsPatch map[string]json.RawMessage
+
+type HookSpec struct {
+	ID   string   `json:"id"`
+	Name HookName `json:"name"`
+	// Lower order runs first; ties are ordered by ID, independent of connection timing.
+	Order     int    `json:"order,omitempty"`
+	SessionID string `json:"sessionId,omitempty"`
+}
+
+type HooksListResult struct {
+	Hooks []HookSpec `json:"hooks"`
+}
+
+// Hook registrations are owned by the registering connection.
+type HooksRegisterParams struct {
+	Hook HookSpec `json:"hook"`
+}
+
+type HooksUnregisterParams struct {
+	ID string `json:"id"`
+}
 
 // InitializeParams are the params of "initialize".
 type InitializeParams struct {
@@ -887,16 +1072,18 @@ const (
 )
 
 type ProcessSettings struct {
-	ACP               map[string]AcpRuntimeSettings `json:"acp,omitempty"`
-	AllowUnsafe       bool                          `json:"allowUnsafe"`
-	ClaudePath        string                        `json:"claudePath"`
-	CodexPath         string                        `json:"codexPath"`
-	FakeDelayMs       int64                         `json:"fakeDelayMs"`
-	GitPath           string                        `json:"gitPath"`
-	KitMCP            bool                          `json:"kitMcp"`
-	Runtimes          []string                      `json:"runtimes"`
-	ShutdownTimeoutMs int64                         `json:"shutdownTimeoutMs"`
-	Store             string                        `json:"store"`
+	ACP         map[string]AcpRuntimeSettings `json:"acp,omitempty"`
+	AllowUnsafe bool                          `json:"allowUnsafe"`
+	ClaudePath  string                        `json:"claudePath"`
+	CodexPath   string                        `json:"codexPath"`
+	FakeDelayMs int64                         `json:"fakeDelayMs"`
+	GitPath     string                        `json:"gitPath"`
+	KitMCP      bool                          `json:"kitMcp"`
+	Runtimes    []string                      `json:"runtimes"`
+	// SettingsPath opts into host-owned JSON preference persistence. Empty is in-memory.
+	SettingsPath      string `json:"settingsPath"`
+	ShutdownTimeoutMs int64  `json:"shutdownTimeoutMs"`
+	Store             string `json:"store"`
 }
 
 type ProcessSettingsPatch map[string]json.RawMessage
@@ -995,6 +1182,7 @@ type ServerCapabilities struct {
 	// EventLogSize is the per-session replay window.
 	EventLogSize int  `json:"eventLogSize"`
 	Git          bool `json:"git"`
+	Hooks        bool `json:"hooks"`
 	// Logs advertises opt-in structured slog notifications.
 	Logs     bool          `json:"logs"`
 	Runtimes []RuntimeInfo `json:"runtimes"`
@@ -1279,13 +1467,18 @@ type SessionUpdatedData struct {
 // Field describes a field for settings interfaces. When describes the global
 // lifetime; scoped snapshots can refine it using adapter capabilities.
 type SettingsField struct {
-	Minimum  *int64   `json:"minimum,omitempty"`
-	Nullable bool     `json:"nullable,omitempty"`
-	Scopes   []string `json:"scopes"`
-	Type     string   `json:"type"`
-	Unit     string   `json:"unit,omitempty"`
-	When     string   `json:"when"`
-	Writable bool     `json:"writable"`
+	AllowCustom bool                  `json:"allowCustom,omitempty"`
+	Choices     []ConfigurationChoice `json:"choices,omitempty"`
+	Default     json.RawMessage       `json:"default,omitempty"`
+	Description string                `json:"description,omitempty"`
+	Minimum     *int64                `json:"minimum,omitempty"`
+	Nullable    bool                  `json:"nullable,omitempty"`
+	Scopes      []string              `json:"scopes"`
+	Source      string                `json:"source,omitempty"`
+	Type        string                `json:"type"`
+	Unit        string                `json:"unit,omitempty"`
+	When        string                `json:"when"`
+	Writable    bool                  `json:"writable"`
 }
 
 // SettingsGetParams select host settings or a session's settings.
@@ -1305,9 +1498,14 @@ type SettingsSnapshot struct {
 	Revision uint64         `json:"revision"`
 	Target   SettingsTarget `json:"target,omitempty"`
 	Values   SettingsValues `json:"values"`
+	Warnings []string       `json:"warnings,omitempty"`
 }
 
 type SettingsTarget struct {
+	Model string `json:"model,omitempty"`
+	// Runtime and Model select read-only provider discovery through settings.get.
+	// They cannot be combined with SessionID or used by settings.configure.
+	Runtime   string `json:"runtime,omitempty"`
 	SessionID string `json:"sessionId,omitempty"`
 }
 
@@ -1322,6 +1520,7 @@ type SettingsValues struct {
 	Compaction CompactionSettings `json:"compaction"`
 	Git        GitSettings        `json:"git"`
 	History    HistorySettings    `json:"history"`
+	Hooks      HookSettings       `json:"hooks"`
 	Logging    LoggingSettings    `json:"logging"`
 	Memory     MemorySettings     `json:"memory"`
 	Process    ProcessSettings    `json:"process"`
@@ -1342,6 +1541,37 @@ type StreamSettings struct {
 }
 
 type StreamSettingsPatch map[string]json.RawMessage
+
+// SubagentStatus is the last observed lifecycle state of a delegated agent.
+type SubagentStatus string
+
+const (
+	SubagentStatusCancelled SubagentStatus = "cancelled"
+	SubagentStatusCompleted SubagentStatus = "completed"
+	SubagentStatusFailed    SubagentStatus = "failed"
+	SubagentStatusRunning   SubagentStatus = "running"
+	SubagentStatusUnknown   SubagentStatus = "unknown"
+)
+
+// SubagentUpdatedData reports delegated work independently of the spawning tool.
+// A completed spawn/wait tool does not imply a completed agent. Updates are
+// observations, not independently controllable Harness Kit sessions. Optional
+// descriptive fields enrich earlier observations when present.
+type SubagentUpdatedData struct {
+	Background bool   `json:"background,omitempty"`
+	CallID     string `json:"callId,omitempty"`
+	Error      string `json:"error,omitempty"`
+	// ID is the runtime's child identifier, or the spawn call ID until known.
+	// Consumers reconcile a provisional ID with a later ID using CallID.
+	ID       string `json:"id"`
+	Output   string `json:"output,omitempty"`
+	ParentID string `json:"parentId,omitempty"`
+	Prompt   string `json:"prompt,omitempty"`
+	// RunID distinguishes resumed runs when the runtime supplies one.
+	RunID  string         `json:"runId,omitempty"`
+	Status SubagentStatus `json:"status"`
+	Title  string         `json:"title,omitempty"`
+}
 
 // ToolCallParams are the params of the "tool.call" request.
 type ToolCallParams struct {
@@ -1467,6 +1697,15 @@ type TurnConfig struct {
 	Effort  string                     `json:"effort,omitempty"`
 	Model   string                     `json:"model,omitempty"`
 	Options map[string]json.RawMessage `json:"options,omitempty"`
+}
+
+// TurnResult is the outcome of Prompt.
+type TurnResult struct {
+	Budget        *BudgetExceeded `json:"budget,omitempty"`
+	Error         *ErrorInfo      `json:"error,omitempty"`
+	RuntimeTurnID string          `json:"runtimeTurnId,omitempty"`
+	Status        TurnStatus      `json:"status"`
+	Usage         *UsageData      `json:"usage,omitempty"`
 }
 
 // TurnStartedData is the payload of turn.started.

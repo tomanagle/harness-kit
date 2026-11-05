@@ -27,6 +27,8 @@ and a static tool catalog need not implement change notifications.
 | Agent-facing tool bridge | `session.ToolServer`                                                                     | Native MCP `toolhost.Host` or a replacement bridge                              |
 | Approval decisions       | `permission.Policy` and the session approval broker                                      | Host policy and user decisions                                                  |
 | Configuration sources    | `session.Options.Prepare`, `PrepareRestore`, and `ValidateConfig`                        | Explicit startup values, application configuration, or opt-in file resolution   |
+| Lifecycle extensions     | `hooks.Registration` and `hooks.Handler`                                                 | Ordered bounded registry, or a host implementation                              |
+| Global preferences       | `settings.Store`                                                                         | Optional JSON file store or application storage                                 |
 | Diagnostics              | Supplied `slog.Logger` and session logging options                                       | Host handlers and the kit's bounded structured log stream                       |
 
 For example, an embedding application can assemble the portable session manager
@@ -124,7 +126,7 @@ func NativeAgents(
 ```
 
 `agent.NewRegistry` keeps the 20-second discovery default. Nil optional launcher
-or input-file dependencies retain the native defaults. The sidecar command is
+or input-file dependencies retain the native defaults. The sidecar implementation in `internal/cli` is
 the composition root: it intentionally selects concrete native implementations,
 while embedding applications assemble their own dependencies.
 

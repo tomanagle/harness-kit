@@ -385,17 +385,19 @@ core/
   event/            event model, per-session log, non-blocking bus
   permission/       approval requests, policies, broker
   session/          session manager and store
-  internal/         private accounting, process supervision and RPC plumbing
+  internal/         CLI, generator, RPC dispatch, accounting and process supervision
   rpc/              public protocol types and server integration
   runtimes/         codex, claude, acp, fake adapters
   model/            dependency-free streaming inference contract
     contextwindow/  public caller-owned history and compaction
   config/           public configuration and budget policy types
   settings/         one startup/runtime settings document
+  hooks/            injectable lifecycle extensions
+  logging/          bounded slog stream for applications and UIs
   workspace/        portable workspace contract and native Git backend
   providers/        optional OpenAI and Anthropic SDK modules
-  cmd/harness-kit/  the local sidecar binary
-  cmd/protocolgen/  schema and client generator
+  cmd/harness-kit/  small local CLI/sidecar entry point
+  cmd/protocolgen/  small schema/client generator entry point
   docs/             SDK documentation
   bin/              local build output
 packages/
@@ -408,7 +410,7 @@ server/             planned coordination server; placeholder only
 ```
 
 See [package boundaries](docs/packages.md) for what builders can import and
-the source migration from the earlier flat layout.
+the research behind the layout, dependency checks, and compatibility notes.
 
 ## License
 

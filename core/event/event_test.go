@@ -16,6 +16,7 @@ func TestEventJSONRoundTrip(t *testing.T) {
 		{Seq: 3, SessionID: "s", Type: ApprovalRequested, Data: permission.Request{ID: "a1", Kind: permission.KindCommand, Title: "run ls"}},
 		{Seq: 4, SessionID: "s", Type: "future.type", Data: map[string]int{"x": 1}},
 		{Seq: 5, SessionID: "s", Type: SessionClosed},
+		{Seq: 6, SessionID: "s", Type: SubagentUpdated, Data: SubagentUpdatedData{ID: "child", CallID: "spawn", Status: SubagentRunning}},
 	}
 	for _, ev := range in {
 		b, err := json.Marshal(ev)
@@ -30,6 +31,10 @@ func TestEventJSONRoundTrip(t *testing.T) {
 			t.Fatalf("envelope mismatch: %+v vs %+v", out, ev)
 		}
 		switch d := out.Data.(type) {
+		case SubagentUpdatedData:
+			if d.ID != "child" || d.CallID != "spawn" || d.Status != SubagentRunning {
+				t.Fatalf("subagent: %+v", d)
+			}
 		case MessageDeltaData:
 			if d.Text != "hi" {
 				t.Fatalf("delta: %+v", d)

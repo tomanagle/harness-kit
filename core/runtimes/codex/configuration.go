@@ -17,8 +17,12 @@ func (s *Session) captureDefaults(ctx context.Context) {
 	defer cancel()
 	var native struct {
 		Config struct {
-			Model  string `json:"model"`
-			Effort string `json:"model_reasoning_effort"`
+			Sandbox   string          `json:"sandbox_mode"`
+			Approval  string          `json:"approval_policy"`
+			Reviewer  string          `json:"approvals_reviewer"`
+			Workspace workspacePolicy `json:"sandbox_workspace_write"`
+			Model     string          `json:"model"`
+			Effort    string          `json:"model_reasoning_effort"`
 		} `json:"config"`
 	}
 	params := map[string]any{"includeLayers": false}
@@ -27,6 +31,7 @@ func (s *Session) captureDefaults(ctx context.Context) {
 	}
 	if err := s.conn.Call(ctx, "config/read", params, &native); err == nil {
 		s.nativeModel, s.nativeEffort = native.Config.Model, native.Config.Effort
+		s.nativeSandbox, s.nativeApproval, s.nativeReviewer, s.nativeWorkspace = native.Config.Sandbox, native.Config.Approval, native.Config.Reviewer, native.Config.Workspace
 	}
 	s.modelEfforts = make(map[string]string)
 	s.supportedEfforts = make(map[string][]string)
@@ -110,6 +115,9 @@ func (s *Session) PrepareTurn(ctx context.Context, settings agent.TurnConfig) (a
 	_ = agent.DecodeOptions(settings.Options, &options)
 	baseline := s.opts
 	options.Effort, baseline.Effort = "", ""
+	options.Sandbox, baseline.Sandbox = "", ""
+	options.ApprovalPolicy, baseline.ApprovalPolicy = "", ""
+	options.ApprovalsReviewer, baseline.ApprovalsReviewer = "", ""
 	actual, _ := json.Marshal(options)
 	initial, _ := json.Marshal(baseline)
 	if string(actual) != string(initial) {
@@ -133,6 +141,11 @@ func (s *Session) PrepareTurn(ctx context.Context, settings agent.TurnConfig) (a
 	if supported := s.supportedEfforts[settings.Model]; len(supported) > 0 && !slices.Contains(supported, settings.Effort) {
 		return agent.TurnConfig{}, fmt.Errorf("%w: codex model %q does not advertise effort %q", agent.ErrInvalidConfig, settings.Model, settings.Effort)
 	}
+	var permissions Options
+	_ = agent.DecodeOptions(settings.Options, &permissions)
+	if err := s.resolvePermissions(&settings, permissions); err != nil {
+		return agent.TurnConfig{}, err
+	}
 	return settings, nil
 }
 
@@ -141,6 +154,13 @@ func (s *Session) PrepareTurn(ctx context.Context, settings agent.TurnConfig) (a
 func (s *Session) NativeDefaults() agent.TurnConfig {
 	models, _ := json.Marshal(s.modelEfforts)
 	supported, _ := json.Marshal(s.supportedEfforts)
+	sandbox, _ := json.Marshal(s.nativeSandbox)
+	approval, _ := json.Marshal(s.nativeApproval)
+	reviewer, _ := json.Marshal(s.nativeReviewer)
+	workspace, _ := json.Marshal(s.nativeWorkspace)
+	s.mu.Lock()
+	changed, _ := json.Marshal(s.permissionOverrideUsed)
+	s.mu.Unlock()
 	return agent.TurnConfig{Model: s.nativeModel, Effort: s.nativeEffort,
-		Options: map[string]json.RawMessage{"modelEfforts": models, "supportedEfforts": supported}}
+		Options: map[string]json.RawMessage{"modelEfforts": models, "supportedEfforts": supported, "sandbox": sandbox, "approvalPolicy": approval, "approvalsReviewer": reviewer, "workspacePolicy": workspace, "permissionOverrides": changed}}
 }

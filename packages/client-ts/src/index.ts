@@ -1,3 +1,11 @@
+import { Conversation, type ConversationOptions } from "./conversation.ts";
+export {
+  Conversation,
+  ConversationState,
+  type ConversationSnapshot,
+  type ConversationMessage,
+  type ConversationOptions,
+} from "./conversation.ts";
 // @tomanagle/harness-kit: a typed client for the Harness Kit sidecar protocol.
 //
 // This entry point has no Node.js dependencies, so it works in Electron
@@ -9,9 +17,15 @@ import { ProtocolClient } from "./methods.gen.ts";
 import {
   PROTOCOL_VERSION,
   ErrorCodes,
+  type HookName,
+  type HookRequest,
+  type HookResponse,
+  type HookSpec,
   type ApprovalRequest,
   type CreateSessionParams,
   type ConfigPatch,
+  type CodexOptions,
+  type ClaudeOptions,
   type SettingsPatch,
   type SettingsTarget,
   type SettingsSnapshot,
@@ -37,6 +51,21 @@ import {
   type TurnCompletedData,
 } from "./protocol.ts";
 
+/** Lifecycle contexts are narrowed by the registered hook name. */
+export type HookContext<N extends HookName = HookName> = Omit<
+  HookRequest,
+  "name" | "create" | "session" | "input" | "result"
+> & { name: N; signal: AbortSignal } & (N extends "session.beforeCreate"
+    ? { create: NonNullable<HookRequest["create"]> }
+    : {
+        session: NonNullable<HookRequest["session"]>;
+        input: InputPart[];
+        turnId: string;
+      } & (N extends "turn.after" ? { result: NonNullable<HookRequest["result"]> } : {}));
+export type HookHandler<N extends HookName = HookName> = (
+  context: HookContext<N>,
+) => void | HookResponse | Promise<void | HookResponse>;
+
 export * from "./protocol.ts";
 export { ProtocolClient } from "./methods.gen.ts";
 export {
@@ -56,6 +85,16 @@ export interface HarnessKitOptions {
    * Omit when attaching another window to an already-configured host. */
   initialSettings?: SettingsPatch;
 }
+
+export type RuntimeOptions<R extends string> = R extends "codex"
+  ? CodexOptions
+  : R extends "claude"
+    ? ClaudeOptions
+    : Record<string, unknown>;
+export type CreateSessionOptions<R extends string = string> = Omit<
+  CreateSessionParams,
+  "runtime" | "options"
+> & { runtime?: R; options?: NoInfer<RuntimeOptions<R>> };
 
 export type EventListener = (event: HarnessEvent) => void;
 
@@ -111,6 +150,8 @@ export class HarnessKit {
   readonly #settingsListeners = new Set<(snapshot: SettingsSnapshot) => void>();
   readonly #logListeners = new Set<(notification: LogNotification) => void>();
   readonly #settingsRevisions = new Map<string, number>();
+  #activeHooks = 0;
+  readonly #hooks = new Map<string, HookHandler>();
   readonly #tools = new Map<string, ToolDefinition>();
   #server: InitializeResult | undefined;
 
@@ -152,6 +193,21 @@ export class HarnessKit {
       this.#rpc.request(method, params, opts),
     );
     this.#rpc.setRequestHandler(async (method, params, signal) => {
+      if (method === "hook.call") {
+        const request = params as HookRequest;
+        const handler = this.#hooks.get(request.hookId);
+        if (!handler) throw new Error(`Hook ${request.hookId} is not registered by this client.`);
+        const limit = request.concurrencyLimit > 0 ? request.concurrencyLimit : 32;
+        if (this.#activeHooks >= limit) throw new Error("Hook callback concurrency limit reached.");
+        this.#activeHooks++;
+        try {
+          return (
+            (await handler({ ...request, input: request.input ?? [], signal } as HookContext)) ?? {}
+          );
+        } finally {
+          this.#activeHooks--;
+        }
+      }
       if (method !== "tool.call")
         throw Object.assign(new Error("method not found: " + method), {
           code: ErrorCodes.MethodNotFound,
@@ -360,6 +416,9 @@ export class HarnessKit {
   };
 
   readonly sessions = {
+    /** Observe persisted history and live state without waking the runtime. */
+    observe: (sessionId: string, options?: ConversationOptions): Conversation =>
+      new Conversation(this, sessionId, options),
     /** Reads a saved turn-boundary diff without starting an agent or running Git. */
     diff: (
       sessionId: string,
@@ -372,8 +431,10 @@ export class HarnessKit {
       await this.protocol.workspaceRemove({ sessionId });
     },
     /** Starts a session (or resumes `resumeId`). */
-    create: async (params: CreateSessionParams): Promise<Session> => {
-      const { session } = await this.protocol.sessionCreate(params);
+    create: async <R extends string = string>(
+      params: CreateSessionOptions<R>,
+    ): Promise<Session> => {
+      const { session } = await this.protocol.sessionCreate(params as CreateSessionParams);
       return new Session(this, session);
     },
     get: async (sessionId: string): Promise<SessionInfo> =>
@@ -471,11 +532,34 @@ export class HarnessKit {
     },
   };
 
-  /**
-   * Host tools: functions in your app that agents can call. Codex and
-   * Claude Code reach them through Harness Kit's MCP bridge. Register tools
-   * before creating the sessions that should use them.
-   */
+  /** Ordered lifecycle handlers owned by this connection. */
+  readonly hooks = {
+    /** Register before creating/prompting sessions. Returns an async disposer.
+     * Named IDs can be required through settings.hooks.required. */
+    register: async <N extends HookName>(
+      name: N,
+      handler: HookHandler<N>,
+      options: Omit<HookSpec, "name" | "id"> & { id?: string } = {},
+    ): Promise<() => Promise<void>> => {
+      const id = options.id ?? crypto.randomUUID();
+      if (this.#hooks.has(id)) throw new Error(`Hook ${id} is already registered.`);
+      this.#hooks.set(id, handler as HookHandler);
+      try {
+        await this.protocol.hooksRegister({ hook: { ...options, id, name } });
+      } catch (error) {
+        this.#hooks.delete(id);
+        throw error;
+      }
+      return () => this.hooks.unregister(id);
+    },
+    unregister: async (id: string): Promise<void> => {
+      await this.protocol.hooksUnregister({ id });
+      this.#hooks.delete(id);
+    },
+    list: async (): Promise<HookSpec[]> => (await this.protocol.hooksList({})).hooks,
+  };
+
+  /** Host tools, served to runtimes through the kit MCP bridge. */
   readonly tools = {
     register: async (defs: ToolDefinition | ToolDefinition[]): Promise<void> => {
       const list = Array.isArray(defs) ? defs : [defs];
@@ -549,6 +633,10 @@ export class Session {
   get runtime(): string {
     return this.#info.runtime;
   }
+  observe(options?: ConversationOptions): Conversation {
+    return this.#kit.sessions.observe(this.id, options);
+  }
+
   /** The session info as last fetched; see refresh(). */
   get info(): SessionInfo {
     return this.#info;
@@ -586,15 +674,7 @@ export class Session {
    * turn.completed), or await `turn.done`. Aborting `signal` cancels the
    * turn.
    */
-  prompt(
-    input: string | InputPart[],
-    opts: {
-      signal?: AbortSignal;
-      turnId?: string;
-      config?: ConfigPatch;
-      settings?: SettingsPatch;
-    } = {},
-  ): Turn {
+  prompt(input: string | InputPart[], opts: PromptOptions = {}): Turn {
     const parts: InputPart[] = typeof input === "string" ? [{ type: "text", text: input }] : input;
     return new Turn(
       this.#kit,
@@ -604,7 +684,16 @@ export class Session {
       opts.signal,
       opts.config,
       opts.settings,
+      opts.events,
     );
+  }
+
+  /** Runs a prompt without retaining streaming events. Subscribe separately if needed. */
+  run(
+    input: string | InputPart[],
+    opts: Omit<PromptOptions, "events"> = {},
+  ): Promise<TurnCompletedData> {
+    return this.prompt(input, { ...opts, events: { mode: "none" } }).done;
   }
 
   /** Interrupts the active turn or manual compaction, if any. */
@@ -637,6 +726,32 @@ export class Session {
   }
 }
 
+export interface PromptOptions {
+  signal?: AbortSignal;
+  turnId?: string;
+  config?: ConfigPatch;
+  settings?: SettingsPatch;
+  events?: TurnEventOptions;
+}
+
+export interface TurnEventOptions {
+  /** "none" keeps only the result; buffered is the default. */
+  mode?: "buffered" | "none";
+  /** Maximum retained events (default 256). Zero disables retention. */
+  maxEvents?: number;
+  /** Maximum UTF-8 JSON bytes retained (default 1 MiB). */
+  maxBytes?: number;
+}
+
+/** The iterator fell behind. The agent continues; done still reports its result.
+ * Read persisted session history to recover events instead of silently losing data. */
+export class EventBufferOverflowError extends Error {
+  constructor() {
+    super("Turn event buffer exceeded its limit; read session history to recover events.");
+    this.name = "EventBufferOverflowError";
+  }
+}
+
 /**
  * A running turn: an async iterable of its events, in order, ending with
  * turn.completed. Events dropped by the server for a slow client are
@@ -652,7 +767,15 @@ export class Turn implements AsyncIterable<HarnessEvent> {
   readonly #unsubscribeEvents: () => void;
   readonly #unsubscribeClose: () => void;
   #lastSeq = 0;
-  #chain: Promise<void> = Promise.resolve();
+  #recovering = false;
+  #recoveryNeeded = false;
+  #wantedSeq = 0;
+  #bufferBytes = 0;
+  #maxEvents: number;
+  #maxBytes: number;
+  #discard = false;
+  #iterated = false;
+  #iteratorError: unknown;
   #buffer: HarnessEvent[] = [];
   #wake: (() => void) | undefined;
   #finished = false;
@@ -668,7 +791,16 @@ export class Turn implements AsyncIterable<HarnessEvent> {
     signal?: AbortSignal,
     config?: ConfigPatch,
     settings?: SettingsPatch,
+    events: TurnEventOptions = {},
   ) {
+    this.#maxEvents = events.maxEvents ?? 256;
+    this.#maxBytes = events.maxBytes ?? 1024 * 1024;
+    for (const limit of [this.#maxEvents, this.#maxBytes])
+      if (!Number.isSafeInteger(limit) || limit < 0)
+        throw new RangeError("Turn buffer limits must be nonnegative safe integers.");
+    if (events.mode !== undefined && !["buffered", "none"].includes(events.mode))
+      throw new TypeError("Invalid turn event mode.");
+    this.#discard = events.mode === "none" || this.#maxEvents === 0 || this.#maxBytes === 0;
     this.#kit = kit;
     this.id = turnId;
     this.sessionId = sessionId;
@@ -685,12 +817,14 @@ export class Turn implements AsyncIterable<HarnessEvent> {
 
     const onAbort = () => void kit.protocol.sessionCancel({ sessionId }).catch(() => {});
     if (signal) {
-      if (signal.aborted) queueMicrotask(onAbort);
-      else signal.addEventListener("abort", onAbort, { once: true });
+      if (signal.aborted) {
+        queueMicrotask(() => this.#fail(signal.reason ?? new Error("Aborted")));
+        return;
+      } else signal.addEventListener("abort", onAbort, { once: true });
       void this.done.finally(() => signal.removeEventListener("abort", onAbort)).catch(() => {});
     }
     kit.protocol
-      .sessionPrompt({ sessionId, turnId, input, config, settings })
+      .sessionPrompt({ sessionId, turnId, input, config, settings }, { signal })
       .catch((e) => this.#fail(e));
   }
 
@@ -699,12 +833,34 @@ export class Turn implements AsyncIterable<HarnessEvent> {
     await this.#kit.protocol.sessionCancel({ sessionId: this.sessionId });
   }
 
+  get bufferedEvents(): number {
+    return this.#buffer.length;
+  }
+  get bufferedBytes(): number {
+    return this.#bufferBytes;
+  }
+
+  /** Stop retaining events without cancelling the agent. Idempotent. */
+  discardEvents(): void {
+    this.#discard = true;
+    this.#buffer = [];
+    this.#bufferBytes = 0;
+    this.#wake?.();
+  }
+
   #ingest(ev: HarnessEvent): void {
     if (this.#finished || ev.sessionId !== this.sessionId) return;
     if (ev.type === "stream.gap") {
-      this.#chain = this.#chain.then(() => this.#recover());
+      this.#recoveryNeeded = true;
+      if (!this.#recovering) {
+        this.#recovering = true;
+        void this.#recover();
+      }
     } else if (ev.turnId === this.id) {
-      this.#chain = this.#chain.then(() => this.#accept(ev));
+      if (this.#recovering) {
+        // History is the queue: retain only a high-water mark while replaying.
+        this.#wantedSeq = Math.max(this.#wantedSeq, ev.seq);
+      } else this.#accept(ev);
     }
   }
 
@@ -712,23 +868,51 @@ export class Turn implements AsyncIterable<HarnessEvent> {
     if (this.#finished) return;
     try {
       let cursor = this.#lastSeq;
-      for (;;) {
-        const page = await this.#kit.sessions.eventsPage(this.sessionId, { afterSeq: cursor });
-        for (const ev of page.events) if (ev.turnId === this.id) this.#accept(ev);
-        if (this.#finished || !page.hasMore) break;
-        if (page.nextSeq <= cursor)
-          throw new Error("history page did not advance during gap recovery");
-        cursor = page.nextSeq;
-      }
+      do {
+        this.#recoveryNeeded = false;
+        for (;;) {
+          const page = await this.#kit.sessions.eventsPage(this.sessionId, {
+            afterSeq: cursor,
+            limit: Math.max(1, Math.min(200, this.#maxEvents || 200)),
+          });
+          if (page.truncated && !this.#discard) {
+            this.#iteratorError = new Error(
+              "Retained history omitted turn events; the event stream is incomplete.",
+            );
+            this.discardEvents();
+          }
+          for (const ev of page.events) if (ev.turnId === this.id) this.#accept(ev);
+          if (this.#finished) break;
+          const advanced = page.nextSeq > cursor;
+          cursor = Math.max(cursor, page.nextSeq);
+          if (!page.hasMore) {
+            if (!advanced && this.#wantedSeq > this.#lastSeq)
+              throw new Error("Retained history cannot recover the turn gap.");
+            break;
+          }
+          if (!advanced) throw new Error("History page did not advance during gap recovery.");
+        }
+      } while ((this.#recoveryNeeded || this.#wantedSeq > this.#lastSeq) && !this.#finished);
     } catch (e) {
       this.#fail(e);
+    } finally {
+      this.#recovering = false;
     }
   }
 
   #accept(ev: HarnessEvent): void {
     if (this.#finished || ev.seq <= this.#lastSeq) return;
     this.#lastSeq = ev.seq;
-    this.#buffer.push(ev);
+    if (!this.#discard && !this.#iteratorError) {
+      const bytes = eventBytes(ev);
+      if (this.#buffer.length >= this.#maxEvents || this.#bufferBytes + bytes > this.#maxBytes) {
+        this.#iteratorError = new EventBufferOverflowError();
+        this.discardEvents();
+      } else {
+        this.#buffer.push(structuredClone(ev));
+        this.#bufferBytes += bytes;
+      }
+    }
     if (ev.type === "turn.completed") {
       this.#finished = true;
       this.#detach();
@@ -752,17 +936,28 @@ export class Turn implements AsyncIterable<HarnessEvent> {
   }
 
   async *[Symbol.asyncIterator](): AsyncIterator<HarnessEvent> {
-    for (;;) {
-      if (this.#buffer.length > 0) {
-        yield this.#buffer.shift()!;
-        continue;
+    if (this.#iterated) throw new Error("A turn can only be iterated once.");
+    this.#iterated = true;
+    try {
+      for (;;) {
+        if (this.#iteratorError) throw this.#iteratorError;
+        if (this.#buffer.length) {
+          const event = this.#buffer.shift()!;
+          this.#bufferBytes -= eventBytes(event);
+          yield event;
+          continue;
+        }
+        if (this.#finished || this.#discard) {
+          if (this.#error !== undefined) throw this.#error;
+          return;
+        }
+        await new Promise<void>((resolve) => {
+          this.#wake = resolve;
+        });
+        this.#wake = undefined;
       }
-      if (this.#finished) {
-        if (this.#error !== undefined) throw this.#error;
-        return;
-      }
-      await new Promise<void>((r) => (this.#wake = r));
-      this.#wake = undefined;
+    } finally {
+      this.discardEvents();
     }
   }
 }
@@ -818,4 +1013,8 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
       },
     );
   });
+}
+
+function eventBytes(event: HarnessEvent): number {
+  return new TextEncoder().encode(JSON.stringify(event)).byteLength;
 }

@@ -39,6 +39,7 @@ const (
 	ToolStarted        Type = "tool.started"
 	ToolOutput         Type = "tool.output"
 	ToolCompleted      Type = "tool.completed"
+	SubagentUpdated    Type = "subagent.updated"
 	ApprovalRequested  Type = "approval.requested"
 	ApprovalResolved   Type = "approval.resolved"
 	Usage              Type = "usage"
@@ -117,6 +118,7 @@ var payloadTypes = map[Type]func(json.RawMessage) (any, error){
 	ToolStarted:        decodeAs[ToolStartedData],
 	ToolOutput:         decodeAs[ToolOutputData],
 	ToolCompleted:      decodeAs[ToolCompletedData],
+	SubagentUpdated:    decodeAs[SubagentUpdatedData],
 	ApprovalRequested:  decodeAs[permission.Request],
 	ApprovalResolved:   decodeAs[ApprovalResolvedData],
 	Usage:              decodeAs[UsageData],
@@ -290,6 +292,37 @@ type ToolCompletedData struct {
 	Output   string     `json:"output,omitempty"`
 	ExitCode *int       `json:"exitCode,omitempty"`
 	Error    string     `json:"error,omitempty"`
+}
+
+// SubagentStatus is the last observed lifecycle state of a delegated agent.
+type SubagentStatus string
+
+const (
+	SubagentRunning   SubagentStatus = "running"
+	SubagentCompleted SubagentStatus = "completed"
+	SubagentFailed    SubagentStatus = "failed"
+	SubagentCancelled SubagentStatus = "cancelled"
+	SubagentUnknown   SubagentStatus = "unknown"
+)
+
+// SubagentUpdatedData reports delegated work independently of the spawning tool.
+// A completed spawn/wait tool does not imply a completed agent. Updates are
+// observations, not independently controllable Harness Kit sessions. Optional
+// descriptive fields enrich earlier observations when present.
+type SubagentUpdatedData struct {
+	// ID is the runtime's child identifier, or the spawn call ID until known.
+	// Consumers reconcile a provisional ID with a later ID using CallID.
+	ID       string `json:"id"`
+	CallID   string `json:"callId,omitempty"`
+	ParentID string `json:"parentId,omitempty"`
+	// RunID distinguishes resumed runs when the runtime supplies one.
+	RunID      string         `json:"runId,omitempty"`
+	Title      string         `json:"title,omitempty"`
+	Prompt     string         `json:"prompt,omitempty"`
+	Status     SubagentStatus `json:"status"`
+	Output     string         `json:"output,omitempty"`
+	Error      string         `json:"error,omitempty"`
+	Background bool           `json:"background,omitempty"`
 }
 
 // ApprovalResolvedData is the payload of approval.resolved.

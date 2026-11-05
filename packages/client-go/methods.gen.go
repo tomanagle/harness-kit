@@ -96,6 +96,27 @@ func (c *Client) GitUnstage(ctx context.Context, params GitPathsParams) (Empty, 
 	return result, err
 }
 
+// HooksList calls hooks.list.
+func (c *Client) HooksList(ctx context.Context, params Empty) (HooksListResult, error) {
+	var result HooksListResult
+	err := c.Call(ctx, "hooks.list", params, &result)
+	return result, err
+}
+
+// HooksRegister calls hooks.register.
+func (c *Client) HooksRegister(ctx context.Context, params HooksRegisterParams) (Empty, error) {
+	var result Empty
+	err := c.Call(ctx, "hooks.register", params, &result)
+	return result, err
+}
+
+// HooksUnregister calls hooks.unregister.
+func (c *Client) HooksUnregister(ctx context.Context, params HooksUnregisterParams) (Empty, error) {
+	var result Empty
+	err := c.Call(ctx, "hooks.unregister", params, &result)
+	return result, err
+}
+
 // Initialize calls initialize.
 func (c *Client) Initialize(ctx context.Context, params InitializeParams) (InitializeResult, error) {
 	var result InitializeResult

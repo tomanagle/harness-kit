@@ -1,5 +1,6 @@
 // Package settings defines the configuration shared by hosts, the sidecar and
-// clients. It reads no files and owns no process-global configuration.
+// clients. It owns no process-global configuration and performs no implicit I/O.
+// Store and FileStore provide optional, explicitly selected persistence.
 package settings
 
 import (
@@ -13,6 +14,7 @@ import (
 
 	"github.com/tomanagle/harness-kit/core/agent"
 	"github.com/tomanagle/harness-kit/core/config"
+	"github.com/tomanagle/harness-kit/core/hooks"
 	"github.com/tomanagle/harness-kit/core/workspace"
 )
 
@@ -30,6 +32,7 @@ var (
 // limit; a zero cache budget retains no cached events. These are data budgets,
 // not limits on process RSS or memory owned by child processes.
 type Values struct {
+	Hooks      hooks.Settings            `json:"hooks"`
 	Compaction config.CompactionSettings `json:"compaction"`
 	Git        workspace.GitSettings     `json:"git"`
 	Workspace  workspace.Settings        `json:"workspace"`
@@ -44,6 +47,8 @@ type Values struct {
 }
 
 type Process struct {
+	// SettingsPath opts into host-owned JSON preference persistence. Empty is in-memory.
+	SettingsPath      string                `json:"settingsPath"`
 	ACP               map[string]ACPRuntime `json:"acp,omitempty"`
 	Store             string                `json:"store"`
 	Runtimes          []string              `json:"runtimes"`
@@ -109,6 +114,10 @@ func (p *Patch) UnmarshalJSON(data []byte) error {
 
 type Target struct {
 	SessionID string `json:"sessionId,omitempty"`
+	// Runtime and Model select read-only provider discovery through settings.get.
+	// They cannot be combined with SessionID or used by settings.configure.
+	Runtime string `json:"runtime,omitempty"`
+	Model   string `json:"model,omitempty"`
 }
 type ConfigureParams struct {
 	Target           Target   `json:"target,omitempty"`
@@ -120,15 +129,21 @@ type ConfigureParams struct {
 // Field describes a field for settings interfaces. When describes the global
 // lifetime; scoped snapshots can refine it using adapter capabilities.
 type Field struct {
-	Type     string   `json:"type"`
-	Unit     string   `json:"unit,omitempty"`
-	When     string   `json:"when"`
-	Scopes   []string `json:"scopes"`
-	Nullable bool     `json:"nullable,omitempty"`
-	Minimum  *int64   `json:"minimum,omitempty"`
-	Writable bool     `json:"writable"`
+	Type        string          `json:"type"`
+	Unit        string          `json:"unit,omitempty"`
+	When        string          `json:"when"`
+	Scopes      []string        `json:"scopes"`
+	Nullable    bool            `json:"nullable,omitempty"`
+	Minimum     *int64          `json:"minimum,omitempty"`
+	Writable    bool            `json:"writable"`
+	Description string          `json:"description,omitempty"`
+	Choices     []config.Choice `json:"choices,omitempty"`
+	AllowCustom bool            `json:"allowCustom,omitempty"`
+	Source      string          `json:"source,omitempty"`
+	Default     json.RawMessage `json:"default,omitempty"`
 }
 type Snapshot struct {
+	Warnings []string         `json:"warnings,omitempty"`
 	Target   Target           `json:"target,omitempty"`
 	Revision uint64           `json:"revision"`
 	Values   Values           `json:"values"`
@@ -142,6 +157,7 @@ type Snapshot struct {
 func Defaults() Values {
 	pageBytes := int64(1024 * 1024)
 	return Values{
+		Hooks:      hooks.Defaults(),
 		Compaction: config.CompactionDefaults(),
 		Git:        workspace.GitDefaults(),
 		Workspace:  workspace.Defaults(),
@@ -159,6 +175,11 @@ func Describe() map[string]Field {
 		out[path] = Field{Type: typ, Unit: unit, When: when, Nullable: nullable, Minimum: min, Writable: when != "restart", Scopes: scopes}
 	}
 	zero, one := int64(0), int64(1)
+	add("hooks.maxConcurrent", "integer", "handlers", "nextOperation", false, &one, "global")
+	add("hooks.enabled", "boolean", "", "nextOperation", false, nil, "global")
+	add("hooks.timeoutMs", "integer", "milliseconds", "nextOperation", false, &one, "global")
+	add("hooks.onError", "string", "", "nextOperation", false, nil, "global")
+	add("hooks.required", "array", "", "nextOperation", false, nil, "global")
 	add("compaction.autoAtTokens", "integer", "tokens", "newSession", true, &one, "global", "session", "turn")
 	add("compaction.autoAtPercent", "number", "percent", "newSession", true, &zero, "global", "session", "turn")
 	add("compaction.timeoutMs", "integer", "milliseconds", "newSession", false, &one, "global", "session", "turn")
@@ -181,7 +202,7 @@ func Describe() map[string]Field {
 	}
 	add("workspace.maxFiles", "integer", "files", "newSession", false, &one, "global", "session", "turn")
 	add("workspace.timeoutMs", "integer", "milliseconds", "newSession", false, &one, "global", "session", "turn")
-	for _, p := range []string{"store", "codexPath", "claudePath", "gitPath"} {
+	for _, p := range []string{"store", "codexPath", "claudePath", "gitPath", "settingsPath"} {
 		add("process."+p, "string", "", "restart", false, nil, "global")
 	}
 	add("process.runtimes", "array", "", "restart", false, nil, "global")
@@ -417,6 +438,9 @@ func Apply(base Values, patch Patch, reset []string, defaults Values) (Values, [
 }
 
 func Validate(v Values) error {
+	if err := v.Hooks.Validate(); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
 	if err := v.Compaction.Validate(); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalid, err)
 	}

@@ -165,7 +165,7 @@ func TestConfigurationValidationAndCapabilities(t *testing.T) {
 			t.Errorf("%s capability: %+v", key, v)
 		}
 	}
-	if v := caps["options.permissionMode"]; !v.Startup || v.Session || v.Turn || v.Live {
+	if v := caps["options.permissionMode"]; !v.Startup || !v.Session || !v.Turn || v.Live {
 		t.Errorf("permission mode mutability: %+v", v)
 	}
 }
@@ -183,10 +183,34 @@ func TestTurnPreparationRejectsStartupChangesAndEffortEnvironmentConflicts(t *te
 	if _, err := s.PrepareTurn(context.Background(), agent.TurnConfig{Model: "sonnet", Effort: "high"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.PrepareTurn(context.Background(), agent.TurnConfig{Model: "sonnet", Options: map[string]json.RawMessage{"permissionMode": json.RawMessage(`"bypassPermissions"`)}}); !errors.Is(err, agent.ErrUnsupported) {
-		t.Fatalf("startup-only permission change: %v", err)
+	if _, err := s.PrepareTurn(context.Background(), agent.TurnConfig{Model: "sonnet", Options: map[string]json.RawMessage{"bare": json.RawMessage(`true`)}}); !errors.Is(err, agent.ErrUnsupported) {
+		t.Fatalf("startup-only process change: %v", err)
 	}
 	if _, err := os.Stat(log); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("preparation launched process: %v", err)
+	}
+}
+
+func TestPermissionOverridesDoNotLeakBetweenTurns(t *testing.T) {
+	rt, log := newFake(t, "2.1.317")
+	cfg := agent.SessionConfig{Model: "sonnet", Options: Options{PermissionMode: "default"}}
+	sess, err := rt.Start(context.Background(), cfg, &recorder{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close(context.Background())
+	base, _ := cfg.Settings()
+	override := base.Clone()
+	override.Options["permissionMode"] = json.RawMessage(`"acceptEdits"`)
+	for _, selection := range []*agent.TurnConfig{&base, &override, nil} {
+		if _, err := sess.Prompt(context.Background(), agent.Turn{ID: "t", Input: agent.Text("hello"), Config: selection}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	args := invocations(t, log)
+	for i, want := range []string{"default", "acceptEdits", "default"} {
+		if got, _ := flag(args[i], "--permission-mode"); got != want {
+			t.Fatalf("turn %d permissionMode=%q want=%q", i, got, want)
+		}
 	}
 }

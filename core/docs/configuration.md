@@ -59,8 +59,9 @@ harness-kit serve --settings ./settings.json
 
 Explicit command-line flags override file values. Files are read at startup;
 changing a file does not silently reconfigure a running process. A settings UI
-uses `settings.configure` to apply a change and saves accepted preferences in
-its own storage for the next launch.
+uses `settings.configure` to apply a change. With `process.settingsPath` configured,
+accepted global preferences are automatically saved; without it, persistence
+remains application-owned. `--settings` alone remains a read-only startup source.
 
 `settings.get` returns `values`, `revision`, and field metadata. Each field
 describes its unit, valid minimum, nullability, scope and application lifetime.
@@ -119,7 +120,8 @@ const accepted = await kit.settings.configure({
   expectedRevision: current.revision,
   patch: { memory: { evictAfterIdleMs: 300_000 } },
 });
-await preferences.save(accepted.values); // your application's storage
+// Only needed when automatic persistence is not configured:
+await preferences.save(accepted.values);
 
 await kit.settings.configure({
   target: { sessionId },
@@ -140,6 +142,69 @@ host's process wiring. Use the transport's `settings` option for the complete
 boot document. Go `client.Spawn` similarly accepts `Options.Settings`; direct
 Go hosts construct their adapters/store and call `InitializeSettings` before
 creating sessions. Functions and transport objects remain host-owned wiring.
+
+## Optional preference persistence
+
+The sidecar can load and save the global settings document for any client:
+
+```ts
+const kit = await createHarnessKit({
+  transport: stdio({
+    command: "harness-kit",
+    settings: {
+      process: {
+        settingsPath: "/application-data/preferences.json",
+        store: "/application-data/sessions",
+        runtimes: ["codex", "claude"],
+      },
+    },
+  }),
+});
+await kit.settings.configure({ patch: { logging: { level: "warn" } } });
+// Saved before this call succeeds; loaded on the next launch.
+```
+
+Choose the path in your application; the kit does not choose a preferences
+folder. An empty `settingsPath` leaves global settings in memory. Changing the
+path requires a restart. Session-scoped settings continue to use the session
+store, and per-turn overrides are not saved as defaults.
+
+Startup precedence is built-in defaults, saved preferences, the explicit startup
+settings document, then explicit CLI flags. Repeating a preference explicitly
+in startup settings overrides its saved value on every launch. Pass only process
+wiring and intentional overrides when users should control the other settings.
+The bootstrap-selected settings path is retained; a saved document cannot redirect
+its own storage to another path.
+
+A missing file is initialized after startup validation. Corrupt files and I/O
+failures stop startup rather than discarding preferences. Global updates validate,
+save, then publish a new revision and apply the change. A failed save returns
+`settings_persistence_failed` and leaves running values/revision unchanged. Files
+use a temporary file, flush and atomic rename with owner-only permissions. This
+is one host's store, not cross-process synchronization or a distributed settings
+transaction. Explicit startup overrides are included in the saved document.
+
+Embedded Go hosts can inject their own storage:
+
+```go
+store := settings.FileStore{Path: "/application-data/preferences.json"}
+values, err := settings.Load(ctx, store, settings.Defaults())
+if err != nil { return err }
+// Construct runtime/process dependencies from values before initializing.
+manager := session.NewManager(runtimes, session.Options{SettingsStore: store})
+if err := manager.InitializeSettings(ctx, values); err != nil { return err }
+```
+
+`settings.Store` has `Load(context.Context) (Values, error)` and
+`Save(context.Context, Values) error`. Implement it for SQLite, a database or an
+existing preferences service. Missing data returns `settings.ErrNotFound`;
+`Save` must commit atomically and preserve the prior document on failure. The
+manager serializes updates. Store methods must honor cancellation and must not
+call back into the same manager. The Go client can select the sidecar's JSON
+store using `Options.Settings` with the same `process.settingsPath` field.
+
+Hook policy uses this same persistence path. Executable handler functions are
+registered after startup; see [lifecycle hooks](hooks.md).
 
 ## Resource policy
 
@@ -255,10 +320,26 @@ such as `options.maxTurns`. Each entry reports `startup`, `session`, `turn` and
 Capability entries describe the adapter surface, not every model or installed
 CLI version; validation or the runtime can still reject an unavailable value.
 
-Codex supports model and effort changes for session defaults and individual
-turns. Its native options are startup-only. Claude also supports per-turn and
-session defaults for `options.maxTurns`, `options.maxBudgetUsd` and
-`options.disablePartialMessages`; other native settings remain startup-only.
+Codex supports model, effort, `options.sandbox`, `options.approvalPolicy` and
+`options.approvalsReviewer` changes for session defaults and individual turns.
+Claude supports model, effort, `options.permissionMode`, `options.maxTurns`,
+`options.maxBudgetUsd` and `options.disablePartialMessages` at those scopes.
+Other native settings remain startup-only. These changes take effect at the next
+turn boundary, never midway through a running turn. Temporary overrides are
+restored from captured native defaults; if a required default is unknown, the
+adapter returns `unsupported` and asks for an explicit value instead of silently
+keeping a previous turn's override.
+
+`settings.get({ runtime: "codex", model: "your-model" })` discovers choices before
+creating a session. `fields["session.model"]` and `fields["session.effort"]` include
+`choices`, `allowCustom`, `default`, `description` and `source`. The source is
+`reported` for installed-runtime metadata, `declared` for adapter-known choices,
+or `unknown` when discovery cannot establish them. None guarantees account
+entitlement. Codex queries its app server without creating a thread or sending a
+prompt; Claude exposes CLI aliases and native permission/effort choices. Optional
+probe failures become `warnings`, preserving static metadata. The runtime/model
+target is read-only; configure global defaults or a session through the existing
+settings API. Applications own permission preset labels and their mappings.
 
 Malformed patches and invalid adapter values return `invalid_params` over RPC
 (`agent.ErrInvalidConfig` in Go). Unsupported lifetimes or unavailable native
@@ -271,8 +352,10 @@ turn, increments no turn count, and consumes no caller-chosen turn ID.
 The adapters retain native configuration unless the host supplies a selection.
 In particular, Codex no longer injects `workspace-write` and `on-request` for
 omitted sandbox/approval options. A host requiring those values should set them
-explicitly at creation. `AllowUnsafe` guards explicit requests to disable safety;
-it does not inspect or override the runtime's independently configured defaults.
+explicitly at creation. Host `AllowUnsafe` guards apply to requested settings
+and to the effective settings materialized before each turn, including a captured
+native default that disables the sandbox or permission checks. Discovery does
+not change native configuration or host policy.
 
 Codex retains model/effort values in its native thread. The adapter resolves
 native defaults, sends complete model/effort selections on each turn, and saves

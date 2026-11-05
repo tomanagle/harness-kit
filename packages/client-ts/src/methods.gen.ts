@@ -63,6 +63,18 @@ export class ProtocolClient {
     return this.#request("git.unstage", params, opts);
   }
 
+  hooksList(params: RpcMethods["hooks.list"]["params"], opts?: RequestOptions): Promise<RpcMethods["hooks.list"]["result"]> {
+    return this.#request("hooks.list", params, opts);
+  }
+
+  hooksRegister(params: RpcMethods["hooks.register"]["params"], opts?: RequestOptions): Promise<RpcMethods["hooks.register"]["result"]> {
+    return this.#request("hooks.register", params, opts);
+  }
+
+  hooksUnregister(params: RpcMethods["hooks.unregister"]["params"], opts?: RequestOptions): Promise<RpcMethods["hooks.unregister"]["result"]> {
+    return this.#request("hooks.unregister", params, opts);
+  }
+
   initialize(params: RpcMethods["initialize"]["params"], opts?: RequestOptions): Promise<RpcMethods["initialize"]["result"]> {
     return this.#request("initialize", params, opts);
   }

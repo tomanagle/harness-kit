@@ -95,3 +95,12 @@ export function stdio(options: StdioOptions): StdioTransport {
     },
   };
 }
+
+export {
+  prepareAttachments,
+  inspectAttachments,
+  type Attachment,
+  type AttachmentOptions,
+  type AttachmentFiles,
+  type AttachmentFile,
+} from "./attachments.ts";

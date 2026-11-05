@@ -105,3 +105,109 @@ changes, and process wiring that requires a restart. See the
 [configuration guide](https://github.com/tomanagle/harness-kit/blob/main/core/docs/configuration.md),
 [protocol](https://github.com/tomanagle/harness-kit/blob/main/core/docs/protocol.md), and
 [examples](https://github.com/tomanagle/harness-kit/tree/main/examples).
+
+## Application helpers (current checkout)
+
+Use result-only execution when another part of your app renders events:
+
+```ts
+const session = await kit.sessions.create({
+  runtime: "codex",
+  options: { sandbox: "workspace-write", approvalPolicy: "on-request" },
+}); // Native options are checked against generated CodexOptions.
+
+const conversation = session.observe({ maxEvents: 2000, maxBytes: 4 * 1024 * 1024 });
+await conversation.ready;
+render(conversation.getSnapshot());
+const unsubscribe = conversation.subscribe(render);
+const result = await session.run("Explain the project", { config: { effort: "high" } });
+unsubscribe();
+conversation.close();
+```
+
+`render` is your application's callback. Snapshots contain messages, tools,
+subtasks, pending approvals, turn results and context usage. The observer
+subscribes before replay, deduplicates events and repairs stream gaps without
+waking a runtime. Snapshots own their data. Limits bound serialized event data,
+not total JavaScript heap usage. `truncated` means this is a partial window;
+older messages, pending approvals or child state may be outside it. Use paginated
+history and `approvals.list` when a complete historical or pending-approval view
+is needed. `error` reports replay failures; `refresh()` retries. Close observers
+when their views unmount. The pure projection and injected `ConversationSource`
+are also available from `@tomanagle/harness-kit/conversation`, including across
+Electron IPC or other custom bridges.
+
+`session.run` retains no delta queue. `session.prompt` still returns an iterable
+plus `.done`, with default limits of **256 events / 1 MiB**. Set
+`events: { mode: "none" }` for result-only use with a turn handle, or configure
+`maxEvents`/`maxBytes` for iteration. Overflow throws `EventBufferOverflowError`
+from the iterator; `.done` continues waiting for the terminal result. Read saved
+history for omitted events. Breaking iteration or calling `discardEvents()`
+releases queued payloads without cancelling the agent.
+
+Build settings controls from the same settings API:
+
+```ts
+const catalog = await kit.settings.get({ runtime: "codex", model: "your-model" });
+const effort = catalog.fields["session.effort"];
+console.log(effort.choices, effort.allowCustom, effort.source, catalog.warnings);
+await kit.settings.configure({
+  target: { sessionId: session.id },
+  patch: { session: { options: { approvalPolicy: "on-request" } } },
+}); // Applies to future turns. Existing host permission guards still apply.
+```
+
+`reported` choices come from the installed runtime; `declared` choices come from
+the adapter; `unknown` preserves uncertainty. These are not account-entitlement
+checks. Read each field's scopes and application timing; custom adapters remain
+extensible through raw protocol options. Your app owns presets such as “Supervised”.
+
+Node/Electron hosts can optionally prepare file selections:
+
+```ts
+import { inspectAttachments, prepareAttachments } from "@tomanagle/harness-kit/node";
+const selection = await inspectAttachments(["/project/README.md"]);
+const { input } = await prepareAttachments(
+  "Explain this",
+  selection.map((file) => file.path),
+  {
+    maxTextBytes: 512 * 1024,
+  },
+);
+await session.run(input);
+```
+
+This helper deduplicates paths, bounds reads, inlines UTF-8 text and references
+local PNG/JPEG/GIF/WebP images. Defaults: 20 files, 512 KiB per text file, 5 MiB
+per image, 1 MiB total text and 20 MiB total images. Every limit is configurable;
+zero is explicit. Inject `files: AttachmentFiles` for your filesystem boundary,
+and pass `signal` for cancellation. Image paths require a shared filesystem with
+the runtime. File dialogs and attachment policies remain application decisions.
+
+## Preferences and lifecycle hooks
+
+Set `stdio({ command, settings: { process: { settingsPath: "/app/preferences.json" } } })`
+to opt into automatic global settings persistence. Saved values load before
+explicit startup overrides; accepted `kit.settings.configure()` changes save
+before applying. Session-scoped settings retain their session-store lifetime.
+
+```ts
+const remove = await kit.hooks.register(
+  "turn.before",
+  async (context) => {
+    if (!context.isFirstTurn) return;
+    return { input: [...context.input, { type: "text", text: "Project context" }] };
+  },
+  { id: "project-context" },
+);
+```
+
+The same API supports `session.beforeCreate` and `turn.after`. `context.signal`
+handles cancellation; registration options include `id`, `order` and `sessionId`.
+Use `settings.hooks` for enabled state, timeout, maximum concurrency, failure
+policy and required handler IDs. Await registration before prompting, and await
+the returned disposer to unregister. Policies can persist; functions are
+registered again after restart. A completed turn does not wait for after-turn
+handlers. See [hooks](../../core/docs/hooks.md) and
+[settings persistence](../../core/docs/configuration.md#optional-preference-persistence)
+for ordering, retries, ownership and storage guarantees.

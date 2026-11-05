@@ -69,3 +69,26 @@ export function eventNarrowing(event: HarnessEvent): string | undefined {
   }
   return undefined;
 }
+
+export async function runtimeOptions(kit: HarnessKit) {
+  await kit.sessions.create({ runtime: "codex", options: { sandbox: "" } });
+  await kit.sessions.create({
+    runtime: "codex",
+    options: { sandbox: "workspace-write", approvalsReviewer: "auto_review" },
+  });
+  await kit.sessions.create({ runtime: "claude", options: { permissionMode: "acceptEdits" } });
+  await kit.sessions.create({ runtime: "my-adapter", options: { custom: true } });
+  // @ts-expect-error Native Codex option names are generated.
+  await kit.sessions.create({ runtime: "codex", options: { sandbbox: "workspace-write" } });
+  // @ts-expect-error Native option values are described by the adapter.
+  await kit.sessions.create({ runtime: "claude", options: { permissionMode: "whatever" } });
+  // @ts-expect-error Claude options cannot be passed to Codex.
+  await kit.sessions.create({ runtime: "codex", options: { permissionMode: "auto" } });
+  const session = await kit.sessions.create({ runtime: "fake" });
+  await session.run("result only", { settings: { session: { effort: "low" } } });
+  // @ts-expect-error run options retain their types.
+  await session.run("bad option", { typo: true });
+  const observed = session.observe({ maxEvents: 100, maxBytes: 65536 });
+  await observed.ready;
+  observed.close();
+}

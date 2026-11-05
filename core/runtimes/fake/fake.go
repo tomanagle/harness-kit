@@ -6,6 +6,7 @@
 // The fake echoes prompts back as a streamed agent message. Directives in
 // the prompt text trigger other behaviour:
 //
+//	[subagent] report a deterministic delegated task
 //	[approve]  ask for approval to run `echo hello` before replying
 //	[slow]     stream a long reply slowly (for cancellation tests)
 //	[fail]     fail the turn
@@ -293,6 +294,19 @@ func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult
 		return agent.TurnResult{}, errors.New("fake: turn failed as requested")
 	}
 
+	if strings.Contains(text, "[subagent]") {
+		child := event.SubagentUpdatedData{ID: "subagent-" + turn.ID, CallID: "delegate-" + turn.ID, Title: "Review implementation", Prompt: "Review the implementation and report findings.", Status: event.SubagentRunning}
+		emit(event.SubagentUpdated, child)
+		defer func() {
+			child.Status = event.SubagentCompleted
+			child.Output = "Review complete. No issues found."
+			if ctx.Err() != nil {
+				child.Status = event.SubagentCancelled
+				child.Output = ""
+			}
+			emit(event.SubagentUpdated, child)
+		}()
+	}
 	if strings.Contains(text, "[raw]") && s.cfg.RawEvents {
 		emit(event.RuntimeRaw, event.RawData{Runtime: s.rt.name, Kind: "fake/raw", Payload: json.RawMessage(`{"hello":"raw"}`)})
 	}
@@ -409,7 +423,7 @@ func (s *Session) callTool(ctx context.Context, turnID, callID, name, args strin
 
 func stripDirectives(s string) string {
 	s = callDirective.ReplaceAllString(s, "")
-	for _, d := range []string{"[approve]", "[slow]", "[fail]", "[crash]", "[raw]"} {
+	for _, d := range []string{"[subagent]", "[approve]", "[slow]", "[fail]", "[crash]", "[raw]"} {
 		s = strings.ReplaceAll(s, d, "")
 	}
 	return strings.Join(strings.Fields(s), " ")

@@ -23,6 +23,12 @@ var ErrInvalidConfig = config.ErrInvalid
 // Managers use the same validation at create, restore, configure and prompt.
 type Configurable interface{ ValidateConfig(SessionConfig) error }
 
+// ConfigurationDescriber optionally probes choices without creating a native
+// conversation or sending a model request. Called only for explicit discovery.
+type ConfigurationDescriber interface {
+	DescribeConfiguration(context.Context, SessionConfig) (map[string]config.Descriptor, error)
+}
+
 // TurnPreparer validates and resolves selections against the running runtime.
 // It must not start a turn or change session defaults. Empty model/effort must
 // resolve to native defaults without inheriting a previous turn's overrides;

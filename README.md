@@ -120,6 +120,80 @@ application that owns the sidecar should control its lifetime.
 The following snippets are independent examples within an open connection's
 lifetime. `kit` refers to the connected client and `session` to a session handle.
 
+## Saved preferences and lifecycle hooks
+
+Opt into automatic global preference persistence with
+`settings.process.settingsPath`. The sidecar loads that JSON document at startup
+and saves accepted `kit.settings.configure()` changes before applying them.
+Session-specific settings already live in the session store. Embedded Go hosts
+can inject a `settings.Store` backed by their own database or use `settings.FileStore`.
+See [configuration and persistence](core/docs/configuration.md).
+
+Add application behavior without wrapping every prompt:
+
+```ts
+const remove = await kit.hooks.register(
+  "turn.before",
+  async (context) => {
+    if (!context.isFirstTurn) return;
+    return {
+      input: [...context.input, { type: "text", text: "Project context supplied by my app" }],
+    };
+  },
+  { id: "project-context" },
+);
+
+await kit.settings.configure({
+  patch: { hooks: { timeoutMs: 10_000, onError: "fail", required: ["project-context"] } },
+});
+```
+
+Hooks support `session.beforeCreate`, `turn.before` and `turn.after`, with ordered
+execution, cancellation, bounded concurrency and connection ownership. First-turn
+status survives restore; a rejected preparation does not consume the first turn.
+Policy lives in the shared settings object; handlers are registered when the app
+starts. Both clients expose typed registration helpers. See [lifecycle hooks](core/docs/hooks.md)
+for failure behavior, retries, after-turn completion and Go examples.
+
+## Less client plumbing
+
+Use `session.run()` when you only need the result; it retains no stream of deltas.
+Use a bounded observer to build a conversation view, without implementing replay,
+deduplication, message assembly or gap recovery yourself:
+
+```ts
+const conversation = session.observe({ maxEvents: 2000, maxBytes: 4 * 1024 * 1024 });
+await conversation.ready;
+console.log(conversation.getSnapshot()); // Messages, tools, subtasks, approvals, context.
+const stop = conversation.subscribe((snapshot) => {
+  console.log(snapshot.messages, snapshot.truncated);
+});
+await session.run("Explain this project", { config: { effort: "high" } });
+stop();
+conversation.close(); // Release the view when it is no longer needed.
+```
+
+The window reports truncation rather than pretending to contain all history.
+`session.prompt()` retains at most 256 events / 1 MiB by default; overflow is an
+explicit iterator error while `.done` still provides the result. Hosts can change
+those limits or disable buffering. These bound retained event data, not process RSS.
+
+A settings screen can discover model and effort choices before creating a session:
+
+```ts
+const catalog = await kit.settings.get({ runtime: "codex", model: "your-model" });
+console.log(catalog.fields["session.effort"]);
+// choices, allowCustom, source (reported / declared / unknown), scopes and timing.
+```
+
+Native Codex and Claude options have generated types. Supported permission,
+model and effort changes apply at turn boundaries through the existing settings
+API. Provider/account availability stays explicit; the app chooses its own presets.
+Node/Electron hosts can use `prepareAttachments()` from the `/node` entry point
+for bounded text/image file preparation with an injectable filesystem.
+See the [TypeScript client guide](packages/client-ts/README.md#application-helpers-current-checkout)
+and [Go client](packages/client-go/README.md) for these helpers and their limits.
+
 ## Runtime discovery, streaming and cancellation
 
 The kit translates each runtime's protocol into a common event stream. Tool
@@ -156,6 +230,28 @@ await session.prompt([
 
 Image paths refer to files on the sidecar's machine. Transcripts retain the
 references, not copies of the image files. See [runtime adapters](core/docs/runtimes.md).
+
+A session's `cwd` selects its working folder. For work across multiple folders,
+Codex and Claude accept `options: { addDirs: ["/absolute/extra/project"] }` at
+session creation. Claude maps this to `--add-dir`; Codex selects those extra
+workspace-write roots while retaining its native sandbox mode and approval
+policy. These are startup options and are persisted when sessions are restored.
+
+## Observe delegated agents
+
+`subagent.updated` reports native delegated work with a child ID, spawning call ID (when known), optional parent link, assignment, status and result. These events are saved and replayed like other conversation events, so applications can project them into subtasks:
+
+```ts
+const unsubscribe = session.onEvent((event) => {
+  if (event.type === "subagent.updated") {
+    const child = event.data;
+    // Upsert by child.id; reconcile a provisional ID using child.callId.
+    console.log(child.id, child.title, child.status, child.output);
+  }
+});
+```
+
+Statuses are `running`, `completed`, `failed`, `cancelled` and `unknown`. A successful spawn or wait tool call is separate from the child's lifecycle. Codex reports collaboration snapshots; Claude reports Agent/Task calls and identified subagent task notifications, excluding shell/Monitor tasks. Missing outcomes stay unknown; parent completion is not evidence of child completion. This is observation of native agents, not a child-session control API. The mapping follows the [Codex app-server schema](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/schema/json/v2/ThreadStartResponse.json) and [Claude task lifecycle messages](https://code.claude.com/docs/en/agent-sdk/typescript#sdktaskstartedmessage).
 
 ## One settings object, including your settings UI
 
@@ -199,6 +295,33 @@ policy applies to the next operation. Process wiring such as the store directory
 or executable paths requires a restart; the kit reports that requirement and
 rejects the patch without partially applying it. Field metadata lets your UI
 explain these lifetimes. See [configuration](core/docs/configuration.md).
+
+Permission presets belong to the harness UI. The kit exposes independent native
+options and preserves provider defaults when they are omitted. For example,
+create a Codex conversation with sandboxed automatic approval review:
+
+```ts
+const session = await kit.sessions.create({
+  runtime: "codex",
+  cwd: "/path/to/project",
+  options: {
+    sandbox: "workspace-write",
+    approvalPolicy: "on-request",
+    approvalsReviewer: "auto_review", // "user" routes approvals to your UI
+  },
+});
+```
+
+Codex separates sandbox boundaries, prompting policy and reviewer selection;
+Claude exposes `options.permissionMode` (`default`, `acceptEdits`, `auto`,
+`plan`, `dontAsk`, or `bypassPermissions`). These permission options are
+startup-only; effort can change for subsequent turns. Full access requires
+the host to opt into `process.allowUnsafe` and explicitly select Codex's
+`danger-full-access` sandbox or Claude's `bypassPermissions` mode. Enabling
+that host gate alone does not select a permission mode. Native account and
+organization restrictions still apply. See the official
+[Codex sandbox and reviewer settings](https://learn.chatgpt.com/docs/sandboxing)
+and [Claude permission modes](https://code.claude.com/docs/en/permissions).
 
 ## Stream diagnostics to your UI
 
@@ -660,7 +783,7 @@ examples/            CLI, model, Node, Electron, Wails and shared dashboard
 server/              Future cross-device coordination server
 ```
 
-See the [SDK guide](core/README.md), [package boundaries](core/docs/packages.md)
+See the [SDK guide](core/README.md), [package boundaries and layout rationale](core/docs/packages.md)
 and [examples](examples/README.md) for details. The root `Makefile` and `hk` forward
 to `core/`; for example, `./hk prompt --runtime fake "Hello"` runs the local CLI.
 

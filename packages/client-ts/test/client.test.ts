@@ -1106,3 +1106,229 @@ test("budgets use shared settings, preserve totals and report observed stopping 
     await kit.close();
   }
 });
+
+test("result-only turns and conversation observers share the real sidecar without retaining duplicate streams", async () => {
+  const kit = await connect();
+  try {
+    const session = await kit.sessions.create({ runtime: "fake" });
+    const conversation = session.observe({ maxEvents: 100 });
+    try {
+      await conversation.ready;
+      const result = await session.run("Hello from the shared conversation helper");
+      assert.equal(result.status, "completed");
+      await conversation.refresh();
+      const snapshot = conversation.getSnapshot();
+      assert.equal(snapshot.messages[0]?.role, "user");
+      assert.equal(snapshot.messages[0]?.text, "Hello from the shared conversation helper");
+      assert.ok(
+        snapshot.messages.some((message) => message.role === "assistant" && message.complete),
+      );
+      assert.equal(snapshot.turns.at(-1)?.status, "completed");
+      const replay = kit.sessions.observe(session.id);
+      try {
+        await replay.ready;
+        assert.deepEqual(replay.getSnapshot(), snapshot);
+      } finally {
+        replay.close();
+      }
+    } finally {
+      conversation.close();
+    }
+  } finally {
+    await kit.close();
+  }
+});
+
+test("named lifecycle hooks prepare first turns, reject atomically and observe completion", async () => {
+  const kit = await connect();
+  try {
+    assert.equal(kit.server.capabilities.hooks, true);
+    const stopCreate = await kit.hooks.register(
+      "session.beforeCreate",
+      ({ create }) => ({ create: { ...create, title: "Prepared session" } }),
+      { id: "test-create" },
+    );
+    const session = await kit.sessions.create({ runtime: "fake" });
+    assert.equal((await kit.sessions.get(session.id)).title, "Prepared session");
+    await stopCreate();
+    const first: boolean[] = [];
+    const stopBefore = await kit.hooks.register(
+      "turn.before",
+      async (context) => {
+        first.push(context.isFirstTurn);
+        await kit.settings.get({ sessionId: context.session.sessionId });
+        if (context.input[0]?.text === "accept") {
+          await assert.rejects(
+            kit.protocol.sessionPrompt({
+              sessionId: context.session.sessionId,
+              turnId: "recursive",
+              input: [{ type: "text", text: "nested" }],
+            }),
+            (error) => error instanceof HarnessKitError && error.reason === "session_busy",
+          );
+        }
+        // Mutations during preparation must not deadlock behind the prompt RPC.
+        await kit.sessions.rename(context.session.sessionId, "Named during preparation");
+        if (context.input[0]?.text === "reject") throw new Error("blocked by application");
+        return {
+          input: [...context.input, { type: "text", text: "Added context" }],
+          config: { effort: "low" },
+        };
+      },
+      { id: "test-before", sessionId: session.id },
+    );
+    let observed!: () => void;
+    const after = new Promise<void>((resolve) => {
+      observed = resolve;
+    });
+    const stopAfter = await kit.hooks.register(
+      "turn.after",
+      (context) => {
+        assert.equal(context.result.status, "completed");
+        observed();
+      },
+      { id: "test-after", sessionId: session.id },
+    );
+    await assert.rejects(
+      session.run("reject", { turnId: "retry" }),
+      (error) => error instanceof HarnessKitError && error.reason === "hook_failed",
+    );
+    assert.equal((await kit.sessions.get(session.id)).turns, 0);
+    assert.equal((await session.run("accept", { turnId: "retry" })).status, "completed");
+    await after;
+    await session.run("follow up");
+    assert.deepEqual(first, [true, true, false]);
+    const page = await kit.sessions.eventsPage(session.id);
+    const started = page.events.find((event) => event.type === "turn.started");
+    assert.ok(started?.type === "turn.started");
+    assert.equal(started.data.input?.[1]?.text, "Added context");
+    assert.equal(started.data.config?.effort, "low");
+    await stopBefore();
+    await stopAfter();
+    assert.deepEqual(await kit.hooks.list(), []);
+    await kit.settings.configure({ patch: { hooks: { required: ["test-before"] } } });
+    await assert.rejects(
+      session.run("missing hook"),
+      (error) => error instanceof HarnessKitError && error.reason === "hook_failed",
+    );
+    await kit.settings.configure({ patch: { hooks: { enabled: false } } });
+    assert.equal((await session.run("explicitly disabled")).status, "completed");
+  } finally {
+    await kit.close();
+  }
+});
+
+test("hook deadlines cancel remote callbacks and leave the first turn available", async () => {
+  const kit = await connect();
+  try {
+    const session = await kit.sessions.create({ runtime: "fake" });
+    let cancelled!: () => void;
+    const stopped = new Promise<void>((resolve) => {
+      cancelled = resolve;
+    });
+    const remove = await kit.hooks.register(
+      "turn.before",
+      async ({ signal }) => {
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve();
+          else signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        cancelled();
+      },
+      { id: "timeout" },
+    );
+    await kit.settings.configure({ patch: { hooks: { timeoutMs: 25 } } });
+    await assert.rejects(
+      session.run("hi"),
+      (error) => error instanceof HarnessKitError && error.reason === "hook_failed",
+    );
+    await stopped;
+    assert.equal((await kit.sessions.get(session.id)).turns, 0);
+    await remove();
+    assert.equal((await session.run("retry")).status, "completed");
+  } finally {
+    await kit.close();
+  }
+});
+
+test("settingsPath persists accepted global preferences and restores them on boot", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "hk-preferences-"));
+  const settingsPath = join(dir, "settings.json");
+  const start = (initial: boolean) =>
+    createHarnessKit({
+      transport: stdio({
+        command: bin,
+        settings: {
+          process: {
+            settingsPath,
+            ...(initial ? { runtimes: ["fake"], store: join(dir, "sessions") } : {}),
+          },
+        },
+      }),
+    });
+  let kit: HarnessKit | undefined;
+  try {
+    kit = await start(true);
+    await kit.settings.configure({
+      patch: {
+        logging: { level: "warn" },
+        session: { runtime: "fake", model: "saved-model" },
+        hooks: { timeoutMs: 7000 },
+      },
+    });
+    const session = await kit.sessions.create({ runtime: "fake" });
+    await session.run("first turn");
+    await kit.close();
+    kit = await start(false);
+    const snapshot = await kit.settings.get();
+    assert.equal(snapshot.values.logging.level, "warn");
+    assert.equal(snapshot.values.hooks.timeoutMs, 7000);
+    assert.equal(snapshot.values.session.model, "saved-model");
+    const created = await kit.sessions.create();
+    assert.equal(created.runtime, "fake");
+    let isFirst: boolean | undefined;
+    const stop = await kit.hooks.register(
+      "turn.before",
+      (context) => {
+        isFirst = context.isFirstTurn;
+      },
+      { sessionId: session.id },
+    );
+    await (await kit.sessions.restore(session.id)).run("after restart");
+    assert.equal(isFirst, false);
+    await stop();
+  } finally {
+    await kit?.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("timed-out client hooks cannot accumulate unbounded callbacks", async () => {
+  const kit = await connect();
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let calls = 0;
+  try {
+    const session = await kit.sessions.create({ runtime: "fake" });
+    const remove = await kit.hooks.register(
+      "turn.before",
+      async () => {
+        calls++;
+        await blocked;
+      },
+      { id: "uncooperative" },
+    );
+    await kit.settings.configure({ patch: { hooks: { timeoutMs: 30, maxConcurrent: 1 } } });
+    await assert.rejects(session.run("first"));
+    await assert.rejects(session.run("second"));
+    assert.equal(calls, 1);
+    release();
+    await remove();
+    assert.equal((await session.run("after removal")).status, "completed");
+  } finally {
+    release();
+    await kit.close();
+  }
+});

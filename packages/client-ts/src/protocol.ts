@@ -10,6 +10,7 @@ export const ErrorCodes = {
   ForkSourceChanged: -32018,
   GitConflict: -32021,
   GitError: -32020,
+  HookFailed: -32022,
   InternalError: -32603,
   InvalidDecision: -32010,
   InvalidParams: -32602,
@@ -29,6 +30,7 @@ export const ErrorCodes = {
   SessionClosed: -32006,
   SessionNotFound: -32001,
   SettingsConflict: -32014,
+  SettingsPersistence: -32023,
   Unsupported: -32012,
   UnsupportedVersion: -32008,
 } as const;
@@ -191,10 +193,66 @@ export interface Capabilities {
   usage: boolean;
 }
 
+// Options are per-session options (agent.SessionConfig.Options).
+export interface ClaudeOptions {
+  // AddDirs grants tool access to additional directories.
+  addDirs?: Array<string>;
+  // AllowedTools run without prompting, in Claude Code permission-rule
+  // syntax, e.g. "Read", "Bash(git diff *)".
+  allowedTools?: Array<string>;
+  // Bare skips hooks, plugins, MCP servers, CLAUDE.md and auto memory
+  // for reproducible runs. Bare mode authenticates only with
+  // ANTHROPIC_API_KEY or an apiKeyHelper, never with a Claude.ai login.
+  bare?: boolean;
+  // DisablePartialMessages turns off token-level streaming.
+  disablePartialMessages?: boolean;
+  // DisallowedTools are deny rules.
+  disallowedTools?: Array<string>;
+  // Effort: "low", "medium", "high", "xhigh" or "max".
+  effort?: string;
+  // ForkOnResume continues a resumed session under a new session ID.
+  forkOnResume?: boolean;
+  // MaxBudgetUSD stops a prompt when estimated spend reaches it.
+  maxBudgetUsd?: number;
+  // MaxImageBytes optionally bounds each input image before encoding. Nil
+  // imposes no kit limit; zero refuses image bytes. Native limits still apply.
+  maxImageBytes?: number;
+  // MaxTurns limits agentic turns per prompt.
+  maxTurns?: number;
+  // PermissionMode: "default"/"manual", "acceptEdits", "plan", "auto",
+  // "dontAsk" or "bypassPermissions" (requires AllowUnsafe).
+  permissionMode?: "" | "default" | "acceptEdits" | "auto" | "plan" | "dontAsk" | "bypassPermissions" | "manual";
+  // Tools restricts the built-in tool set; an empty list disables all
+  // built-in tools. Nil keeps the default set.
+  tools?: Array<string>;
+}
+
 // ClientInfo identifies the client.
 export interface ClientInfo {
   name: string;
   version?: string;
+}
+
+// Options are per-session options (agent.SessionConfig.Options).
+export interface CodexOptions {
+  // AddDirs selects additional writable roots in workspace-write mode.
+  // It does not change the inherited sandbox mode or approval policy.
+  addDirs?: Array<string>;
+  // ApprovalPolicy: "untrusted", "on-request" or "never". Empty inherits Codex configuration.
+  approvalPolicy?: "" | "on-request" | "never" | "untrusted";
+  // ApprovalsReviewer routes eligible approvals to "user" or "auto_review".
+  // Empty inherits native configuration. "guardian_subagent" is a legacy alias.
+  approvalsReviewer?: "" | "user" | "auto_review" | "guardian_subagent";
+  // Config passes thread configuration overrides through verbatim.
+  // Overrides touching sandbox or approval settings require AllowUnsafe.
+  config?: Record<string, unknown>;
+  // Effort overrides the reasoning effort, e.g. "low", "medium", "high".
+  effort?: string;
+  // Ephemeral threads are not persisted by Codex and cannot be resumed.
+  ephemeral?: boolean;
+  // Sandbox: "read-only", "workspace-write" or
+  // "danger-full-access" (requires AllowUnsafe). Empty inherits Codex configuration.
+  sandbox?: "" | "read-only" | "workspace-write" | "danger-full-access";
 }
 
 // CompactionSettings controls additional host-requested compaction before a
@@ -227,14 +285,39 @@ export interface ConfigPatch {
   reset?: Array<string>;
 }
 
+// Choice is a provider value, not an application permission preset.
+export interface ConfigurationChoice {
+  description?: string;
+  label: string;
+  value: string;
+}
+
+// Descriptor supplies UI metadata without prescribing a settings interface.
+// Source is "declared", "reported" or "unknown". Reported choices describe
+// what the installed runtime returned, not a guarantee of account entitlement.
+export interface ConfigurationDescriptor {
+  allowCustom?: boolean;
+  choices?: Array<ConfigurationChoice>;
+  default?: unknown;
+  description?: string;
+  source?: string;
+  type?: string;
+}
+
 // Support describes where a setting can be supplied. Session changes apply to
 // future turns, even when submitted during a turn. Live requires an explicit
 // active-turn API; a setting without Live never changes a running turn.
 export interface ConfigurationSupport {
+  allowCustom?: boolean;
+  choices?: Array<ConfigurationChoice>;
+  default?: unknown;
+  description?: string;
   live: boolean;
   session: boolean;
+  source?: string;
   startup: boolean;
   turn: boolean;
+  type?: string;
 }
 
 export interface ConfigureSettingsParams {
@@ -330,7 +413,7 @@ export interface ErrorInfo {
   retryable?: boolean;
 }
 
-export type ErrorReason = "approval_not_found" | "budget_exceeded" | "duplicate_tool" | "duplicate_turn" | "event_too_large" | "fork_source_changed" | "git_conflict" | "git_error" | "invalid_decision" | "invalid_params" | "new_session_required" | "not_initialized" | "not_resumable" | "policy_violation" | "restart_required" | "runtime_error" | "runtime_not_found" | "runtime_unavailable" | "session_busy" | "session_closed" | "session_not_found" | "settings_conflict" | "unsupported" | "unsupported_version";
+export type ErrorReason = "approval_not_found" | "budget_exceeded" | "duplicate_tool" | "duplicate_turn" | "event_too_large" | "fork_source_changed" | "git_conflict" | "git_error" | "hook_failed" | "invalid_decision" | "invalid_params" | "new_session_required" | "not_initialized" | "not_resumable" | "policy_violation" | "restart_required" | "runtime_error" | "runtime_not_found" | "runtime_unavailable" | "session_busy" | "session_closed" | "session_not_found" | "settings_conflict" | "settings_persistence_failed" | "unsupported" | "unsupported_version";
 
 // EventPage is a bounded transcript page. NextSeq is the last returned event's
 // sequence, or the supplied cursor for an empty page. HasMore means another
@@ -343,7 +426,10 @@ export interface EventPage {
 }
 
 // Type identifies an event.
-export type EventType = "approval.requested" | "approval.resolved" | "budget.exceeded" | "context.compaction" | "context.usage" | "error" | "message.completed" | "message.delta" | "reasoning.completed" | "reasoning.delta" | "runtime.raw" | "runtime.status" | "session.closed" | "session.started" | "session.updated" | "stream.gap" | "tool.completed" | "tool.output" | "tool.started" | "turn.completed" | "turn.started" | "usage" | "workspace.diff";
+export type EventType = "approval.requested" | "approval.resolved" | "budget.exceeded" | "context.compaction" | "context.usage" | "error" | "message.completed" | "message.delta" | "reasoning.completed" | "reasoning.delta" | "runtime.raw" | "runtime.status" | "session.closed" | "session.started" | "session.updated" | "stream.gap" | "subagent.updated" | "tool.completed" | "tool.output" | "tool.started" | "turn.completed" | "turn.started" | "usage" | "workspace.diff";
+
+// FailurePolicy controls whether a failed callback stops its lifecycle phase.
+export type FailurePolicy = "continue" | "fail";
 
 // ForkParams branch the complete conversation. Arbitrary turn cutoffs are not
 // portable across runtimes. Settings use the same envelope as session creation.
@@ -546,6 +632,7 @@ export type HarnessEvent =
   | { "data": SessionStartedData; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "session.started" }
   | { "data": SessionUpdatedData; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "session.updated" }
   | { "data": StreamGapData; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "stream.gap" }
+  | { "data": SubagentUpdatedData; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "subagent.updated" }
   | { "data": ToolCompletedData; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "tool.completed" }
   | { "data": ToolOutputData; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "tool.output" }
   | { "data": ToolStartedData; "seq": number; "sessionId": string; "time": string; "turnId"?: string; "type": "tool.started" }
@@ -563,6 +650,91 @@ export interface HistorySettings {
 export interface HistorySettingsPatch {
   maxPageBytes?: number | null;
   maxPageEvents?: number;
+}
+
+export interface HookCreate {
+  config: SessionConfig;
+  metadata?: Record<string, string>;
+  runtime: string;
+  title?: string;
+}
+
+export type HookName = "session.beforeCreate" | "turn.after" | "turn.before";
+
+export interface HookRequest {
+  // ConcurrencyLimit also bounds callbacks retained by a remote client after timeout.
+  concurrencyLimit: number;
+  config?: ConfigPatch;
+  create?: HookCreate;
+  hookId: string;
+  input?: Array<InputPart>;
+  invocationId: string;
+  isFirstTurn: boolean;
+  name: HookName;
+  result?: TurnResult;
+  session?: HookSession;
+  turnId?: string;
+}
+
+// Response is a patch. Omitted values preserve the previous handler's output.
+// Before-create accepts Create; before-turn accepts Input and Config; after-turn
+// is observational and must return an empty response.
+export interface HookResponse {
+  config?: ConfigPatch;
+  create?: HookCreate;
+  input?: Array<InputPart>;
+}
+
+export interface HookSession {
+  config: SessionConfig;
+  metadata?: Record<string, string>;
+  runtime: string;
+  sessionId: string;
+  title: string;
+  turns: number;
+}
+
+// Settings belongs to the shared settings document. Required IDs must be
+// registered while hooks are enabled. This prevents a disconnected owner from
+// silently removing application-required preparation or validation.
+export interface HookSettings {
+  enabled: boolean;
+  maxConcurrent: number;
+  onError: FailurePolicy;
+  required: Array<string>;
+  timeoutMs: number;
+}
+
+// Settings belongs to the shared settings document. Required IDs must be
+// registered while hooks are enabled. This prevents a disconnected owner from
+// silently removing application-required preparation or validation.
+export interface HookSettingsPatch {
+  enabled?: boolean;
+  maxConcurrent?: number;
+  onError?: FailurePolicy;
+  required?: Array<string>;
+  timeoutMs?: number;
+}
+
+export interface HookSpec {
+  id: string;
+  name: HookName;
+  // Lower order runs first; ties are ordered by ID, independent of connection timing.
+  order?: number;
+  sessionId?: string;
+}
+
+export interface HooksListResult {
+  hooks: Array<HookSpec>;
+}
+
+// Hook registrations are owned by the registering connection.
+export interface HooksRegisterParams {
+  hook: HookSpec;
+}
+
+export interface HooksUnregisterParams {
+  id: string;
 }
 
 // InitializeParams are the params of "initialize".
@@ -778,6 +950,8 @@ export interface ProcessSettings {
   gitPath: string;
   kitMcp: boolean;
   runtimes: Array<string>;
+  // SettingsPath opts into host-owned JSON preference persistence. Empty is in-memory.
+  settingsPath: string;
   shutdownTimeoutMs: number;
   store: string;
 }
@@ -791,6 +965,8 @@ export interface ProcessSettingsPatch {
   gitPath?: string;
   kitMcp?: boolean;
   runtimes?: Array<string>;
+  // SettingsPath opts into host-owned JSON preference persistence. Empty is in-memory.
+  settingsPath?: string;
   shutdownTimeoutMs?: number;
   store?: string;
 }
@@ -889,6 +1065,7 @@ export interface ServerCapabilities {
   // EventLogSize is the per-session replay window.
   eventLogSize: number;
   git: boolean;
+  hooks: boolean;
   // Logs advertises opt-in structured slog notifications.
   logs: boolean;
   runtimes: Array<RuntimeInfo>;
@@ -1187,9 +1364,14 @@ export interface SessionUpdatedData {
 // Field describes a field for settings interfaces. When describes the global
 // lifetime; scoped snapshots can refine it using adapter capabilities.
 export interface SettingsField {
+  allowCustom?: boolean;
+  choices?: Array<ConfigurationChoice>;
+  default?: unknown;
+  description?: string;
   minimum?: number;
   nullable?: boolean;
   scopes: Array<string>;
+  source?: string;
   type: string;
   unit?: string;
   when: string;
@@ -1208,6 +1390,7 @@ export interface SettingsPatch {
   compaction?: CompactionSettingsPatch;
   git?: GitSettingsPatch;
   history?: HistorySettingsPatch;
+  hooks?: HookSettingsPatch;
   logging?: LoggingSettingsPatch;
   memory?: MemorySettingsPatch;
   process?: ProcessSettingsPatch;
@@ -1225,9 +1408,14 @@ export interface SettingsSnapshot {
   revision: number;
   target?: SettingsTarget;
   values: SettingsValues;
+  warnings?: Array<string>;
 }
 
 export interface SettingsTarget {
+  model?: string;
+  // Runtime and Model select read-only provider discovery through settings.get.
+  // They cannot be combined with SessionID or used by settings.configure.
+  runtime?: string;
   sessionId?: string;
 }
 
@@ -1242,6 +1430,7 @@ export interface SettingsValues {
   compaction: CompactionSettings;
   git: GitSettings;
   history: HistorySettings;
+  hooks: HookSettings;
   logging: LoggingSettings;
   memory: MemorySettings;
   process: ProcessSettings;
@@ -1264,6 +1453,29 @@ export interface StreamSettings {
 export interface StreamSettingsPatch {
   maxQueueBytes?: number | null;
   maxQueueEvents?: number;
+}
+
+// SubagentStatus is the last observed lifecycle state of a delegated agent.
+export type SubagentStatus = "cancelled" | "completed" | "failed" | "running" | "unknown";
+
+// SubagentUpdatedData reports delegated work independently of the spawning tool.
+// A completed spawn/wait tool does not imply a completed agent. Updates are
+// observations, not independently controllable Harness Kit sessions. Optional
+// descriptive fields enrich earlier observations when present.
+export interface SubagentUpdatedData {
+  background?: boolean;
+  callId?: string;
+  error?: string;
+  // ID is the runtime's child identifier, or the spawn call ID until known.
+  // Consumers reconcile a provisional ID with a later ID using CallID.
+  id: string;
+  output?: string;
+  parentId?: string;
+  prompt?: string;
+  // RunID distinguishes resumed runs when the runtime supplies one.
+  runId?: string;
+  status: SubagentStatus;
+  title?: string;
 }
 
 // ToolCallParams are the params of the "tool.call" request.
@@ -1373,6 +1585,15 @@ export interface TurnConfig {
   effort?: string;
   model?: string;
   options?: Record<string, unknown>;
+}
+
+// TurnResult is the outcome of Prompt.
+export interface TurnResult {
+  budget?: BudgetExceeded;
+  error?: ErrorInfo;
+  runtimeTurnId?: string;
+  status: TurnStatus;
+  usage?: UsageData;
 }
 
 // TurnStartedData is the payload of turn.started.
@@ -1507,6 +1728,9 @@ export interface RpcMethods {
   "git.stage": { params: GitPathsParams; result: Empty };
   "git.status": { params: SessionIDParams; result: GitStatus };
   "git.unstage": { params: GitPathsParams; result: Empty };
+  "hooks.list": { params: Empty; result: HooksListResult };
+  "hooks.register": { params: HooksRegisterParams; result: Empty };
+  "hooks.unregister": { params: HooksUnregisterParams; result: Empty };
   "initialize": { params: InitializeParams; result: InitializeResult };
   "logs.subscribe": { params: Empty; result: Empty };
   "logs.unsubscribe": { params: Empty; result: Empty };
@@ -1547,6 +1771,7 @@ export interface RpcMethods {
 export type RpcMethod = keyof RpcMethods;
 
 export interface ServerRequests {
+  "hook.call": { params: HookRequest; result: HookResponse };
   "tool.call": { params: ToolCallParams; result: ToolResult };
 }
 

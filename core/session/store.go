@@ -15,80 +15,12 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
-	"slices"
-	"strings"
-	"sync"
-	"time"
 
 	"github.com/tomanagle/harness-kit/core/agent"
 	"github.com/tomanagle/harness-kit/core/config"
 	"github.com/tomanagle/harness-kit/core/event"
 	"github.com/tomanagle/harness-kit/core/workspace"
 )
-
-// State is a session's lifecycle state.
-//
-//	starting -> idle <-> running
-//	idle|running -> closing -> closed
-//	starting|idle|running -> failed   (the runtime died)
-type State string
-
-const (
-	StateStarting   State = "starting"
-	StateIdle       State = "idle"
-	StateSuspending State = "suspending"
-	StateSuspended  State = "suspended"
-	StateRunning    State = "running"
-	StateCompacting State = "compacting"
-	StateClosing    State = "closing"
-	StateClosed     State = "closed"
-	StateFailed     State = "failed"
-)
-
-// Terminal reports whether no further turns are possible.
-func (s State) Terminal() bool { return s == StateClosed || s == StateFailed }
-
-// Info describes a session.
-type Info struct {
-	Context           *event.ContextUsageData   `json:"context,omitempty"`
-	Compaction        config.CompactionSettings `json:"compaction"`
-	Workspace         *workspace.Binding        `json:"workspace,omitempty"`
-	WorkspaceSettings workspace.Settings        `json:"workspaceSettings"`
-	Budget            config.BudgetLimits       `json:"budget"`
-	Usage             event.BudgetUsage         `json:"usage"`
-	// Archived hides a conversation only when a caller requests that filter.
-	// It is independent of runtime lifecycle and never cancels work.
-	Archived       bool   `json:"archived,omitempty"`
-	ForkedFrom     string `json:"forkedFrom,omitempty"`
-	ForkedAtSeq    uint64 `json:"forkedAtSeq,omitempty"`
-	InheritedTurns int    `json:"inheritedTurns,omitempty"`
-	ForkPending    bool   `json:"forkPending,omitempty"`
-	// SettingsRevision changes only when session selections or pinning change.
-	SettingsRevision uint64 `json:"settingsRevision"`
-	// Pinned prevents automatic cache eviction and runtime suspension.
-	Pinned bool `json:"pinned,omitempty"`
-	// Config is the current selection inherited by subsequent turns.
-	Config           *agent.TurnConfig `json:"config,omitempty"`
-	ID               string            `json:"sessionId"`
-	Runtime          string            `json:"runtime"`
-	RuntimeSessionID string            `json:"runtimeSessionId,omitempty"`
-	State            State             `json:"state"`
-	ActiveTurnID     string            `json:"activeTurnId,omitempty"`
-	Cwd              string            `json:"cwd,omitempty"`
-	Model            string            `json:"model,omitempty"`
-	Metadata         map[string]string `json:"metadata,omitempty"`
-	CreatedAt        time.Time         `json:"createdAt"`
-	UpdatedAt        time.Time         `json:"updatedAt"`
-	LastSeq          uint64            `json:"lastSeq"`
-	Error            *event.ErrorInfo  `json:"error,omitempty"`
-	// Title is a one-line name: the start of the first prompt, unless it
-	// was set at creation or with Manager.Rename.
-	Title string `json:"title,omitempty"`
-	// Turns counts the prompts sent in this session.
-	Turns int `json:"turns"`
-	// LastStatus is the status of the most recent finished turn.
-	LastStatus event.TurnStatus `json:"lastStatus,omitempty"`
-}
 
 // Record is what a Store persists.
 type Record struct {
@@ -131,15 +63,6 @@ type EventStore interface {
 	AppendEvent(ctx context.Context, ev event.Event) error
 	Events(ctx context.Context, id string, afterSeq uint64, limit int) ([]event.Event, bool, error)
 }
-
-// MemoryStore is an in-memory Store.
-type MemoryStore struct {
-	mu   sync.RWMutex
-	recs map[string]Record
-}
-
-// NewMemoryStore returns an empty MemoryStore.
-func NewMemoryStore() *MemoryStore { return &MemoryStore{recs: make(map[string]Record)} }
 
 // cloneRecord prevents callers from modifying the creation parent, native
 // defaults or current selections through a store snapshot.
@@ -196,57 +119,4 @@ func cloneRecord(rec Record) (Record, error) {
 		rec.NativeDefaults = &v
 	}
 	return rec, nil
-}
-
-// Put implements Store.
-func (s *MemoryStore) Put(_ context.Context, rec Record) error {
-	rec, err := cloneRecord(rec)
-	if err != nil {
-		return err
-	}
-	s.mu.Lock()
-	s.recs[rec.Info.ID] = rec
-	s.mu.Unlock()
-	return nil
-}
-
-// Get implements Store.
-func (s *MemoryStore) Get(_ context.Context, id string) (Record, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	rec, ok := s.recs[id]
-	if !ok {
-		return Record{}, ErrNotFound
-	}
-	return cloneRecord(rec)
-}
-
-// List implements Store, ordered by creation time.
-func (s *MemoryStore) List(_ context.Context) ([]Record, error) {
-	s.mu.RLock()
-	out := make([]Record, 0, len(s.recs))
-	for _, r := range s.recs {
-		copy, err := cloneRecord(r)
-		if err != nil {
-			s.mu.RUnlock()
-			return nil, err
-		}
-		out = append(out, copy)
-	}
-	s.mu.RUnlock()
-	slices.SortFunc(out, func(a, b Record) int {
-		if c := a.Info.CreatedAt.Compare(b.Info.CreatedAt); c != 0 {
-			return c
-		}
-		return strings.Compare(a.Info.ID, b.Info.ID)
-	})
-	return out, nil
-}
-
-// Delete implements Store.
-func (s *MemoryStore) Delete(_ context.Context, id string) error {
-	s.mu.Lock()
-	delete(s.recs, id)
-	s.mu.Unlock()
-	return nil
 }

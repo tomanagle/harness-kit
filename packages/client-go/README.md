@@ -35,41 +35,23 @@ import (
 
 func main() {
     ctx := context.Background()
-    events := make(chan hk.HarnessEvent, 128)
     kit, err := hk.Spawn(ctx, "./core/bin/harness-kit",
         []string{"serve", "--fake-runtime"}, nil, hk.Options{
             Settings: hk.SettingsPatch{
                 "memory": json.RawMessage(`{"evictAfterIdleMs":600000}`),
             },
-            OnEvent: func(event hk.HarnessEvent) { events <- event },
         })
     if err != nil { log.Fatal(err) }
     defer kit.Close()
 
     created, err := kit.SessionCreate(ctx, hk.CreateSessionParams{Runtime: "fake"})
     if err != nil { log.Fatal(err) }
-    // Choose the turn ID before sending: events can precede the RPC response.
-    const turnID = "my-first-turn"
-    _, err = kit.SessionPrompt(ctx, hk.SessionPromptParams{
+    result, err := kit.Run(ctx, hk.SessionPromptParams{
         SessionID: created.Session.ID,
-        TurnID: turnID,
         Input: []hk.InputPart{{Type: "text", Text: "Hello"}},
     })
     if err != nil { log.Fatal(err) }
-    for {
-        select {
-        case event := <-events:
-            if event.TurnID != turnID { continue }
-            if event.Type == "message.delta" {
-                var delta hk.MessageDeltaData
-                if err := json.Unmarshal(event.Data, &delta); err != nil { log.Fatal(err) }
-                fmt.Print(delta.Text)
-            }
-            if event.Type == "turn.completed" { return }
-        case <-kit.Done():
-            log.Fatalf("connection ended: %v", kit.Err())
-        }
-    }
+    fmt.Println(result.Status)
 }
 ```
 
@@ -144,3 +126,88 @@ Configure `logging` through the same `SettingsConfigure` method. See the
 From this directory, `go test -race ./...` runs transport tests. When run inside
 the repository checkout, it also builds the real sidecar and exercises an offline
 fake-runtime conversation. No paid model calls are made.
+
+## Conversation and input helpers
+
+`Run(ctx, params)` assigns a turn ID if omitted, subscribes before sending,
+recovers terminal results after stream gaps and retains no delta queue. Cancelling
+its context cancels the accepted turn. Failed agent turns return a result with
+`Status == "failed"`; admission, transport and replay failures return errors.
+The generated `SessionPrompt` remains available for callers managing their own
+turn lifecycle.
+
+```go
+conversation, err := kit.ObserveConversation(ctx, sessionID, hk.ConversationOptions{
+    MaxEvents: 2000, MaxBytes: 4 * 1024 * 1024,
+})
+if err != nil { return err }
+defer conversation.Close()
+snapshot := conversation.Snapshot()
+// In a UI worker: range over conversation.Updates. Slow readers receive the
+// newest snapshot; intermediate view updates are coalesced.
+_ = snapshot
+
+prepared, err := hk.PrepareAttachments(ctx, "Explain this", []string{"/project/README.md"}, hk.AttachmentOptions{})
+if err != nil { return err }
+result, err := kit.Run(ctx, hk.SessionPromptParams{SessionID: sessionID, Input: prepared.Input})
+_ = result
+```
+
+The observer subscribes before replay, uses bounded history pages and never
+starts a runtime. Snapshots contain messages, tools, turn results, subtasks,
+pending approvals and context. `Truncated` explicitly marks a partial window,
+including when old approval or subtask state is outside it; use `ApprovalList`
+for authoritative pending approvals. Defaults are 2,000 events / 4 MiB of
+serialized events, not a process-memory guarantee. `Error` reports replay failures.
+`NewConversationState` supplies the projection independently of a client.
+`SubscribeEvents` adds independent listeners without replacing `Options.OnEvent`;
+callbacks must not block or call synchronous RPCs on the read goroutine.
+
+Attachments inline UTF-8 text and reference local PNG/JPEG/GIF/WebP images.
+Defaults: 20 files, 512 KiB per text file, 5 MiB per image, 1 MiB total text and
+20 MiB total images. `AttachmentOptions` accepts optional limit pointers (nil
+means default, zero is explicit) and an injectable `AttachmentFiles` interface.
+Image references require a shared filesystem with the runtime.
+
+`SettingsGet(ctx, SettingsGetParams{Target: SettingsTarget{Runtime: "codex", Model: "your-model"}})`
+returns discovery metadata through the unified settings API before session
+creation. Field choices distinguish reported, declared and unknown sources.
+Generated `CodexOptions` and `ClaudeOptions` work with `EncodeOptions` to fill
+`CreateSessionParams.Options` without handwritten JSON. Custom adapters can
+supply their own option structs. The generated protocol remains the source of
+truth for request and response types.
+
+## Preferences and lifecycle hooks
+
+The sidecar's optional JSON preference store is selected through the existing
+startup settings document:
+
+```go
+options := hk.Options{Settings: hk.SettingsPatch{
+    "process": json.RawMessage(`{"settingsPath":"/app/preferences.json"}`),
+}}
+```
+
+Pass `options` to `Spawn`. Accepted global `SettingsConfigure` calls save before
+applying; later startup settings and explicit flags override saved values.
+Embedded Go hosts can inject `core/settings.Store` instead; the standalone client
+remains independent of the core module.
+
+```go
+err := kit.RegisterHook(ctx, hk.HookSpec{
+    ID: "project-context", Name: "turn.before",
+}, func(ctx context.Context, request hk.HookRequest) (hk.HookResponse, error) {
+    if !request.IsFirstTurn { return hk.HookResponse{}, nil }
+    input := append(request.Input, hk.InputPart{Type: "text", Text: "Project context"})
+    return hk.HookResponse{Input: &input}, nil
+})
+if err != nil { return err }
+// Later: kit.UnregisterHook(ctx, "project-context")
+```
+
+Use `SettingsConfigure`'s `hooks` group for enabled state, timeout, maximum
+concurrency, failure policy and required IDs. Handlers must honor their context.
+IDs belong to the registering connection; reconnecting applications register
+again before prompting. After-turn handlers cannot change a completed result and
+are not awaited by `Run`. See [hooks](../../core/docs/hooks.md) and
+[settings persistence](../../core/docs/configuration.md#optional-preference-persistence).

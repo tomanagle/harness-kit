@@ -13,6 +13,7 @@ import (
 
 	"github.com/tomanagle/harness-kit/core/agent"
 	"github.com/tomanagle/harness-kit/core/event"
+	"github.com/tomanagle/harness-kit/core/hooks"
 	"github.com/tomanagle/harness-kit/core/mcp"
 	"github.com/tomanagle/harness-kit/core/permission"
 	"github.com/tomanagle/harness-kit/core/session"
@@ -72,6 +73,10 @@ const (
 	MethodSessionConfigure  = "session.configure"
 	MethodApprovalRespond   = "approval.respond"
 	MethodApprovalList      = "approval.list"
+	MethodHooksRegister     = "hooks.register"
+	MethodHooksUnregister   = "hooks.unregister"
+	MethodHooksList         = "hooks.list"
+	RequestHookCall         = "hook.call"
 	MethodToolsRegister     = "tools.register"
 	MethodToolsUnregister   = "tools.unregister"
 	MethodToolsList         = "tools.list"
@@ -99,54 +104,58 @@ const (
 	CodeServerNotInitialized = -32002
 	CodeRequestCancelled     = -32800
 
-	CodeSessionNotFound    = -32001
-	CodeRuntimeNotFound    = -32003
-	CodeRuntimeUnavailable = -32004
-	CodeSessionBusy        = -32005
-	CodeSessionClosed      = -32006
-	CodeApprovalNotFound   = -32007
-	CodeUnsupportedVersion = -32008
-	CodePolicyViolation    = -32009
-	CodeInvalidDecision    = -32010
-	CodeRuntimeError       = -32011
-	CodeUnsupported        = -32012
-	CodeNotResumable       = -32013
-	CodeSettingsConflict   = -32014
-	CodeRestartRequired    = -32015
-	CodeNewSessionRequired = -32016
-	CodeEventTooLarge      = -32017
-	CodeForkSourceChanged  = -32018
-	CodeBudgetExceeded     = -32019
-	CodeGitError           = -32020
-	CodeGitConflict        = -32021
+	CodeSessionNotFound     = -32001
+	CodeRuntimeNotFound     = -32003
+	CodeRuntimeUnavailable  = -32004
+	CodeSessionBusy         = -32005
+	CodeSessionClosed       = -32006
+	CodeApprovalNotFound    = -32007
+	CodeUnsupportedVersion  = -32008
+	CodePolicyViolation     = -32009
+	CodeInvalidDecision     = -32010
+	CodeRuntimeError        = -32011
+	CodeUnsupported         = -32012
+	CodeNotResumable        = -32013
+	CodeSettingsConflict    = -32014
+	CodeRestartRequired     = -32015
+	CodeNewSessionRequired  = -32016
+	CodeEventTooLarge       = -32017
+	CodeForkSourceChanged   = -32018
+	CodeBudgetExceeded      = -32019
+	CodeGitError            = -32020
+	CodeGitConflict         = -32021
+	CodeHookFailed          = -32022
+	CodeSettingsPersistence = -32023
 )
 
 // Reason strings for ErrorData.Reason.
 const (
-	ReasonNotInitialized     = "not_initialized"
-	ReasonSessionNotFound    = "session_not_found"
-	ReasonRuntimeNotFound    = "runtime_not_found"
-	ReasonRuntimeUnavailable = "runtime_unavailable"
-	ReasonSessionBusy        = "session_busy"
-	ReasonSessionClosed      = "session_closed"
-	ReasonApprovalNotFound   = "approval_not_found"
-	ReasonUnsupportedVersion = "unsupported_version"
-	ReasonPolicyViolation    = "policy_violation"
-	ReasonInvalidDecision    = "invalid_decision"
-	ReasonRuntimeError       = "runtime_error"
-	ReasonDuplicateTurn      = "duplicate_turn"
-	ReasonInvalidParams      = "invalid_params"
-	ReasonUnsupported        = "unsupported"
-	ReasonDuplicateTool      = "duplicate_tool"
-	ReasonNotResumable       = "not_resumable"
-	ReasonSettingsConflict   = "settings_conflict"
-	ReasonRestartRequired    = "restart_required"
-	ReasonNewSessionRequired = "new_session_required"
-	ReasonEventTooLarge      = "event_too_large"
-	ReasonForkSourceChanged  = "fork_source_changed"
-	ReasonBudgetExceeded     = "budget_exceeded"
-	ReasonGitError           = "git_error"
-	ReasonGitConflict        = "git_conflict"
+	ReasonHookFailed          = "hook_failed"
+	ReasonSettingsPersistence = "settings_persistence_failed"
+	ReasonNotInitialized      = "not_initialized"
+	ReasonSessionNotFound     = "session_not_found"
+	ReasonRuntimeNotFound     = "runtime_not_found"
+	ReasonRuntimeUnavailable  = "runtime_unavailable"
+	ReasonSessionBusy         = "session_busy"
+	ReasonSessionClosed       = "session_closed"
+	ReasonApprovalNotFound    = "approval_not_found"
+	ReasonUnsupportedVersion  = "unsupported_version"
+	ReasonPolicyViolation     = "policy_violation"
+	ReasonInvalidDecision     = "invalid_decision"
+	ReasonRuntimeError        = "runtime_error"
+	ReasonDuplicateTurn       = "duplicate_turn"
+	ReasonInvalidParams       = "invalid_params"
+	ReasonUnsupported         = "unsupported"
+	ReasonDuplicateTool       = "duplicate_tool"
+	ReasonNotResumable        = "not_resumable"
+	ReasonSettingsConflict    = "settings_conflict"
+	ReasonRestartRequired     = "restart_required"
+	ReasonNewSessionRequired  = "new_session_required"
+	ReasonEventTooLarge       = "event_too_large"
+	ReasonForkSourceChanged   = "fork_source_changed"
+	ReasonBudgetExceeded      = "budget_exceeded"
+	ReasonGitError            = "git_error"
+	ReasonGitConflict         = "git_conflict"
 )
 
 // ErrorData is the "data" member of Harness Kit errors.
@@ -175,6 +184,7 @@ type ServerInfo struct {
 
 // ServerCapabilities describe what the server offers.
 type ServerCapabilities struct {
+	Hooks bool `json:"hooks"`
 	// Logs advertises opt-in structured slog notifications.
 	Logs      bool         `json:"logs"`
 	Git       bool         `json:"git"`
@@ -432,3 +442,14 @@ type ToolCallParams struct {
 
 // Empty is the result of methods that return nothing.
 type Empty struct{}
+
+// Hook registrations are owned by the registering connection.
+type HooksRegisterParams struct {
+	Hook hooks.Spec `json:"hook"`
+}
+type HooksUnregisterParams struct {
+	ID string `json:"id"`
+}
+type HooksListResult struct {
+	Hooks []hooks.Spec `json:"hooks"`
+}

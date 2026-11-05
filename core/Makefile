@@ -6,7 +6,7 @@ GO_MODULES := . providers/openai providers/anthropic ../packages/client-go ../ex
 BIN     := bin/harness-kit
 VERSION ?= $(patsubst core/%,%,$(shell git describe --tags --match 'core/v[0-9]*' --always --dirty 2>/dev/null || echo dev))
 
-.PHONY: all build install run generate check-generated test test-go test-ts test-client-go test-clients test-providers test-examples test-live setup format fmt format-go format-web format-check lint lint-go lint-ts hooks wasm-check cross client-ts clean
+.PHONY: all build install run generate check-generated architecture-check test test-go test-ts test-client-go test-clients test-providers test-examples test-live setup format fmt format-go format-web format-check lint lint-go lint-ts hooks wasm-check cross client-ts clean
 
 # Where `make install` puts the binary (must be on your PATH).
 INSTALL_DIR ?= $(HOME)/.local/bin
@@ -33,6 +33,11 @@ generate:
 check-generated:
 	$(GO) run ./cmd/protocolgen -check
 
+# Public API inventory, inward dependency direction, and native-code isolation.
+# Also runs as part of test-go (and the existing CI Go test job).
+architecture-check:
+	$(GO) test ./internal/architecture
+
 test: check-generated test-go test-clients test-providers test-examples
 
 test-go:
@@ -58,7 +63,7 @@ test-clients: test-ts test-client-go
 
 # Runs against the real Codex and Claude Code CLIs. Uses a little of your quota.
 test-live:
-	HARNESS_KIT_LIVE=1 $(GO) test -count=1 -run TestLive -v ./runtimes/...
+	HARNESS_KIT_LIVE=1 $(GO) test -count=1 -run TestLive -v ./runtimes/... ./internal/integration
 
 # Repository tooling uses Bun 1.4.4+ (native formatter) and pinned dev dependencies.
 setup:
@@ -91,7 +96,7 @@ lint-ts:
 
 # The transport-neutral core must build for WebAssembly and must never
 # import process-spawning code.
-CORE := ./config ./internal/budget ./workspace ./settings ./logging ./event ./permission ./mcp ./tools ./model ./model/contextwindow ./agent ./session ./runtimes/transport ./runtimes/fake ./rpc/protocol ./rpc/server
+CORE := ./config ./hooks ./internal/budget ./workspace ./settings ./logging ./event ./permission ./mcp ./tools ./model ./model/contextwindow ./agent ./session ./runtimes/transport ./runtimes/fake ./rpc/protocol ./rpc/server
 wasm-check:
 	GOOS=wasip1 GOARCH=wasm $(GO) build $(CORE)
 	GOOS=js GOARCH=wasm $(GO) build $(CORE)

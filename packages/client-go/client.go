@@ -67,16 +67,23 @@ type ToolFunc func(context.Context, ToolCallParams) (ToolResult, error)
 // for Spawn, shuts down the owned sidecar. Attached hosts are never shut down
 // implicitly.
 type Client struct {
-	rpc         *jsonrpc.Conn
-	info        InitializeResult
-	transport   func() error
-	toolMu      sync.Mutex
-	toolOps     sync.Mutex
-	tools       map[string]ToolFunc
-	cmd         *exec.Cmd
-	processDone chan error
-	closeOnce   sync.Once
-	closeErr    error
+	activeHooks    int
+	hookMu         sync.Mutex
+	hookOps        sync.Mutex
+	hooks          map[string]HookFunc
+	eventMu        sync.Mutex
+	eventNext      uint64
+	eventListeners map[uint64]func(HarnessEvent)
+	rpc            *jsonrpc.Conn
+	info           InitializeResult
+	transport      func() error
+	toolMu         sync.Mutex
+	toolOps        sync.Mutex
+	tools          map[string]ToolFunc
+	cmd            *exec.Cmd
+	processDone    chan error
+	closeOnce      sync.Once
+	closeErr       error
 }
 
 // Connect initializes the protocol over newline-delimited JSON streams. ctx
@@ -123,8 +130,11 @@ func Connect(ctx context.Context, r io.Reader, w io.Writer, opts Options) (*Clie
 			var ev HarnessEvent
 			if err := json.Unmarshal(req.Params, &ev); err != nil {
 				report(fmt.Errorf("harness-kit: decode event: %w", err))
-			} else if opts.OnEvent != nil {
-				opts.OnEvent(ev)
+			} else {
+				c.publishEvent(ev)
+				if opts.OnEvent != nil {
+					opts.OnEvent(ev)
+				}
 			}
 			return nil, nil
 		case NotificationSettingsUpdated:
@@ -135,6 +145,25 @@ func Connect(ctx context.Context, r io.Reader, w io.Writer, opts Options) (*Clie
 				opts.OnSettings(snapshot)
 			}
 			return nil, nil
+		case RequestHookCall:
+			var call HookRequest
+			if err := req.UnmarshalParams(&call); err != nil {
+				return nil, err
+			}
+			c.hookMu.Lock()
+			handler := c.hooks[call.HookID]
+			limit := call.ConcurrencyLimit
+			if limit <= 0 {
+				limit = 32
+			}
+			if handler == nil || c.activeHooks >= limit {
+				c.hookMu.Unlock()
+				return nil, fmt.Errorf("hook %s is unavailable or its concurrency limit was reached", call.HookID)
+			}
+			c.activeHooks++
+			c.hookMu.Unlock()
+			defer func() { c.hookMu.Lock(); c.activeHooks--; c.hookMu.Unlock() }()
+			return handler(ctx, call)
 		case RequestToolCall:
 			var p ToolCallParams
 			if err := req.UnmarshalParams(&p); err != nil {

@@ -8,11 +8,18 @@
 //   - session: session lifecycle, turns, event logs, approvals
 //   - event: the runtime-neutral event model
 //   - permission: approval requests, policies and the broker
-//   - process: native process host (binary lookup, process trees)
-//   - rpc/server, rpc/client, rpc/protocol: the JSON-RPC sidecar protocol
-//   - runtimes/codex, runtimes/claude, runtimes/fake: runtime adapters
+//   - settings, config: shared settings, persistence and value inheritance
+//   - hooks, logging: lifecycle extensions and structured diagnostics
+//   - model, model/contextwindow: inference contracts and caller-owned history
+//   - tools, toolhost, mcp, mcp/client: host tools and MCP integration
+//   - workspace, workspace/git: workspace contracts and the native Git backend
+//   - rpc/server, rpc/protocol: transport-neutral JSON-RPC hosting and wire types
+//   - runtimes/codex, runtimes/claude, runtimes/acp, runtimes/fake: adapters
+//   - runtimes/transport: injectable native process contracts
 //
-// The cmd/harness-kit binary serves the sidecar protocol over stdio for
-// Electron, Wails and other hosts; packages/client-ts is its TypeScript
-// client. See README.md and docs/.
+// Implementation-only code lives under internal, including command wiring,
+// protocol dispatch, accounting, process supervision and code generation.
+// The cmd/harness-kit binary serves the protocol over stdio. Independent Go
+// and TypeScript clients live in the repository's packages directory.
+// See docs/packages.md for the public API boundary and dependency rules.
 package harnesskit

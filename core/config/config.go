@@ -27,10 +27,38 @@ type Settings struct {
 // future turns, even when submitted during a turn. Live requires an explicit
 // active-turn API; a setting without Live never changes a running turn.
 type Support struct {
+	Descriptor
 	Startup bool `json:"startup"`
 	Session bool `json:"session"`
 	Turn    bool `json:"turn"`
 	Live    bool `json:"live"`
+}
+
+// Choice is a provider value, not an application permission preset.
+type Choice struct {
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+// Descriptor supplies UI metadata without prescribing a settings interface.
+// Source is "declared", "reported" or "unknown". Reported choices describe
+// what the installed runtime returned, not a guarantee of account entitlement.
+type Descriptor struct {
+	Type        string          `json:"type,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Choices     []Choice        `json:"choices,omitempty"`
+	AllowCustom bool            `json:"allowCustom,omitempty"`
+	Source      string          `json:"source,omitempty"`
+	Default     json.RawMessage `json:"default,omitempty"`
+}
+
+func Choices(values ...string) []Choice {
+	result := make([]Choice, len(values))
+	for i, value := range values {
+		result[i] = Choice{Value: value, Label: value}
+	}
+	return result
 }
 
 // Patch changes only supplied fields. Empty strings explicitly clear portable

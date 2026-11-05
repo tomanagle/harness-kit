@@ -198,18 +198,18 @@ func (r *Runtime) Info() agent.Info {
 func configurationSupport() map[string]config.Support {
 	startup := config.Support{Startup: true}
 	next := config.Support{Startup: true, Session: true, Turn: true}
-	return map[string]config.Support{
+	return describeSupport(map[string]config.Support{
 		"model": next, "effort": next,
 		"cwd": startup, "instructions": startup, "rawEvents": startup,
 		"mcp": startup, "hostTools": startup, "disableHostTools": startup,
-		"options.permissionMode": startup, "options.allowedTools": startup,
+		"options.permissionMode": next, "options.allowedTools": startup,
 		"options.disallowedTools": startup, "options.tools": startup,
 		"options.addDirs": startup, "options.bare": startup,
 		"options.forkOnResume": startup,
 		"options.maxTurns":     next, "options.maxBudgetUsd": next,
 		"options.disablePartialMessages": next,
 		"options.maxImageBytes":          next,
-	}
+	})
 }
 
 // ValidateConfig checks configuration without launching a CLI or reading its
@@ -369,6 +369,8 @@ func (r *Runtime) Start(ctx context.Context, cfg agent.SessionConfig, h agent.Ha
 	s := &Session{rt: r, path: path, version: version, cfg: cfg, opts: o, h: h}
 	if cfg.NativeDefaults != nil {
 		s.nativeModel = cfg.NativeDefaults.Model
+		_ = json.Unmarshal(cfg.NativeDefaults.Options["permissionMode"], &s.nativePermission)
+		_ = json.Unmarshal(cfg.NativeDefaults.Options["permissionOverrideUsed"], &s.permissionOverrideUsed)
 	}
 	// A legacy resumed transcript may contain a temporary model selection.
 	// Without a saved native baseline, inheriting it would be ambiguous.
@@ -422,8 +424,10 @@ type Session struct {
 	costBase   bool    // lastCost is a valid baseline
 	// Native model selection is learned only from a turn that inherited it.
 	// Reusing it prevents a one-turn --model from becoming the resume default.
-	nativeModel       string
-	modelOverrideUsed bool
+	nativePermission       string
+	permissionOverrideUsed bool
+	nativeModel            string
+	modelOverrideUsed      bool
 
 	// MCP flags computed once at Start.
 	mcpConfig   string   // --mcp-config file (0600, removed on Close)
@@ -594,7 +598,8 @@ func (s *Session) buildArgs(cfg agent.SessionConfig, o Options) []string {
 func (s *Session) NativeDefaults() agent.TurnConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return agent.TurnConfig{Model: s.nativeModel}
+	mode, _ := json.Marshal(s.nativePermission)
+	return agent.TurnConfig{Model: s.nativeModel, Options: map[string]json.RawMessage{"permissionMode": mode, "permissionOverrideUsed": json.RawMessage(fmt.Sprint(s.permissionOverrideUsed))}}
 }
 
 // PrepareTurn freezes one turn's settings. It never changes session defaults.
@@ -614,12 +619,28 @@ func (s *Session) PrepareTurn(ctx context.Context, in agent.TurnConfig) (agent.T
 	// Even direct adapter callers must not silently modify startup-only fields.
 	base := s.opts
 	o.Effort, base.Effort = "", ""
+	o.PermissionMode, base.PermissionMode = "", ""
 	o.MaxTurns, base.MaxTurns = 0, 0
 	o.MaxBudgetUSD, base.MaxBudgetUSD = 0, 0
 	o.MaxImageBytes, base.MaxImageBytes = nil, nil
 	o.DisablePartialMessages, base.DisablePartialMessages = false, false
 	if !reflect.DeepEqual(o, base) {
 		return agent.TurnConfig{}, fmt.Errorf("%w: claude: startup-only options changed", agent.ErrUnsupported)
+	}
+	var mode Options
+	_ = agent.DecodeOptions(out.Options, &mode)
+	if mode.PermissionMode == "" {
+		s.mu.Lock()
+		native, changed := s.nativePermission, s.permissionOverrideUsed
+		s.mu.Unlock()
+		if native != "" {
+			if out.Options == nil {
+				out.Options = make(map[string]json.RawMessage)
+			}
+			out.Options["permissionMode"], _ = json.Marshal(native)
+		} else if changed {
+			return agent.TurnConfig{}, fmt.Errorf("%w: claude did not report its native permission default; select an explicit permissionMode", agent.ErrUnsupported)
+		}
 	}
 	if selected, ok := mcp.LookupWith(os.LookupEnv, s.rt.env)("CLAUDE_CODE_EFFORT_LEVEL"); ok && selected != "" && out.Effort != "" && selected != out.Effort {
 		return agent.TurnConfig{}, fmt.Errorf("%w: claude: CLAUDE_CODE_EFFORT_LEVEL overrides the requested effort; change the host environment or omit effort", agent.ErrUnsupported)
@@ -723,7 +744,12 @@ func (s *Session) prompt(ctx context.Context, turn agent.Turn, command string) (
 	waitDone := make(chan struct{})
 	var waitErr error
 	parsed := make(chan struct{})
-	tr := &turnReader{s: s, turnID: turn.ID, inheritModel: cfg.Model == "", command: command}
+	s.mu.Lock()
+	if o.PermissionMode != "" {
+		s.permissionOverrideUsed = true
+	}
+	s.mu.Unlock()
+	tr := &turnReader{s: s, turnID: turn.ID, inheritModel: cfg.Model == "", inheritPermission: o.PermissionMode == "", command: command}
 	if command == "compact" {
 		tr.emit(event.RuntimeStatus, event.RuntimeStatusData{Status: "compacting"})
 	}
@@ -771,14 +797,17 @@ func (s *Session) prompt(ctx context.Context, turn agent.Turn, command string) (
 
 // turnReader maps one process's stream-json output to events.
 type turnReader struct {
-	s            *Session
-	turnID       string
-	inheritModel bool
-	command      string
-	localCommand string
-	compacted    bool
-	contextModel string
-	contextUsage *event.ContextUsageData
+	subagents map[string]*event.SubagentUpdatedData
+
+	s                 *Session
+	turnID            string
+	inheritPermission bool
+	inheritModel      bool
+	command           string
+	localCommand      string
+	compacted         bool
+	contextModel      string
+	contextUsage      *event.ContextUsageData
 
 	curMsg    string
 	curIndex  int
@@ -791,7 +820,7 @@ func (t *turnReader) emit(typ event.Type, data any) {
 	// A maintenance command is not an assistant conversation turn.
 	if t.command != "" {
 		switch typ {
-		case event.MessageDelta, event.MessageCompleted, event.ReasoningDelta, event.ReasoningCompleted, event.ToolStarted, event.ToolCompleted:
+		case event.MessageDelta, event.MessageCompleted, event.ReasoningDelta, event.ReasoningCompleted, event.ToolStarted, event.ToolCompleted, event.SubagentUpdated:
 			return
 		}
 	}
@@ -833,6 +862,22 @@ type contentBlock struct {
 }
 
 type streamLine struct {
+	TaskID       string `json:"task_id"`
+	TaskType     string `json:"task_type"`
+	ToolUseID    string `json:"tool_use_id"`
+	RunID        string `json:"run_id"`
+	Description  string `json:"description"`
+	Summary      string `json:"summary"`
+	ParentTaskID string `json:"parent_task_id"`
+	Background   bool   `json:"is_backgrounded"`
+	Ambient      bool   `json:"ambient"`
+	Patch        struct {
+		Status      string `json:"status"`
+		Background  *bool  `json:"is_backgrounded"`
+		Description string `json:"description"`
+		Error       string `json:"error"`
+	} `json:"patch"`
+
 	Type            string  `json:"type"`
 	Subtype         string  `json:"subtype"`
 	SessionID       string  `json:"session_id"`
@@ -925,6 +970,8 @@ func (t *turnReader) handle(line []byte) {
 
 func (t *turnReader) system(m streamLine, line []byte) {
 	switch m.Subtype {
+	case "task_started", "task_notification", "task_updated":
+		t.subagentTask(m)
 	case "init":
 		t.s.mu.Lock()
 		if m.SessionID != "" {
@@ -933,6 +980,9 @@ func (t *turnReader) system(m streamLine, line []byte) {
 		}
 		if t.inheritModel && t.s.nativeModel == "" && m.Model != "" {
 			t.s.nativeModel = m.Model
+		}
+		if t.inheritPermission && t.s.nativePermission == "" {
+			t.s.nativePermission = m.PermissionMode
 		}
 		t.s.started, t.s.resumed = true, false
 		t.s.mu.Unlock()
@@ -1001,6 +1051,9 @@ func (t *turnReader) assistant(m streamLine, parent string) {
 				t.emit(event.ReasoningCompleted, event.ReasoningCompletedData{ItemID: t.itemID(m.Message.ID, idx), Text: b.Thinking})
 			}
 		case "tool_use":
+			if toolKind(b.Name) == event.ToolKindSubagent {
+				t.subagentStart(b, parent)
+			}
 			t.emit(event.ToolStarted, event.ToolStartedData{
 				CallID: b.ID, Name: b.Name, Kind: toolKind(b.Name), Title: toolTitle(b.Name, b.Input),
 				Input: b.Input, ParentCallID: parent,
@@ -1022,6 +1075,7 @@ func (t *turnReader) user(m streamLine) {
 		if b.IsError {
 			d.Status, d.Error = event.ToolStatusFailed, d.Output
 		}
+		t.subagentResult(b.ToolUseID, d)
 		t.emit(event.ToolCompleted, d)
 	}
 }

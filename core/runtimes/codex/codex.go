@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -102,8 +103,15 @@ func New(opts ...Option) *Runtime {
 
 // Options are per-session options (agent.SessionConfig.Options).
 type Options struct {
+	// AddDirs selects additional writable roots in workspace-write mode.
+	// It does not change the inherited sandbox mode or approval policy.
+	AddDirs []string `json:"addDirs,omitempty"`
+
 	// ApprovalPolicy: "untrusted", "on-request" or "never". Empty inherits Codex configuration.
 	ApprovalPolicy string `json:"approvalPolicy,omitempty"`
+	// ApprovalsReviewer routes eligible approvals to "user" or "auto_review".
+	// Empty inherits native configuration. "guardian_subagent" is a legacy alias.
+	ApprovalsReviewer string `json:"approvalsReviewer,omitempty"`
 	// Sandbox: "read-only", "workspace-write" or
 	// "danger-full-access" (requires AllowUnsafe). Empty inherits Codex configuration.
 	Sandbox string `json:"sandbox,omitempty"`
@@ -117,6 +125,11 @@ type Options struct {
 }
 
 func (o Options) validate() error {
+	switch o.ApprovalsReviewer {
+	case "", "user", "auto_review", "guardian_subagent":
+	default:
+		return fmt.Errorf("codex: invalid approvalsReviewer %q", o.ApprovalsReviewer)
+	}
 	switch o.ApprovalPolicy {
 	case "", "untrusted", "on-request", "never":
 	default:
@@ -149,16 +162,18 @@ func (r *Runtime) Info() agent.Info {
 		Capabilities: agent.Capabilities{
 			Streaming: true, Approvals: true, Resume: true, Fork: true, Cancel: true, Usage: true, ListSessions: true, MCP: true, Images: true,
 			ContextUsage: true, Compaction: true,
-			Configuration: map[string]config.Support{
+			Configuration: describeSupport(map[string]config.Support{
 				"cwd": {Startup: true}, "instructions": {Startup: true}, "rawEvents": {Startup: true},
 				"mcp": {Startup: true}, "hostTools": {Startup: true}, "disableHostTools": {Startup: true},
-				"model":                  {Startup: true, Session: true, Turn: true},
-				"effort":                 {Startup: true, Session: true, Turn: true},
-				"options.approvalPolicy": {Startup: true},
-				"options.sandbox":        {Startup: true},
-				"options.ephemeral":      {Startup: true},
-				"options.config":         {Startup: true},
-			},
+				"model":                     {Startup: true, Session: true, Turn: true},
+				"effort":                    {Startup: true, Session: true, Turn: true},
+				"options.approvalPolicy":    {Startup: true, Session: true, Turn: true},
+				"options.approvalsReviewer": {Startup: true, Session: true, Turn: true},
+				"options.sandbox":           {Startup: true, Session: true, Turn: true},
+				"options.addDirs":           {Startup: true},
+				"options.ephemeral":         {Startup: true},
+				"options.config":            {Startup: true},
+			}),
 		},
 	}
 }
@@ -330,9 +345,29 @@ func (r *Runtime) ValidateConfig(cfg agent.SessionConfig) error {
 	if err := o.validate(); err != nil {
 		return fmt.Errorf("%w: %v", agent.ErrInvalidConfig, err)
 	}
+	for _, dir := range o.AddDirs {
+		if !filepath.IsAbs(dir) {
+			return fmt.Errorf("%w: codex addDirs requires absolute paths", agent.ErrInvalidConfig)
+		}
+		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+			return fmt.Errorf("%w: codex addDirs %q is not a directory", agent.ErrInvalidConfig, dir)
+		}
+	}
+	if len(o.AddDirs) > 0 {
+		for _, key := range []string{"sandbox_workspace_write", "sandbox_workspace_write.writable_roots"} {
+			if _, exists := o.Config[key]; exists {
+				return fmt.Errorf("%w: codex addDirs conflicts with options.config.%s", agent.ErrInvalidConfig, key)
+			}
+		}
+	}
 	for native, portable := range map[string]string{"model": "model", "model_reasoning_effort": "effort"} {
 		if _, exists := o.Config[native]; exists {
 			return fmt.Errorf("%w: codex options.config.%s conflicts with portable configuration; use %s", agent.ErrInvalidConfig, native, portable)
+		}
+	}
+	if o.ApprovalsReviewer != "" {
+		if _, exists := o.Config["approvals_reviewer"]; exists {
+			return fmt.Errorf("%w: codex options.config.approvals_reviewer conflicts with options.approvalsReviewer", agent.ErrInvalidConfig)
 		}
 	}
 	for name, value := range map[string]string{"model": cfg.Model, "effort": cfg.Effort, "options.effort": o.Effort} {
@@ -365,12 +400,24 @@ func (r *Runtime) Start(ctx context.Context, cfg agent.SessionConfig, h agent.Ha
 		return nil, err
 	}
 	s.cfg, s.opts = cfg, o
+	s.permissionOverrideUsed = map[string]bool{"sandbox": o.Sandbox != "", "approvalPolicy": o.ApprovalPolicy != "", "approvalsReviewer": o.ApprovalsReviewer != ""}
 	// Resolve native defaults before applying this session's overrides. These
 	// reads do not run a model or mutate Codex's configuration files.
 	if cfg.NativeDefaults != nil {
 		s.nativeModel, s.nativeEffort = cfg.NativeDefaults.Model, cfg.NativeDefaults.Effort
 		_ = json.Unmarshal(cfg.NativeDefaults.Options["modelEfforts"], &s.modelEfforts)
 		_ = json.Unmarshal(cfg.NativeDefaults.Options["supportedEfforts"], &s.supportedEfforts)
+		_ = json.Unmarshal(cfg.NativeDefaults.Options["sandbox"], &s.nativeSandbox)
+		_ = json.Unmarshal(cfg.NativeDefaults.Options["approvalPolicy"], &s.nativeApproval)
+		_ = json.Unmarshal(cfg.NativeDefaults.Options["approvalsReviewer"], &s.nativeReviewer)
+		_ = json.Unmarshal(cfg.NativeDefaults.Options["workspacePolicy"], &s.nativeWorkspace)
+		var changed map[string]bool
+		_ = json.Unmarshal(cfg.NativeDefaults.Options["permissionOverrides"], &changed)
+		for key, value := range changed {
+			if value {
+				s.permissionOverrideUsed[key] = true
+			}
+		}
 	} else {
 		s.captureDefaults(ctx)
 	}
@@ -378,6 +425,9 @@ func (r *Runtime) Start(ctx context.Context, cfg agent.SessionConfig, h agent.Ha
 	params := map[string]any{}
 	if o.ApprovalPolicy != "" {
 		params["approvalPolicy"] = o.ApprovalPolicy
+	}
+	if o.ApprovalsReviewer != "" {
+		params["approvalsReviewer"] = o.ApprovalsReviewer
 	}
 	if o.Sandbox != "" {
 		params["sandbox"] = o.Sandbox
@@ -394,6 +444,9 @@ func (r *Runtime) Start(ctx context.Context, cfg agent.SessionConfig, h agent.Ha
 	threadConfig := map[string]any{}
 	for k, v := range o.Config {
 		threadConfig[k] = v
+	}
+	if len(o.AddDirs) > 0 {
+		threadConfig["sandbox_workspace_write.writable_roots"] = append([]string(nil), o.AddDirs...)
 	}
 	if cfg.MCP != nil {
 		servers, warnings := r.mcpServers(ctx, s, cfg)
@@ -433,8 +486,11 @@ func (r *Runtime) Start(ctx context.Context, cfg agent.SessionConfig, h agent.Ha
 		Thread struct {
 			ID string `json:"id"`
 		} `json:"thread"`
-		Model           string  `json:"model"`
-		ReasoningEffort *string `json:"reasoningEffort"`
+		Model             string          `json:"model"`
+		ReasoningEffort   *string         `json:"reasoningEffort"`
+		Sandbox           json.RawMessage `json:"sandbox"`
+		ApprovalPolicy    string          `json:"approvalPolicy"`
+		ApprovalsReviewer string          `json:"approvalsReviewer"`
 	}
 	if err := s.conn.Call(sctx, method, params, &res); err != nil {
 		s.Close(context.Background())
@@ -443,6 +499,21 @@ func (r *Runtime) Start(ctx context.Context, cfg agent.SessionConfig, h agent.Ha
 	if res.Thread.ID == "" {
 		s.Close(context.Background())
 		return nil, fmt.Errorf("codex: %s returned no thread id", method)
+	}
+	s.initialSandbox = append(json.RawMessage(nil), res.Sandbox...)
+	var resolvedPolicy struct {
+		Type string `json:"type"`
+	}
+	_ = json.Unmarshal(res.Sandbox, &resolvedPolicy)
+	s.initialSandboxMode = map[string]string{"workspaceWrite": "workspace-write", "readOnly": "read-only", "dangerFullAccess": "danger-full-access"}[resolvedPolicy.Type]
+	if s.nativeSandbox == "" && o.Sandbox == "" && o.Config["sandbox_mode"] == nil {
+		s.nativeSandbox = s.initialSandboxMode
+	}
+	if s.nativeApproval == "" && o.ApprovalPolicy == "" && o.Config["approval_policy"] == nil {
+		s.nativeApproval = res.ApprovalPolicy
+	}
+	if s.nativeReviewer == "" && o.ApprovalsReviewer == "" && o.Config["approvals_reviewer"] == nil {
+		s.nativeReviewer = res.ApprovalsReviewer
 	}
 	s.threadID = res.Thread.ID
 	// Older servers may not expose config/read. A new thread's resolved
@@ -630,6 +701,8 @@ func (r *Runtime) spawn(ctx context.Context, path, cwd string, h agent.Handler) 
 
 // Session is a Codex thread served by a dedicated app-server process.
 type Session struct {
+	childStates map[string]event.SubagentStatus // guarded by mu
+
 	rt   *Runtime
 	h    agent.Handler
 	cfg  agent.SessionConfig
@@ -645,10 +718,17 @@ type Session struct {
 
 	threadID string
 	// Captured once before session overrides; never changed by a turn.
-	nativeModel      string
-	nativeEffort     string
-	modelEfforts     map[string]string
-	supportedEfforts map[string][]string
+	initialSandbox         json.RawMessage
+	initialSandboxMode     string
+	nativeSandbox          string
+	nativeApproval         string
+	nativeReviewer         string
+	nativeWorkspace        workspacePolicy
+	permissionOverrideUsed map[string]bool
+	nativeModel            string
+	nativeEffort           string
+	modelEfforts           map[string]string
+	supportedEfforts       map[string][]string
 
 	mu                 sync.Mutex
 	active             *activeTurn
@@ -753,6 +833,18 @@ func (s *Session) Prompt(ctx context.Context, turn agent.Turn) (agent.TurnResult
 	// fields every time, including after a one-turn override has finished.
 	params := map[string]any{"threadId": s.threadID, "input": input,
 		"model": settings.Model, "effort": settings.Effort}
+	for key, value := range s.permissionParams(settings) {
+		params[key] = value
+	}
+	s.mu.Lock()
+	for _, key := range []string{"sandbox", "approvalPolicy", "approvalsReviewer"} {
+		var value string
+		_ = json.Unmarshal(settings.Options[key], &value)
+		if value != "" {
+			s.permissionOverrideUsed[key] = true
+		}
+	}
+	s.mu.Unlock()
 
 	callCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	var res struct {
@@ -899,6 +991,12 @@ func (b tokenBreakdown) usage(scope string, window int64) event.UsageData {
 }
 
 type threadItem struct {
+	Prompt            string   `json:"prompt"`
+	ReceiverThreadIDs []string `json:"receiverThreadIds"`
+	AgentsStates      map[string]struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	} `json:"agentsStates"`
 	Type             string          `json:"type"`
 	ID               string          `json:"id"`
 	Text             string          `json:"text"`
@@ -1103,6 +1201,7 @@ func (s *Session) itemStarted(turnID string, it threadItem) {
 	case "webSearch":
 		s.emit(turnID, event.ToolStarted, event.ToolStartedData{CallID: it.ID, Name: "web_search", Kind: event.ToolKindWebSearch, Title: it.Query})
 	case "collabAgentToolCall":
+		s.subagents(turnID, it, false)
 		s.emit(turnID, event.ToolStarted, event.ToolStartedData{CallID: it.ID, Name: it.Tool, Kind: event.ToolKindSubagent, Title: it.Tool})
 	}
 }
@@ -1131,6 +1230,9 @@ func (s *Session) itemCompleted(turnID string, it threadItem) {
 		s.mu.Unlock()
 		s.emit(turnID, event.ToolCompleted, event.ToolCompletedData{CallID: it.ID, Name: "file_change", Status: toolStatus(it.Status)})
 	case "mcpToolCall", "dynamicToolCall", "collabAgentToolCall":
+		if it.Type == "collabAgentToolCall" {
+			s.subagents(turnID, it, true)
+		}
 		d := event.ToolCompletedData{CallID: it.ID, Name: it.Tool, Status: toolStatus(it.Status)}
 		if it.Error != nil {
 			d.Error = it.Error.Message

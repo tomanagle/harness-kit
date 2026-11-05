@@ -688,6 +688,122 @@
         "usage"
       ]
     },
+    "ClaudeOptions": {
+      "type": "object",
+      "description": "Options are per-session options (agent.SessionConfig.Options).",
+      "properties": {
+        "addDirs": {
+          "type": "array",
+          "description": "AddDirs grants tool access to additional directories.",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "AddDirs",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "addDirs,omitempty"
+        },
+        "allowedTools": {
+          "type": "array",
+          "description": "AllowedTools run without prompting, in Claude Code permission-rule\nsyntax, e.g. \"Read\", \"Bash(git diff *)\".",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "AllowedTools",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "allowedTools,omitempty"
+        },
+        "bare": {
+          "type": "boolean",
+          "description": "Bare skips hooks, plugins, MCP servers, CLAUDE.md and auto memory\nfor reproducible runs. Bare mode authenticates only with\nANTHROPIC_API_KEY or an apiKeyHelper, never with a Claude.ai login.",
+          "x-go-name": "Bare",
+          "x-go-type": "bool",
+          "x-go-json-tag": "bare,omitempty"
+        },
+        "disablePartialMessages": {
+          "type": "boolean",
+          "description": "DisablePartialMessages turns off token-level streaming.",
+          "x-go-name": "DisablePartialMessages",
+          "x-go-type": "bool",
+          "x-go-json-tag": "disablePartialMessages,omitempty"
+        },
+        "disallowedTools": {
+          "type": "array",
+          "description": "DisallowedTools are deny rules.",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "DisallowedTools",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "disallowedTools,omitempty"
+        },
+        "effort": {
+          "type": "string",
+          "description": "Effort: \"low\", \"medium\", \"high\", \"xhigh\" or \"max\".",
+          "x-go-name": "Effort",
+          "x-go-type": "string",
+          "x-go-json-tag": "effort,omitempty"
+        },
+        "forkOnResume": {
+          "type": "boolean",
+          "description": "ForkOnResume continues a resumed session under a new session ID.",
+          "x-go-name": "ForkOnResume",
+          "x-go-type": "bool",
+          "x-go-json-tag": "forkOnResume,omitempty"
+        },
+        "maxBudgetUsd": {
+          "type": "number",
+          "description": "MaxBudgetUSD stops a prompt when estimated spend reaches it.",
+          "x-go-name": "MaxBudgetUSD",
+          "x-go-type": "float64",
+          "x-go-json-tag": "maxBudgetUsd,omitempty"
+        },
+        "maxImageBytes": {
+          "type": "integer",
+          "description": "MaxImageBytes optionally bounds each input image before encoding. Nil\nimposes no kit limit; zero refuses image bytes. Native limits still apply.",
+          "x-go-name": "MaxImageBytes",
+          "x-go-type": "*int64",
+          "x-go-json-tag": "maxImageBytes,omitempty"
+        },
+        "maxTurns": {
+          "type": "integer",
+          "description": "MaxTurns limits agentic turns per prompt.",
+          "x-go-name": "MaxTurns",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxTurns,omitempty"
+        },
+        "permissionMode": {
+          "type": "string",
+          "description": "PermissionMode: \"default\"/\"manual\", \"acceptEdits\", \"plan\", \"auto\",\n\"dontAsk\" or \"bypassPermissions\" (requires AllowUnsafe).",
+          "enum": [
+            "",
+            "default",
+            "acceptEdits",
+            "auto",
+            "plan",
+            "dontAsk",
+            "bypassPermissions",
+            "manual"
+          ],
+          "x-go-name": "PermissionMode",
+          "x-go-type": "string",
+          "x-go-json-tag": "permissionMode,omitempty"
+        },
+        "tools": {
+          "type": "array",
+          "description": "Tools restricts the built-in tool set; an empty list disables all\nbuilt-in tools. Nil keeps the default set.",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Tools",
+          "x-go-type": "*[]string",
+          "x-go-json-tag": "tools,omitempty"
+        }
+      }
+    },
     "ClientInfo": {
       "type": "object",
       "description": "ClientInfo identifies the client.",
@@ -708,6 +824,86 @@
       "required": [
         "name"
       ]
+    },
+    "CodexOptions": {
+      "type": "object",
+      "description": "Options are per-session options (agent.SessionConfig.Options).",
+      "properties": {
+        "addDirs": {
+          "type": "array",
+          "description": "AddDirs selects additional writable roots in workspace-write mode.\nIt does not change the inherited sandbox mode or approval policy.",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "AddDirs",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "addDirs,omitempty"
+        },
+        "approvalPolicy": {
+          "type": "string",
+          "description": "ApprovalPolicy: \"untrusted\", \"on-request\" or \"never\". Empty inherits Codex configuration.",
+          "enum": [
+            "",
+            "on-request",
+            "never",
+            "untrusted"
+          ],
+          "x-go-name": "ApprovalPolicy",
+          "x-go-type": "string",
+          "x-go-json-tag": "approvalPolicy,omitempty"
+        },
+        "approvalsReviewer": {
+          "type": "string",
+          "description": "ApprovalsReviewer routes eligible approvals to \"user\" or \"auto_review\".\nEmpty inherits native configuration. \"guardian_subagent\" is a legacy alias.",
+          "enum": [
+            "",
+            "user",
+            "auto_review",
+            "guardian_subagent"
+          ],
+          "x-go-name": "ApprovalsReviewer",
+          "x-go-type": "string",
+          "x-go-json-tag": "approvalsReviewer,omitempty"
+        },
+        "config": {
+          "type": "object",
+          "description": "Config passes thread configuration overrides through verbatim.\nOverrides touching sandbox or approval settings require AllowUnsafe.",
+          "additionalProperties": {
+            "x-go-type": "json.RawMessage"
+          },
+          "x-go-name": "Config",
+          "x-go-type": "map[string]json.RawMessage",
+          "x-go-json-tag": "config,omitempty"
+        },
+        "effort": {
+          "type": "string",
+          "description": "Effort overrides the reasoning effort, e.g. \"low\", \"medium\", \"high\".",
+          "x-go-name": "Effort",
+          "x-go-type": "string",
+          "x-go-json-tag": "effort,omitempty"
+        },
+        "ephemeral": {
+          "type": "boolean",
+          "description": "Ephemeral threads are not persisted by Codex and cannot be resumed.",
+          "x-go-name": "Ephemeral",
+          "x-go-type": "bool",
+          "x-go-json-tag": "ephemeral,omitempty"
+        },
+        "sandbox": {
+          "type": "string",
+          "description": "Sandbox: \"read-only\", \"workspace-write\" or\n\"danger-full-access\" (requires AllowUnsafe). Empty inherits Codex configuration.",
+          "enum": [
+            "",
+            "read-only",
+            "workspace-write",
+            "danger-full-access"
+          ],
+          "x-go-name": "Sandbox",
+          "x-go-type": "string",
+          "x-go-json-tag": "sandbox,omitempty"
+        }
+      }
     },
     "CompactionSettings": {
       "type": "object",
@@ -832,10 +1028,110 @@
         }
       }
     },
+    "ConfigurationChoice": {
+      "type": "object",
+      "description": "Choice is a provider value, not an application permission preset.",
+      "properties": {
+        "description": {
+          "type": "string",
+          "x-go-name": "Description",
+          "x-go-type": "string",
+          "x-go-json-tag": "description,omitempty"
+        },
+        "label": {
+          "type": "string",
+          "x-go-name": "Label",
+          "x-go-type": "string",
+          "x-go-json-tag": "label"
+        },
+        "value": {
+          "type": "string",
+          "x-go-name": "Value",
+          "x-go-type": "string",
+          "x-go-json-tag": "value"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ]
+    },
+    "ConfigurationDescriptor": {
+      "type": "object",
+      "description": "Descriptor supplies UI metadata without prescribing a settings interface.\nSource is \"declared\", \"reported\" or \"unknown\". Reported choices describe\nwhat the installed runtime returned, not a guarantee of account entitlement.",
+      "properties": {
+        "allowCustom": {
+          "type": "boolean",
+          "x-go-name": "AllowCustom",
+          "x-go-type": "bool",
+          "x-go-json-tag": "allowCustom,omitempty"
+        },
+        "choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigurationChoice",
+            "x-go-type": "ConfigurationChoice"
+          },
+          "x-go-name": "Choices",
+          "x-go-type": "[]ConfigurationChoice",
+          "x-go-json-tag": "choices,omitempty"
+        },
+        "default": {
+          "x-go-name": "Default",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "default,omitempty"
+        },
+        "description": {
+          "type": "string",
+          "x-go-name": "Description",
+          "x-go-type": "string",
+          "x-go-json-tag": "description,omitempty"
+        },
+        "source": {
+          "type": "string",
+          "x-go-name": "Source",
+          "x-go-type": "string",
+          "x-go-json-tag": "source,omitempty"
+        },
+        "type": {
+          "type": "string",
+          "x-go-name": "Type",
+          "x-go-type": "string",
+          "x-go-json-tag": "type,omitempty"
+        }
+      }
+    },
     "ConfigurationSupport": {
       "type": "object",
       "description": "Support describes where a setting can be supplied. Session changes apply to\nfuture turns, even when submitted during a turn. Live requires an explicit\nactive-turn API; a setting without Live never changes a running turn.",
       "properties": {
+        "allowCustom": {
+          "type": "boolean",
+          "x-go-name": "AllowCustom",
+          "x-go-type": "bool",
+          "x-go-json-tag": "allowCustom,omitempty"
+        },
+        "choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigurationChoice",
+            "x-go-type": "ConfigurationChoice"
+          },
+          "x-go-name": "Choices",
+          "x-go-type": "[]ConfigurationChoice",
+          "x-go-json-tag": "choices,omitempty"
+        },
+        "default": {
+          "x-go-name": "Default",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "default,omitempty"
+        },
+        "description": {
+          "type": "string",
+          "x-go-name": "Description",
+          "x-go-type": "string",
+          "x-go-json-tag": "description,omitempty"
+        },
         "live": {
           "type": "boolean",
           "x-go-name": "Live",
@@ -848,6 +1144,12 @@
           "x-go-type": "bool",
           "x-go-json-tag": "session"
         },
+        "source": {
+          "type": "string",
+          "x-go-name": "Source",
+          "x-go-type": "string",
+          "x-go-json-tag": "source,omitempty"
+        },
         "startup": {
           "type": "boolean",
           "x-go-name": "Startup",
@@ -859,6 +1161,12 @@
           "x-go-name": "Turn",
           "x-go-type": "bool",
           "x-go-json-tag": "turn"
+        },
+        "type": {
+          "type": "string",
+          "x-go-name": "Type",
+          "x-go-type": "string",
+          "x-go-json-tag": "type,omitempty"
         }
       },
       "required": [
@@ -1272,6 +1580,7 @@
         "fork_source_changed",
         "git_conflict",
         "git_error",
+        "hook_failed",
         "invalid_decision",
         "invalid_params",
         "new_session_required",
@@ -1286,6 +1595,7 @@
         "session_closed",
         "session_not_found",
         "settings_conflict",
+        "settings_persistence_failed",
         "unsupported",
         "unsupported_version"
       ],
@@ -1351,6 +1661,7 @@
         "session.started",
         "session.updated",
         "stream.gap",
+        "subagent.updated",
         "tool.completed",
         "tool.output",
         "tool.started",
@@ -1358,6 +1669,15 @@
         "turn.started",
         "usage",
         "workspace.diff"
+      ],
+      "x-go-type": "string"
+    },
+    "FailurePolicy": {
+      "type": "string",
+      "description": "FailurePolicy controls whether a failed callback stops its lifecycle phase.",
+      "enum": [
+        "continue",
+        "fail"
       ],
       "x-go-type": "string"
     },
@@ -2954,6 +3274,50 @@
           "type": "object",
           "properties": {
             "data": {
+              "$ref": "#/$defs/SubagentUpdatedData",
+              "x-go-type": "SubagentUpdatedData"
+            },
+            "seq": {
+              "type": "integer",
+              "x-go-name": "Seq",
+              "x-go-type": "uint64",
+              "x-go-json-tag": "seq"
+            },
+            "sessionId": {
+              "type": "string",
+              "x-go-name": "SessionID",
+              "x-go-type": "string",
+              "x-go-json-tag": "sessionId"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "x-go-name": "Time",
+              "x-go-type": "time.Time",
+              "x-go-json-tag": "time"
+            },
+            "turnId": {
+              "type": "string",
+              "x-go-name": "TurnID",
+              "x-go-type": "string",
+              "x-go-json-tag": "turnId,omitempty"
+            },
+            "type": {
+              "const": "subagent.updated"
+            }
+          },
+          "required": [
+            "seq",
+            "sessionId",
+            "time",
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
               "$ref": "#/$defs/ToolCompletedData",
               "x-go-type": "ToolCompletedData"
             },
@@ -3281,6 +3645,7 @@
                   "session.started",
                   "session.updated",
                   "stream.gap",
+                  "subagent.updated",
                   "tool.completed",
                   "tool.output",
                   "tool.started",
@@ -3352,6 +3717,384 @@
         }
       },
       "x-go-type": "map[string]json.RawMessage"
+    },
+    "HookCreate": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/SessionConfig",
+          "x-go-name": "Config",
+          "x-go-type": "SessionConfig",
+          "x-go-json-tag": "config"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Metadata",
+          "x-go-type": "map[string]string",
+          "x-go-json-tag": "metadata,omitempty"
+        },
+        "runtime": {
+          "type": "string",
+          "x-go-name": "Runtime",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtime"
+        },
+        "title": {
+          "type": "string",
+          "x-go-name": "Title",
+          "x-go-type": "string",
+          "x-go-json-tag": "title,omitempty"
+        }
+      },
+      "required": [
+        "config",
+        "runtime"
+      ]
+    },
+    "HookName": {
+      "type": "string",
+      "enum": [
+        "session.beforeCreate",
+        "turn.after",
+        "turn.before"
+      ],
+      "x-go-type": "string"
+    },
+    "HookRequest": {
+      "type": "object",
+      "properties": {
+        "concurrencyLimit": {
+          "type": "integer",
+          "description": "ConcurrencyLimit also bounds callbacks retained by a remote client after timeout.",
+          "x-go-name": "ConcurrencyLimit",
+          "x-go-type": "int",
+          "x-go-json-tag": "concurrencyLimit"
+        },
+        "config": {
+          "$ref": "#/$defs/ConfigPatch",
+          "x-go-name": "Config",
+          "x-go-type": "*ConfigPatch",
+          "x-go-json-tag": "config,omitempty"
+        },
+        "create": {
+          "$ref": "#/$defs/HookCreate",
+          "x-go-name": "Create",
+          "x-go-type": "*HookCreate",
+          "x-go-json-tag": "create,omitempty"
+        },
+        "hookId": {
+          "type": "string",
+          "x-go-name": "HookID",
+          "x-go-type": "string",
+          "x-go-json-tag": "hookId"
+        },
+        "input": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InputPart",
+            "x-go-type": "InputPart"
+          },
+          "x-go-name": "Input",
+          "x-go-type": "[]InputPart",
+          "x-go-json-tag": "input,omitempty"
+        },
+        "invocationId": {
+          "type": "string",
+          "x-go-name": "InvocationID",
+          "x-go-type": "string",
+          "x-go-json-tag": "invocationId"
+        },
+        "isFirstTurn": {
+          "type": "boolean",
+          "x-go-name": "IsFirstTurn",
+          "x-go-type": "bool",
+          "x-go-json-tag": "isFirstTurn"
+        },
+        "name": {
+          "$ref": "#/$defs/HookName",
+          "x-go-name": "Name",
+          "x-go-type": "HookName",
+          "x-go-json-tag": "name"
+        },
+        "result": {
+          "$ref": "#/$defs/TurnResult",
+          "x-go-name": "Result",
+          "x-go-type": "*TurnResult",
+          "x-go-json-tag": "result,omitempty"
+        },
+        "session": {
+          "$ref": "#/$defs/HookSession",
+          "x-go-name": "Session",
+          "x-go-type": "*HookSession",
+          "x-go-json-tag": "session,omitempty"
+        },
+        "turnId": {
+          "type": "string",
+          "x-go-name": "TurnID",
+          "x-go-type": "string",
+          "x-go-json-tag": "turnId,omitempty"
+        }
+      },
+      "required": [
+        "concurrencyLimit",
+        "hookId",
+        "invocationId",
+        "isFirstTurn",
+        "name"
+      ]
+    },
+    "HookResponse": {
+      "type": "object",
+      "description": "Response is a patch. Omitted values preserve the previous handler's output.\nBefore-create accepts Create; before-turn accepts Input and Config; after-turn\nis observational and must return an empty response.",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/ConfigPatch",
+          "x-go-name": "Config",
+          "x-go-type": "*ConfigPatch",
+          "x-go-json-tag": "config,omitempty"
+        },
+        "create": {
+          "$ref": "#/$defs/HookCreate",
+          "x-go-name": "Create",
+          "x-go-type": "*HookCreate",
+          "x-go-json-tag": "create,omitempty"
+        },
+        "input": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InputPart",
+            "x-go-type": "InputPart"
+          },
+          "x-go-name": "Input",
+          "x-go-type": "*[]InputPart",
+          "x-go-json-tag": "input,omitempty"
+        }
+      }
+    },
+    "HookSession": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/SessionConfig",
+          "x-go-name": "Config",
+          "x-go-type": "SessionConfig",
+          "x-go-json-tag": "config"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Metadata",
+          "x-go-type": "map[string]string",
+          "x-go-json-tag": "metadata,omitempty"
+        },
+        "runtime": {
+          "type": "string",
+          "x-go-name": "Runtime",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtime"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "ID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId"
+        },
+        "title": {
+          "type": "string",
+          "x-go-name": "Title",
+          "x-go-type": "string",
+          "x-go-json-tag": "title"
+        },
+        "turns": {
+          "type": "integer",
+          "x-go-name": "Turns",
+          "x-go-type": "int",
+          "x-go-json-tag": "turns"
+        }
+      },
+      "required": [
+        "config",
+        "runtime",
+        "sessionId",
+        "title",
+        "turns"
+      ]
+    },
+    "HookSettings": {
+      "type": "object",
+      "description": "Settings belongs to the shared settings document. Required IDs must be\nregistered while hooks are enabled. This prevents a disconnected owner from\nsilently removing application-required preparation or validation.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "x-go-name": "Enabled",
+          "x-go-type": "bool",
+          "x-go-json-tag": "enabled"
+        },
+        "maxConcurrent": {
+          "type": "integer",
+          "x-go-name": "MaxConcurrent",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxConcurrent"
+        },
+        "onError": {
+          "$ref": "#/$defs/FailurePolicy",
+          "x-go-name": "OnError",
+          "x-go-type": "FailurePolicy",
+          "x-go-json-tag": "onError"
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Required",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "required"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "x-go-name": "TimeoutMs",
+          "x-go-type": "int64",
+          "x-go-json-tag": "timeoutMs"
+        }
+      },
+      "required": [
+        "enabled",
+        "maxConcurrent",
+        "onError",
+        "required",
+        "timeoutMs"
+      ]
+    },
+    "HookSettingsPatch": {
+      "type": "object",
+      "description": "Settings belongs to the shared settings document. Required IDs must be\nregistered while hooks are enabled. This prevents a disconnected owner from\nsilently removing application-required preparation or validation.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "x-go-name": "Enabled",
+          "x-go-type": "bool",
+          "x-go-json-tag": "enabled"
+        },
+        "maxConcurrent": {
+          "type": "integer",
+          "x-go-name": "MaxConcurrent",
+          "x-go-type": "int",
+          "x-go-json-tag": "maxConcurrent"
+        },
+        "onError": {
+          "$ref": "#/$defs/FailurePolicy",
+          "x-go-name": "OnError",
+          "x-go-type": "FailurePolicy",
+          "x-go-json-tag": "onError"
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Required",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "required"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "x-go-name": "TimeoutMs",
+          "x-go-type": "int64",
+          "x-go-json-tag": "timeoutMs"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
+    },
+    "HookSpec": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-go-name": "ID",
+          "x-go-type": "string",
+          "x-go-json-tag": "id"
+        },
+        "name": {
+          "$ref": "#/$defs/HookName",
+          "x-go-name": "Name",
+          "x-go-type": "HookName",
+          "x-go-json-tag": "name"
+        },
+        "order": {
+          "type": "integer",
+          "description": "Lower order runs first; ties are ordered by ID, independent of connection timing.",
+          "x-go-name": "Order",
+          "x-go-type": "int",
+          "x-go-json-tag": "order,omitempty"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-go-name": "SessionID",
+          "x-go-type": "string",
+          "x-go-json-tag": "sessionId,omitempty"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "HooksListResult": {
+      "type": "object",
+      "properties": {
+        "hooks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HookSpec",
+            "x-go-type": "HookSpec"
+          },
+          "x-go-name": "Hooks",
+          "x-go-type": "[]HookSpec",
+          "x-go-json-tag": "hooks"
+        }
+      },
+      "required": [
+        "hooks"
+      ]
+    },
+    "HooksRegisterParams": {
+      "type": "object",
+      "description": "Hook registrations are owned by the registering connection.",
+      "properties": {
+        "hook": {
+          "$ref": "#/$defs/HookSpec",
+          "x-go-name": "Hook",
+          "x-go-type": "HookSpec",
+          "x-go-json-tag": "hook"
+        }
+      },
+      "required": [
+        "hook"
+      ]
+    },
+    "HooksUnregisterParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-go-name": "ID",
+          "x-go-type": "string",
+          "x-go-json-tag": "id"
+        }
+      },
+      "required": [
+        "id"
+      ]
     },
     "InitializeParams": {
       "type": "object",
@@ -4370,6 +5113,13 @@
           "x-go-type": "[]string",
           "x-go-json-tag": "runtimes"
         },
+        "settingsPath": {
+          "type": "string",
+          "description": "SettingsPath opts into host-owned JSON preference persistence. Empty is in-memory.",
+          "x-go-name": "SettingsPath",
+          "x-go-type": "string",
+          "x-go-json-tag": "settingsPath"
+        },
         "shutdownTimeoutMs": {
           "type": "integer",
           "x-go-name": "ShutdownTimeoutMs",
@@ -4391,6 +5141,7 @@
         "gitPath",
         "kitMcp",
         "runtimes",
+        "settingsPath",
         "shutdownTimeoutMs",
         "store"
       ]
@@ -4453,6 +5204,13 @@
           "x-go-name": "Runtimes",
           "x-go-type": "[]string",
           "x-go-json-tag": "runtimes"
+        },
+        "settingsPath": {
+          "type": "string",
+          "description": "SettingsPath opts into host-owned JSON preference persistence. Empty is in-memory.",
+          "x-go-name": "SettingsPath",
+          "x-go-type": "string",
+          "x-go-json-tag": "settingsPath"
         },
         "shutdownTimeoutMs": {
           "type": "integer",
@@ -4836,6 +5594,12 @@
           "x-go-type": "bool",
           "x-go-json-tag": "git"
         },
+        "hooks": {
+          "type": "boolean",
+          "x-go-name": "Hooks",
+          "x-go-type": "bool",
+          "x-go-json-tag": "hooks"
+        },
         "logs": {
           "type": "boolean",
           "description": "Logs advertises opt-in structured slog notifications.",
@@ -4878,6 +5642,7 @@
         "allowUnsafe",
         "eventLogSize",
         "git",
+        "hooks",
         "logs",
         "runtimes",
         "settings",
@@ -5925,6 +6690,33 @@
       "type": "object",
       "description": "Field describes a field for settings interfaces. When describes the global\nlifetime; scoped snapshots can refine it using adapter capabilities.",
       "properties": {
+        "allowCustom": {
+          "type": "boolean",
+          "x-go-name": "AllowCustom",
+          "x-go-type": "bool",
+          "x-go-json-tag": "allowCustom,omitempty"
+        },
+        "choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigurationChoice",
+            "x-go-type": "ConfigurationChoice"
+          },
+          "x-go-name": "Choices",
+          "x-go-type": "[]ConfigurationChoice",
+          "x-go-json-tag": "choices,omitempty"
+        },
+        "default": {
+          "x-go-name": "Default",
+          "x-go-type": "json.RawMessage",
+          "x-go-json-tag": "default,omitempty"
+        },
+        "description": {
+          "type": "string",
+          "x-go-name": "Description",
+          "x-go-type": "string",
+          "x-go-json-tag": "description,omitempty"
+        },
         "minimum": {
           "type": "integer",
           "x-go-name": "Minimum",
@@ -5946,6 +6738,12 @@
           "x-go-name": "Scopes",
           "x-go-type": "[]string",
           "x-go-json-tag": "scopes"
+        },
+        "source": {
+          "type": "string",
+          "x-go-name": "Source",
+          "x-go-type": "string",
+          "x-go-json-tag": "source,omitempty"
         },
         "type": {
           "type": "string",
@@ -6009,6 +6807,9 @@
         },
         "history": {
           "$ref": "#/$defs/HistorySettingsPatch"
+        },
+        "hooks": {
+          "$ref": "#/$defs/HookSettingsPatch"
         },
         "logging": {
           "$ref": "#/$defs/LoggingSettingsPatch"
@@ -6078,6 +6879,16 @@
           "x-go-name": "Values",
           "x-go-type": "SettingsValues",
           "x-go-json-tag": "values"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-go-type": "string"
+          },
+          "x-go-name": "Warnings",
+          "x-go-type": "[]string",
+          "x-go-json-tag": "warnings,omitempty"
         }
       },
       "required": [
@@ -6089,6 +6900,19 @@
     "SettingsTarget": {
       "type": "object",
       "properties": {
+        "model": {
+          "type": "string",
+          "x-go-name": "Model",
+          "x-go-type": "string",
+          "x-go-json-tag": "model,omitempty"
+        },
+        "runtime": {
+          "type": "string",
+          "description": "Runtime and Model select read-only provider discovery through settings.get.\nThey cannot be combined with SessionID or used by settings.configure.",
+          "x-go-name": "Runtime",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtime,omitempty"
+        },
         "sessionId": {
           "type": "string",
           "x-go-name": "SessionID",
@@ -6130,6 +6954,12 @@
           "x-go-name": "History",
           "x-go-type": "HistorySettings",
           "x-go-json-tag": "history"
+        },
+        "hooks": {
+          "$ref": "#/$defs/HookSettings",
+          "x-go-name": "Hooks",
+          "x-go-type": "HookSettings",
+          "x-go-json-tag": "hooks"
         },
         "logging": {
           "$ref": "#/$defs/LoggingSettings",
@@ -6174,6 +7004,7 @@
         "compaction",
         "git",
         "history",
+        "hooks",
         "logging",
         "memory",
         "process",
@@ -6258,6 +7089,90 @@
         }
       },
       "x-go-type": "map[string]json.RawMessage"
+    },
+    "SubagentStatus": {
+      "type": "string",
+      "description": "SubagentStatus is the last observed lifecycle state of a delegated agent.",
+      "enum": [
+        "cancelled",
+        "completed",
+        "failed",
+        "running",
+        "unknown"
+      ],
+      "x-go-type": "string"
+    },
+    "SubagentUpdatedData": {
+      "type": "object",
+      "description": "SubagentUpdatedData reports delegated work independently of the spawning tool.\nA completed spawn/wait tool does not imply a completed agent. Updates are\nobservations, not independently controllable Harness Kit sessions. Optional\ndescriptive fields enrich earlier observations when present.",
+      "properties": {
+        "background": {
+          "type": "boolean",
+          "x-go-name": "Background",
+          "x-go-type": "bool",
+          "x-go-json-tag": "background,omitempty"
+        },
+        "callId": {
+          "type": "string",
+          "x-go-name": "CallID",
+          "x-go-type": "string",
+          "x-go-json-tag": "callId,omitempty"
+        },
+        "error": {
+          "type": "string",
+          "x-go-name": "Error",
+          "x-go-type": "string",
+          "x-go-json-tag": "error,omitempty"
+        },
+        "id": {
+          "type": "string",
+          "description": "ID is the runtime's child identifier, or the spawn call ID until known.\nConsumers reconcile a provisional ID with a later ID using CallID.",
+          "x-go-name": "ID",
+          "x-go-type": "string",
+          "x-go-json-tag": "id"
+        },
+        "output": {
+          "type": "string",
+          "x-go-name": "Output",
+          "x-go-type": "string",
+          "x-go-json-tag": "output,omitempty"
+        },
+        "parentId": {
+          "type": "string",
+          "x-go-name": "ParentID",
+          "x-go-type": "string",
+          "x-go-json-tag": "parentId,omitempty"
+        },
+        "prompt": {
+          "type": "string",
+          "x-go-name": "Prompt",
+          "x-go-type": "string",
+          "x-go-json-tag": "prompt,omitempty"
+        },
+        "runId": {
+          "type": "string",
+          "description": "RunID distinguishes resumed runs when the runtime supplies one.",
+          "x-go-name": "RunID",
+          "x-go-type": "string",
+          "x-go-json-tag": "runId,omitempty"
+        },
+        "status": {
+          "$ref": "#/$defs/SubagentStatus",
+          "x-go-name": "Status",
+          "x-go-type": "SubagentStatus",
+          "x-go-json-tag": "status"
+        },
+        "title": {
+          "type": "string",
+          "x-go-name": "Title",
+          "x-go-type": "string",
+          "x-go-json-tag": "title,omitempty"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ]
     },
     "ToolCallParams": {
       "type": "object",
@@ -6686,6 +7601,45 @@
           "x-go-json-tag": "options,omitempty"
         }
       }
+    },
+    "TurnResult": {
+      "type": "object",
+      "description": "TurnResult is the outcome of Prompt.",
+      "properties": {
+        "budget": {
+          "$ref": "#/$defs/BudgetExceeded",
+          "x-go-name": "Budget",
+          "x-go-type": "*BudgetExceeded",
+          "x-go-json-tag": "budget,omitempty"
+        },
+        "error": {
+          "$ref": "#/$defs/ErrorInfo",
+          "x-go-name": "Error",
+          "x-go-type": "*ErrorInfo",
+          "x-go-json-tag": "error,omitempty"
+        },
+        "runtimeTurnId": {
+          "type": "string",
+          "x-go-name": "RuntimeTurnID",
+          "x-go-type": "string",
+          "x-go-json-tag": "runtimeTurnId,omitempty"
+        },
+        "status": {
+          "$ref": "#/$defs/TurnStatus",
+          "x-go-name": "Status",
+          "x-go-type": "TurnStatus",
+          "x-go-json-tag": "status"
+        },
+        "usage": {
+          "$ref": "#/$defs/UsageData",
+          "x-go-name": "Usage",
+          "x-go-type": "*UsageData",
+          "x-go-json-tag": "usage,omitempty"
+        }
+      },
+      "required": [
+        "status"
+      ]
     },
     "TurnStartedData": {
       "type": "object",
@@ -7205,6 +8159,7 @@
     "CodeForkSourceChanged": -32018,
     "CodeGitConflict": -32021,
     "CodeGitError": -32020,
+    "CodeHookFailed": -32022,
     "CodeInternalError": -32603,
     "CodeInvalidDecision": -32010,
     "CodeInvalidParams": -32602,
@@ -7224,6 +8179,7 @@
     "CodeSessionClosed": -32006,
     "CodeSessionNotFound": -32001,
     "CodeSettingsConflict": -32014,
+    "CodeSettingsPersistence": -32023,
     "CodeUnsupported": -32012,
     "CodeUnsupportedVersion": -32008,
     "MethodApprovalList": "approval.list",
@@ -7239,6 +8195,9 @@
     "MethodGitStage": "git.stage",
     "MethodGitStatus": "git.status",
     "MethodGitUnstage": "git.unstage",
+    "MethodHooksList": "hooks.list",
+    "MethodHooksRegister": "hooks.register",
+    "MethodHooksUnregister": "hooks.unregister",
     "MethodInitialize": "initialize",
     "MethodLogsSubscribe": "logs.subscribe",
     "MethodLogsUnsubscribe": "logs.unsubscribe",
@@ -7287,6 +8246,7 @@
     "ReasonForkSourceChanged": "fork_source_changed",
     "ReasonGitConflict": "git_conflict",
     "ReasonGitError": "git_error",
+    "ReasonHookFailed": "hook_failed",
     "ReasonInvalidDecision": "invalid_decision",
     "ReasonInvalidParams": "invalid_params",
     "ReasonNewSessionRequired": "new_session_required",
@@ -7301,8 +8261,10 @@
     "ReasonSessionClosed": "session_closed",
     "ReasonSessionNotFound": "session_not_found",
     "ReasonSettingsConflict": "settings_conflict",
+    "ReasonSettingsPersistence": "settings_persistence_failed",
     "ReasonUnsupported": "unsupported",
     "ReasonUnsupportedVersion": "unsupported_version",
+    "RequestHookCall": "hook.call",
     "RequestToolCall": "tool.call"
   },
   "x-rpc-methods": {
@@ -7443,6 +8405,39 @@
       "params": {
         "$ref": "#/$defs/GitPathsParams",
         "x-go-type": "GitPathsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "hooks.list": {
+      "x-go-name": "HooksList",
+      "params": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      },
+      "result": {
+        "$ref": "#/$defs/HooksListResult",
+        "x-go-type": "HooksListResult"
+      }
+    },
+    "hooks.register": {
+      "x-go-name": "HooksRegister",
+      "params": {
+        "$ref": "#/$defs/HooksRegisterParams",
+        "x-go-type": "HooksRegisterParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty",
+        "x-go-type": "Empty"
+      }
+    },
+    "hooks.unregister": {
+      "x-go-name": "HooksUnregister",
+      "params": {
+        "$ref": "#/$defs/HooksUnregisterParams",
+        "x-go-type": "HooksUnregisterParams"
       },
       "result": {
         "$ref": "#/$defs/Empty",
@@ -7831,6 +8826,17 @@
     }
   },
   "x-server-requests": {
+    "hook.call": {
+      "x-go-name": "HookCall",
+      "params": {
+        "$ref": "#/$defs/HookRequest",
+        "x-go-type": "HookRequest"
+      },
+      "result": {
+        "$ref": "#/$defs/HookResponse",
+        "x-go-type": "HookResponse"
+      }
+    },
     "tool.call": {
       "x-go-name": "ToolCall",
       "params": {
@@ -7939,6 +8945,10 @@
     "stream.gap": {
       "$ref": "#/$defs/StreamGapData",
       "x-go-type": "StreamGapData"
+    },
+    "subagent.updated": {
+      "$ref": "#/$defs/SubagentUpdatedData",
+      "x-go-type": "SubagentUpdatedData"
     },
     "tool.completed": {
       "$ref": "#/$defs/ToolCompletedData",
