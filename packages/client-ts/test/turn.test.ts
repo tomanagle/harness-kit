@@ -120,3 +120,53 @@ test("recovery advances over unrelated history and fails explicitly on an unreco
   await assert.rejects(f.turn.done, /cannot recover/);
   assert.deepEqual(cursors, [0, 10]);
 });
+
+test("immediate turn cancellation waits for prompt admission and ignores completed handles", async () => {
+  const f = fixture();
+  let admit!: () => void;
+  let cancelled = 0;
+  Object.assign(f.kit.protocol, {
+    sessionPrompt: () =>
+      new Promise<void>((resolve) => {
+        admit = resolve;
+      }),
+    sessionCancel: async () => {
+      cancelled++;
+    },
+  });
+  const turn = new Turn(f.kit, "s", "delayed", []);
+  const pending = turn.cancel();
+  await Promise.resolve();
+  assert.equal(cancelled, 0, "cancellation must not overtake the prompt");
+  admit();
+  await pending;
+  assert.equal(cancelled, 1);
+  // The original fixture's completed turn must not cancel a subsequent turn.
+  const completed = fixture();
+  completed.emit("turn.completed", { status: "completed" });
+  await completed.turn.done;
+  Object.assign(completed.kit.protocol, {
+    sessionCancel: async () => {
+      cancelled++;
+    },
+  });
+  await completed.turn.cancel();
+  assert.equal(cancelled, 1);
+});
+
+test("cancelling a rejected prompt does not interrupt a different active turn", async () => {
+  const f = fixture();
+  let cancelled = 0;
+  Object.assign(f.kit.protocol, {
+    sessionPrompt: async () => {
+      throw new Error("session busy");
+    },
+    sessionCancel: async () => {
+      cancelled++;
+    },
+  });
+  const turn = new Turn(f.kit, "s", "rejected", []);
+  await turn.cancel();
+  await assert.rejects(turn.done, /session busy/);
+  assert.equal(cancelled, 0);
+});

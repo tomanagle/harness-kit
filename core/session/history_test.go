@@ -218,6 +218,9 @@ func TestHistoryWriteFailureIsVisibleAndRecoverableWhileLive(t *testing.T) {
 	if warnings != 1 {
 		t.Fatalf("expected one visible persistence warning, got %d", warnings)
 	}
+	if _, err := m.DurableEventsPage(context.Background(), info.ID, 0, 100); !errors.Is(err, session.ErrDurableHistoryUnavailable) {
+		t.Fatalf("replication must refuse unsaved live history: %v", err)
+	}
 	got, truncated, err := m.Events(info.ID, 0, 0)
 	if err != nil || truncated {
 		t.Fatalf("merged live history: truncated=%v err=%v", truncated, err)

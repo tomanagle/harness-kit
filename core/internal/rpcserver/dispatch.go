@@ -408,7 +408,7 @@ func (c *conn) dispatch(ctx context.Context, req *jsonrpc.Request) (any, error) 
 		}
 		return protocol.Empty{}, mgr.Close(ctx, p.SessionID)
 
-	case protocol.MethodSessionEvents, protocol.MethodSessionEventsPage:
+	case protocol.MethodSessionEvents, protocol.MethodSessionEventsPage, protocol.MethodSessionDurableEventsPage:
 		var p protocol.SessionEventsParams
 		if err := req.UnmarshalParams(&p); err != nil {
 			return nil, err
@@ -419,7 +419,11 @@ func (c *conn) dispatch(ctx context.Context, req *jsonrpc.Request) (any, error) 
 		if p.Limit < 0 {
 			return nil, invalidParams("limit must be nonnegative")
 		}
-		page, err := mgr.EventsPage(ctx, p.SessionID, p.AfterSeq, p.Limit)
+		read := mgr.EventsPage
+		if req.Method == protocol.MethodSessionDurableEventsPage {
+			read = mgr.DurableEventsPage
+		}
+		page, err := read(ctx, p.SessionID, p.AfterSeq, p.Limit)
 		if err != nil {
 			return nil, err
 		}

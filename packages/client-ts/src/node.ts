@@ -2,6 +2,7 @@
 // stdio. Works in Electron's main process and any Node.js program.
 
 import { spawn, type ChildProcess } from "node:child_process";
+export { fileSyncStore, type FileSyncStoreOptions } from "./sync.node.ts";
 import { LineDecoder, type Transport } from "./rpc.ts";
 import type { SettingsPatch } from "./protocol.ts";
 
@@ -104,3 +105,11 @@ export {
   type AttachmentFiles,
   type AttachmentFile,
 } from "./attachments.ts";
+
+export { fileSyncOutbox, type FileOutboxOptions } from "./outbox.node.ts";
+
+export {
+  encryptedCredentialStore,
+  type CredentialEncryption,
+  type EncryptedCredentials,
+} from "./credentials.node.ts";

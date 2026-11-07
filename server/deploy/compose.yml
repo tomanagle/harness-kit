@@ -1,0 +1,74 @@
+# Disposable horizontal-scaling/load fixture. Production uses an external HA
+# Postgres service and secret injection; never deploy these development passwords.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: harnesskit
+      POSTGRES_USER: harness_owner
+      POSTGRES_PASSWORD: harness_dev
+    ports: ["127.0.0.1:${HARNESS_POSTGRES_PORT:-54339}:5432"]
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ../dev/init.sql:/docker-entrypoint-initdb.d/001-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U harness_owner -d harnesskit"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  migrate:
+    build: { context: ../.., dockerfile: server/Dockerfile }
+    command: ["migrate"]
+    environment:
+      DATABASE_URL: postgres://harness_owner:harness_dev@postgres:5432/harnesskit?sslmode=disable
+    depends_on:
+      postgres: { condition: service_healthy }
+  server:
+    build: { context: ../.., dockerfile: server/Dockerfile }
+    deploy: { replicas: 3 }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      DATABASE_URL: postgres://harness_app:harness_dev@postgres:5432/harnesskit?sslmode=disable
+      DATABASE_MAX_CONNECTIONS: "10"
+      LISTEN_ADDR: 0.0.0.0:8080
+      PUBLIC_URL: http://localhost:${HARNESS_SERVER_PORT:-8090}
+      ALLOW_REGISTRATION: "true"
+      # This fixture trusts only its isolated Docker network. Narrow in production.
+      TRUSTED_PROXY_CIDRS: "172.16.0.0/12"
+      AUTH_REQUESTS_PER_MINUTE: "10000"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+  proxy:
+    image: nginx:1.28-alpine
+    ports: ["127.0.0.1:${HARNESS_SERVER_PORT:-8090}:8080"]
+    volumes: ["./nginx.conf:/etc/nginx/nginx.conf:ro"]
+    depends_on:
+      server: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  k6:
+    image: grafana/k6:1.6.1
+    profiles: [load]
+    volumes: ["../load:/scripts:ro"]
+    environment:
+      BASE_URL: http://proxy:8080
+      RATE: ${RATE:-10}
+      DURATION: ${DURATION:-30s}
+      TENANTS: ${TENANTS:-4}
+      MAX_VUS: ${MAX_VUS:-50}
+      WORKLOAD: ${WORKLOAD:-sync}
+    command: ["run", "/scripts/sync.js"]
+    depends_on:
+      proxy: { condition: service_healthy }
+volumes:
+  postgres:

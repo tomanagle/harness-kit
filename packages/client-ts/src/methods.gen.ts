@@ -139,6 +139,10 @@ export class ProtocolClient {
     return this.#request("session.diff", params, opts);
   }
 
+  sessionDurableEventsPage(params: RpcMethods["session.durableEventsPage"]["params"], opts?: RequestOptions): Promise<RpcMethods["session.durableEventsPage"]["result"]> {
+    return this.#request("session.durableEventsPage", params, opts);
+  }
+
   sessionEvents(params: RpcMethods["session.events"]["params"], opts?: RequestOptions): Promise<RpcMethods["session.events"]["result"]> {
     return this.#request("session.events", params, opts);
   }

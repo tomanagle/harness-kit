@@ -229,6 +229,13 @@ func (c *Client) SessionDiff(ctx context.Context, params SessionDiffParams) (Wor
 	return result, err
 }
 
+// SessionDurableEventsPage calls session.durableEventsPage.
+func (c *Client) SessionDurableEventsPage(ctx context.Context, params SessionEventsParams) (EventPage, error) {
+	var result EventPage
+	err := c.Call(ctx, "session.durableEventsPage", params, &result)
+	return result, err
+}
+
 // SessionEvents calls session.events.
 func (c *Client) SessionEvents(ctx context.Context, params SessionEventsParams) (EventPage, error) {
 	var result EventPage

@@ -2,7 +2,7 @@
 GO      ?= go
 BUN     ?= bun
 # Plain Wails backend checks do not use its dev/production desktop build tags.
-GO_MODULES := . providers/openai providers/anthropic ../packages/client-go ../examples/cli ../examples/model ../examples/wails
+GO_MODULES := . providers/openai providers/anthropic ../packages/client-go ../examples/cli ../examples/model ../examples/wails ../server
 BIN     := bin/harness-kit
 VERSION ?= $(patsubst core/%,%,$(shell git describe --tags --match 'core/v[0-9]*' --always --dirty 2>/dev/null || echo dev))
 
@@ -29,16 +29,19 @@ run: build
 # Regenerate the schema and both clients from the server's wire definitions.
 generate:
 	$(GO) run ./cmd/protocolgen
+	$(MAKE) -C ../server generate
 
 check-generated:
 	$(GO) run ./cmd/protocolgen -check
+	$(MAKE) -C ../server check-generated
 
 # Public API inventory, inward dependency direction, and native-code isolation.
 # Also runs as part of test-go (and the existing CI Go test job).
 architecture-check:
 	$(GO) test ./internal/architecture
+	$(MAKE) -C ../server architecture-check
 
-test: check-generated test-release test-go test-clients test-providers test-examples
+test: check-generated test-release test-go test-clients test-providers test-examples test-server
 
 test-release:
 	node --test ../scripts/npm-release.test.mjs
@@ -199,3 +202,25 @@ example-wails: build client-ts
 	cp ../examples/ui/wails.html $(WAILS_DIST)/index.html
 	cd ../examples/wails && CGO_LDFLAGS="$(WAILS_LDFLAGS)" $(GO) build -tags desktop,production -o ../../core/bin/wails-example .
 	HARNESS_KIT_BIN=$(CURDIR)/$(BIN) ./bin/wails-example
+
+.PHONY: server server-build server-dev test-server
+server:
+	$(MAKE) -C ../server run
+server-build:
+	$(MAKE) -C ../server build
+server-dev:
+	$(MAKE) -C ../server dev
+test-server:
+	$(MAKE) -C ../server test
+
+.PHONY: server-cluster-up server-cluster-down server-load-test
+server-cluster-up:
+	$(MAKE) -C ../server cluster-up
+server-cluster-down:
+	$(MAKE) -C ../server cluster-down
+server-load-test:
+	$(MAKE) -C ../server load-test
+
+.PHONY: server-restore-test
+server-restore-test:
+	$(MAKE) -C ../server restore-test

@@ -6,6 +6,7 @@ export const PROTOCOL_VERSION = 1;
 export const ErrorCodes = {
   ApprovalNotFound: -32007,
   BudgetExceeded: -32019,
+  DurableHistoryUnavailable: -32024,
   EventTooLarge: -32017,
   ForkSourceChanged: -32018,
   GitConflict: -32021,
@@ -413,7 +414,7 @@ export interface ErrorInfo {
   retryable?: boolean;
 }
 
-export type ErrorReason = "approval_not_found" | "budget_exceeded" | "duplicate_tool" | "duplicate_turn" | "event_too_large" | "fork_source_changed" | "git_conflict" | "git_error" | "hook_failed" | "invalid_decision" | "invalid_params" | "new_session_required" | "not_initialized" | "not_resumable" | "policy_violation" | "restart_required" | "runtime_error" | "runtime_not_found" | "runtime_unavailable" | "session_busy" | "session_closed" | "session_not_found" | "settings_conflict" | "settings_persistence_failed" | "unsupported" | "unsupported_version";
+export type ErrorReason = "approval_not_found" | "budget_exceeded" | "duplicate_tool" | "duplicate_turn" | "durable_history_unavailable" | "event_too_large" | "fork_source_changed" | "git_conflict" | "git_error" | "hook_failed" | "invalid_decision" | "invalid_params" | "new_session_required" | "not_initialized" | "not_resumable" | "policy_violation" | "restart_required" | "runtime_error" | "runtime_not_found" | "runtime_unavailable" | "session_busy" | "session_closed" | "session_not_found" | "settings_conflict" | "settings_persistence_failed" | "unsupported" | "unsupported_version";
 
 // EventPage is a bounded transcript page. NextSeq is the last returned event's
 // sequence, or the supplied cursor for an empty page. HasMore means another
@@ -1076,10 +1077,31 @@ export interface ServerCapabilities {
   workspace: boolean;
 }
 
+export interface ServerConnection {
+  enabled: boolean;
+  id: string;
+  name: string;
+  url: string;
+}
+
 // ServerInfo identifies the server.
 export interface ServerInfo {
   name: string;
   version: string;
+}
+
+// Servers configures remote coordination services. It stores no credentials and
+// does not opt local sessions into uploading. Hosts choose credential storage and
+// explicit account/tenant/application destinations through the remote client.
+export interface Servers {
+  connections: Array<ServerConnection>;
+}
+
+// Servers configures remote coordination services. It stores no credentials and
+// does not opt local sessions into uploading. Hosts choose credential storage and
+// explicit account/tenant/application destinations through the remote client.
+export interface ServersPatch {
+  connections?: Array<ServerConnection>;
 }
 
 export interface SessionArchiveParams {
@@ -1394,8 +1416,10 @@ export interface SettingsPatch {
   logging?: LoggingSettingsPatch;
   memory?: MemorySettingsPatch;
   process?: ProcessSettingsPatch;
+  servers?: ServersPatch;
   session?: SessionSettingsPatch;
   streams?: StreamSettingsPatch;
+  sync?: SyncSettingsPatch;
   workspace?: WorkspaceSettingsPatch;
 }
 
@@ -1434,8 +1458,10 @@ export interface SettingsValues {
   logging: LoggingSettings;
   memory: MemorySettings;
   process: ProcessSettings;
+  servers: Servers;
   session: SessionSettings;
   streams: StreamSettings;
+  sync: SyncSettings;
   workspace: WorkspaceSettings;
 }
 
@@ -1476,6 +1502,24 @@ export interface SubagentUpdatedData {
   runId?: string;
   status: SubagentStatus;
   title?: string;
+}
+
+// SyncSettings applies on the next worker cycle, without restarting the sidecar.
+// Registering a connection never opts sessions into publication.
+export interface SyncSettings {
+  batchEvents: number;
+  paused: boolean;
+  pollIntervalMs: number;
+  workPerCycle: number;
+}
+
+// SyncSettings applies on the next worker cycle, without restarting the sidecar.
+// Registering a connection never opts sessions into publication.
+export interface SyncSettingsPatch {
+  batchEvents?: number;
+  paused?: boolean;
+  pollIntervalMs?: number;
+  workPerCycle?: number;
 }
 
 // ToolCallParams are the params of the "tool.call" request.
@@ -1747,6 +1791,7 @@ export interface RpcMethods {
   "session.create": { params: CreateSessionParams; result: SessionResult };
   "session.delete": { params: SessionIDParams; result: Empty };
   "session.diff": { params: SessionDiffParams; result: WorkspaceDiff };
+  "session.durableEventsPage": { params: SessionEventsParams; result: EventPage };
   "session.events": { params: SessionEventsParams; result: EventPage };
   "session.eventsPage": { params: SessionEventsParams; result: EventPage };
   "session.evict": { params: SessionIDParams; result: Empty };

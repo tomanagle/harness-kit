@@ -32,6 +32,8 @@ var (
 // limit; a zero cache budget retains no cached events. These are data budgets,
 // not limits on process RSS or memory owned by child processes.
 type Values struct {
+	Servers    Servers                   `json:"servers"`
+	Sync       SyncSettings              `json:"sync"`
 	Hooks      hooks.Settings            `json:"hooks"`
 	Compaction config.CompactionSettings `json:"compaction"`
 	Git        workspace.GitSettings     `json:"git"`
@@ -157,6 +159,8 @@ type Snapshot struct {
 func Defaults() Values {
 	pageBytes := int64(1024 * 1024)
 	return Values{
+		Servers:    Servers{Connections: []ServerConnection{}},
+		Sync:       SyncSettings{PollIntervalMs: 1000, BatchEvents: 25, WorkPerCycle: 8},
 		Hooks:      hooks.Defaults(),
 		Compaction: config.CompactionDefaults(),
 		Git:        workspace.GitDefaults(),
@@ -175,6 +179,11 @@ func Describe() map[string]Field {
 		out[path] = Field{Type: typ, Unit: unit, When: when, Nullable: nullable, Minimum: min, Writable: when != "restart", Scopes: scopes}
 	}
 	zero, one := int64(0), int64(1)
+	add("servers.connections", "array", "", "live", false, nil, "global")
+	add("sync.paused", "boolean", "", "nextOperation", false, nil, "global")
+	add("sync.pollIntervalMs", "integer", "milliseconds", "nextOperation", false, &one, "global")
+	add("sync.batchEvents", "integer", "events", "nextOperation", false, &one, "global")
+	add("sync.workPerCycle", "integer", "operations", "nextOperation", false, &one, "global")
 	add("hooks.maxConcurrent", "integer", "handlers", "nextOperation", false, &one, "global")
 	add("hooks.enabled", "boolean", "", "nextOperation", false, nil, "global")
 	add("hooks.timeoutMs", "integer", "milliseconds", "nextOperation", false, &one, "global")
@@ -438,6 +447,12 @@ func Apply(base Values, patch Patch, reset []string, defaults Values) (Values, [
 }
 
 func Validate(v Values) error {
+	if err := validateSync(v.Sync); err != nil {
+		return err
+	}
+	if err := validateServers(v.Servers); err != nil {
+		return err
+	}
 	if err := v.Hooks.Validate(); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalid, err)
 	}

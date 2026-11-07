@@ -11,119 +11,122 @@ import (
 const Version = 1
 
 const (
-	CodeApprovalNotFound        = -32007
-	CodeBudgetExceeded          = -32019
-	CodeEventTooLarge           = -32017
-	CodeForkSourceChanged       = -32018
-	CodeGitConflict             = -32021
-	CodeGitError                = -32020
-	CodeHookFailed              = -32022
-	CodeInternalError           = -32603
-	CodeInvalidDecision         = -32010
-	CodeInvalidParams           = -32602
-	CodeInvalidRequest          = -32600
-	CodeMethodNotFound          = -32601
-	CodeNewSessionRequired      = -32016
-	CodeNotResumable            = -32013
-	CodeParseError              = -32700
-	CodePolicyViolation         = -32009
-	CodeRequestCancelled        = -32800
-	CodeRestartRequired         = -32015
-	CodeRuntimeError            = -32011
-	CodeRuntimeNotFound         = -32003
-	CodeRuntimeUnavailable      = -32004
-	CodeServerNotInitialized    = -32002
-	CodeSessionBusy             = -32005
-	CodeSessionClosed           = -32006
-	CodeSessionNotFound         = -32001
-	CodeSettingsConflict        = -32014
-	CodeSettingsPersistence     = -32023
-	CodeUnsupported             = -32012
-	CodeUnsupportedVersion      = -32008
-	MethodApprovalList          = "approval.list"
-	MethodApprovalRespond       = "approval.respond"
-	MethodGitBranches           = "git.branches"
-	MethodGitCheckout           = "git.checkout"
-	MethodGitCommit             = "git.commit"
-	MethodGitDiff               = "git.diff"
-	MethodGitFetch              = "git.fetch"
-	MethodGitLog                = "git.log"
-	MethodGitPull               = "git.pull"
-	MethodGitPush               = "git.push"
-	MethodGitStage              = "git.stage"
-	MethodGitStatus             = "git.status"
-	MethodGitUnstage            = "git.unstage"
-	MethodHooksList             = "hooks.list"
-	MethodHooksRegister         = "hooks.register"
-	MethodHooksUnregister       = "hooks.unregister"
-	MethodInitialize            = "initialize"
-	MethodLogsSubscribe         = "logs.subscribe"
-	MethodLogsUnsubscribe       = "logs.unsubscribe"
-	MethodMCPList               = "mcp.list"
-	MethodRuntimeDiscover       = "runtime.discover"
-	MethodRuntimeList           = "runtime.list"
-	MethodRuntimeSessions       = "runtime.sessions"
-	MethodSessionArchive        = "session.archive"
-	MethodSessionCancel         = "session.cancel"
-	MethodSessionClose          = "session.close"
-	MethodSessionCompact        = "session.compact"
-	MethodSessionConfigure      = "session.configure"
-	MethodSessionContext        = "session.context"
-	MethodSessionCreate         = "session.create"
-	MethodSessionDelete         = "session.delete"
-	MethodSessionDiff           = "session.diff"
-	MethodSessionEvents         = "session.events"
-	MethodSessionEventsPage     = "session.eventsPage"
-	MethodSessionEvict          = "session.evict"
-	MethodSessionFork           = "session.fork"
-	MethodSessionGet            = "session.get"
-	MethodSessionList           = "session.list"
-	MethodSessionPin            = "session.pin"
-	MethodSessionPrompt         = "session.prompt"
-	MethodSessionRename         = "session.rename"
-	MethodSessionRestore        = "session.restore"
-	MethodSessionSuspend        = "session.suspend"
-	MethodSessionTags           = "session.tags"
-	MethodSettingsConfigure     = "settings.configure"
-	MethodSettingsGet           = "settings.get"
-	MethodSettingsStats         = "settings.stats"
-	MethodShutdown              = "shutdown"
-	MethodToolsList             = "tools.list"
-	MethodToolsRegister         = "tools.register"
-	MethodToolsUnregister       = "tools.unregister"
-	MethodWorkspaceRemove       = "workspace.remove"
-	NotificationCancelRequest   = "$/cancelRequest"
-	NotificationEvent           = "event"
-	NotificationLog             = "log"
-	NotificationSettingsUpdated = "settings.updated"
-	ReasonApprovalNotFound      = "approval_not_found"
-	ReasonBudgetExceeded        = "budget_exceeded"
-	ReasonDuplicateTool         = "duplicate_tool"
-	ReasonDuplicateTurn         = "duplicate_turn"
-	ReasonEventTooLarge         = "event_too_large"
-	ReasonForkSourceChanged     = "fork_source_changed"
-	ReasonGitConflict           = "git_conflict"
-	ReasonGitError              = "git_error"
-	ReasonHookFailed            = "hook_failed"
-	ReasonInvalidDecision       = "invalid_decision"
-	ReasonInvalidParams         = "invalid_params"
-	ReasonNewSessionRequired    = "new_session_required"
-	ReasonNotInitialized        = "not_initialized"
-	ReasonNotResumable          = "not_resumable"
-	ReasonPolicyViolation       = "policy_violation"
-	ReasonRestartRequired       = "restart_required"
-	ReasonRuntimeError          = "runtime_error"
-	ReasonRuntimeNotFound       = "runtime_not_found"
-	ReasonRuntimeUnavailable    = "runtime_unavailable"
-	ReasonSessionBusy           = "session_busy"
-	ReasonSessionClosed         = "session_closed"
-	ReasonSessionNotFound       = "session_not_found"
-	ReasonSettingsConflict      = "settings_conflict"
-	ReasonSettingsPersistence   = "settings_persistence_failed"
-	ReasonUnsupported           = "unsupported"
-	ReasonUnsupportedVersion    = "unsupported_version"
-	RequestHookCall             = "hook.call"
-	RequestToolCall             = "tool.call"
+	CodeApprovalNotFound            = -32007
+	CodeBudgetExceeded              = -32019
+	CodeDurableHistoryUnavailable   = -32024
+	CodeEventTooLarge               = -32017
+	CodeForkSourceChanged           = -32018
+	CodeGitConflict                 = -32021
+	CodeGitError                    = -32020
+	CodeHookFailed                  = -32022
+	CodeInternalError               = -32603
+	CodeInvalidDecision             = -32010
+	CodeInvalidParams               = -32602
+	CodeInvalidRequest              = -32600
+	CodeMethodNotFound              = -32601
+	CodeNewSessionRequired          = -32016
+	CodeNotResumable                = -32013
+	CodeParseError                  = -32700
+	CodePolicyViolation             = -32009
+	CodeRequestCancelled            = -32800
+	CodeRestartRequired             = -32015
+	CodeRuntimeError                = -32011
+	CodeRuntimeNotFound             = -32003
+	CodeRuntimeUnavailable          = -32004
+	CodeServerNotInitialized        = -32002
+	CodeSessionBusy                 = -32005
+	CodeSessionClosed               = -32006
+	CodeSessionNotFound             = -32001
+	CodeSettingsConflict            = -32014
+	CodeSettingsPersistence         = -32023
+	CodeUnsupported                 = -32012
+	CodeUnsupportedVersion          = -32008
+	MethodApprovalList              = "approval.list"
+	MethodApprovalRespond           = "approval.respond"
+	MethodGitBranches               = "git.branches"
+	MethodGitCheckout               = "git.checkout"
+	MethodGitCommit                 = "git.commit"
+	MethodGitDiff                   = "git.diff"
+	MethodGitFetch                  = "git.fetch"
+	MethodGitLog                    = "git.log"
+	MethodGitPull                   = "git.pull"
+	MethodGitPush                   = "git.push"
+	MethodGitStage                  = "git.stage"
+	MethodGitStatus                 = "git.status"
+	MethodGitUnstage                = "git.unstage"
+	MethodHooksList                 = "hooks.list"
+	MethodHooksRegister             = "hooks.register"
+	MethodHooksUnregister           = "hooks.unregister"
+	MethodInitialize                = "initialize"
+	MethodLogsSubscribe             = "logs.subscribe"
+	MethodLogsUnsubscribe           = "logs.unsubscribe"
+	MethodMCPList                   = "mcp.list"
+	MethodRuntimeDiscover           = "runtime.discover"
+	MethodRuntimeList               = "runtime.list"
+	MethodRuntimeSessions           = "runtime.sessions"
+	MethodSessionArchive            = "session.archive"
+	MethodSessionCancel             = "session.cancel"
+	MethodSessionClose              = "session.close"
+	MethodSessionCompact            = "session.compact"
+	MethodSessionConfigure          = "session.configure"
+	MethodSessionContext            = "session.context"
+	MethodSessionCreate             = "session.create"
+	MethodSessionDelete             = "session.delete"
+	MethodSessionDiff               = "session.diff"
+	MethodSessionDurableEventsPage  = "session.durableEventsPage"
+	MethodSessionEvents             = "session.events"
+	MethodSessionEventsPage         = "session.eventsPage"
+	MethodSessionEvict              = "session.evict"
+	MethodSessionFork               = "session.fork"
+	MethodSessionGet                = "session.get"
+	MethodSessionList               = "session.list"
+	MethodSessionPin                = "session.pin"
+	MethodSessionPrompt             = "session.prompt"
+	MethodSessionRename             = "session.rename"
+	MethodSessionRestore            = "session.restore"
+	MethodSessionSuspend            = "session.suspend"
+	MethodSessionTags               = "session.tags"
+	MethodSettingsConfigure         = "settings.configure"
+	MethodSettingsGet               = "settings.get"
+	MethodSettingsStats             = "settings.stats"
+	MethodShutdown                  = "shutdown"
+	MethodToolsList                 = "tools.list"
+	MethodToolsRegister             = "tools.register"
+	MethodToolsUnregister           = "tools.unregister"
+	MethodWorkspaceRemove           = "workspace.remove"
+	NotificationCancelRequest       = "$/cancelRequest"
+	NotificationEvent               = "event"
+	NotificationLog                 = "log"
+	NotificationSettingsUpdated     = "settings.updated"
+	ReasonApprovalNotFound          = "approval_not_found"
+	ReasonBudgetExceeded            = "budget_exceeded"
+	ReasonDuplicateTool             = "duplicate_tool"
+	ReasonDuplicateTurn             = "duplicate_turn"
+	ReasonDurableHistoryUnavailable = "durable_history_unavailable"
+	ReasonEventTooLarge             = "event_too_large"
+	ReasonForkSourceChanged         = "fork_source_changed"
+	ReasonGitConflict               = "git_conflict"
+	ReasonGitError                  = "git_error"
+	ReasonHookFailed                = "hook_failed"
+	ReasonInvalidDecision           = "invalid_decision"
+	ReasonInvalidParams             = "invalid_params"
+	ReasonNewSessionRequired        = "new_session_required"
+	ReasonNotInitialized            = "not_initialized"
+	ReasonNotResumable              = "not_resumable"
+	ReasonPolicyViolation           = "policy_violation"
+	ReasonRestartRequired           = "restart_required"
+	ReasonRuntimeError              = "runtime_error"
+	ReasonRuntimeNotFound           = "runtime_not_found"
+	ReasonRuntimeUnavailable        = "runtime_unavailable"
+	ReasonSessionBusy               = "session_busy"
+	ReasonSessionClosed             = "session_closed"
+	ReasonSessionNotFound           = "session_not_found"
+	ReasonSettingsConflict          = "settings_conflict"
+	ReasonSettingsPersistence       = "settings_persistence_failed"
+	ReasonUnsupported               = "unsupported"
+	ReasonUnsupportedVersion        = "unsupported_version"
+	RequestHookCall                 = "hook.call"
+	RequestToolCall                 = "tool.call"
 )
 
 // ACPRuntime configures a named external ACP agent. Process wiring applies at
@@ -522,6 +525,7 @@ const (
 	ErrorReasonBudgetExceeded            ErrorReason = "budget_exceeded"
 	ErrorReasonDuplicateTool             ErrorReason = "duplicate_tool"
 	ErrorReasonDuplicateTurn             ErrorReason = "duplicate_turn"
+	ErrorReasonDurableHistoryUnavailable ErrorReason = "durable_history_unavailable"
 	ErrorReasonEventTooLarge             ErrorReason = "event_too_large"
 	ErrorReasonForkSourceChanged         ErrorReason = "fork_source_changed"
 	ErrorReasonGitConflict               ErrorReason = "git_conflict"
@@ -1193,11 +1197,30 @@ type ServerCapabilities struct {
 	Workspace bool `json:"workspace"`
 }
 
+type ServerConnection struct {
+	Enabled bool   `json:"enabled"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+}
+
 // ServerInfo identifies the server.
 type ServerInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 }
+
+// Servers configures remote coordination services. It stores no credentials and
+// does not opt local sessions into uploading. Hosts choose credential storage and
+// explicit account/tenant/application destinations through the remote client.
+type Servers struct {
+	Connections []ServerConnection `json:"connections"`
+}
+
+// Servers configures remote coordination services. It stores no credentials and
+// does not opt local sessions into uploading. Hosts choose credential storage and
+// explicit account/tenant/application destinations through the remote client.
+type ServersPatch map[string]json.RawMessage
 
 type SessionArchiveParams struct {
 	Archived  bool   `json:"archived"`
@@ -1524,8 +1547,10 @@ type SettingsValues struct {
 	Logging    LoggingSettings    `json:"logging"`
 	Memory     MemorySettings     `json:"memory"`
 	Process    ProcessSettings    `json:"process"`
+	Servers    Servers            `json:"servers"`
 	Session    SessionSettings    `json:"session"`
 	Streams    StreamSettings     `json:"streams"`
+	Sync       SyncSettings       `json:"sync"`
 	Workspace  WorkspaceSettings  `json:"workspace"`
 }
 
@@ -1572,6 +1597,19 @@ type SubagentUpdatedData struct {
 	Status SubagentStatus `json:"status"`
 	Title  string         `json:"title,omitempty"`
 }
+
+// SyncSettings applies on the next worker cycle, without restarting the sidecar.
+// Registering a connection never opts sessions into publication.
+type SyncSettings struct {
+	BatchEvents    int  `json:"batchEvents"`
+	Paused         bool `json:"paused"`
+	PollIntervalMs int  `json:"pollIntervalMs"`
+	WorkPerCycle   int  `json:"workPerCycle"`
+}
+
+// SyncSettings applies on the next worker cycle, without restarting the sidecar.
+// Registering a connection never opts sessions into publication.
+type SyncSettingsPatch map[string]json.RawMessage
 
 // ToolCallParams are the params of the "tool.call" request.
 type ToolCallParams struct {

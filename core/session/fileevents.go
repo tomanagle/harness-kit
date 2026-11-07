@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/tomanagle/harness-kit/core/event"
 )
@@ -17,6 +18,11 @@ import (
 type eventFileState struct {
 	lastSeq uint64
 	size    int64
+}
+
+// DurableEventsPage reads only the persisted transcript, never the live cache.
+func (s *FileStore) DurableEventsPage(ctx context.Context, id string, afterSeq uint64, limit int, maxBytes *int64) (EventPage, error) {
+	return s.eventsPage(ctx, id, afterSeq, limit, maxBytes, true)
 }
 
 // eventPath is used only after path has validated id.
@@ -175,6 +181,10 @@ var errStopEventScan = errors.New("session: stop event scan")
 // requested page and the current decoded event. Large events are atomic: callers
 // receive ErrEventTooLarge if the next event cannot fit by itself.
 func (s *FileStore) EventsPage(ctx context.Context, id string, afterSeq uint64, limit int, maxBytes *int64) (EventPage, error) {
+	return s.eventsPage(ctx, id, afterSeq, limit, maxBytes, false)
+}
+
+func (s *FileStore) eventsPage(ctx context.Context, id string, afterSeq uint64, limit int, maxBytes *int64, durable bool) (EventPage, error) {
 	page := EventPage{Events: []event.Event{}, NextSeq: afterSeq}
 	if maxBytes != nil && *maxBytes < 0 {
 		return page, fmt.Errorf("session: page byte limit cannot be negative")
@@ -188,7 +198,11 @@ func (s *FileStore) EventsPage(ctx context.Context, id string, afterSeq uint64, 
 	if err != nil {
 		return page, err
 	}
-	f, err := os.Open(s.eventPath(id))
+	flags := os.O_RDONLY
+	if durable {
+		flags = os.O_RDWR
+	}
+	f, err := os.OpenFile(s.eventPath(id), flags, 0)
 	if errors.Is(err, fs.ErrNotExist) {
 		page.Truncated = afterSeq < rec.Info.LastSeq
 		return page, nil
@@ -197,6 +211,27 @@ func (s *FileStore) EventsPage(ctx context.Context, id string, afterSeq uint64, 
 		return page, err
 	}
 	defer f.Close()
+	if durable {
+		// A previous process may have died after writing a complete line but
+		// before fsync. Establish durability before exporting recovered bytes.
+		if err := f.Sync(); err != nil {
+			return page, err
+		}
+		if runtime.GOOS != "windows" {
+			dir, err := os.Open(s.dir)
+			if err != nil {
+				return page, err
+			}
+			err = dir.Sync()
+			closeErr := dir.Close()
+			if err != nil {
+				return page, err
+			}
+			if closeErr != nil {
+				return page, closeErr
+			}
+		}
+	}
 	var retained int64
 	state, err := scanEventFile(ctx, f, id, func(ev event.Event, size int64) error {
 		if ev.Seq <= afterSeq {

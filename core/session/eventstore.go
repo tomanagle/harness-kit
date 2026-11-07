@@ -11,6 +11,16 @@ import (
 // Increase the byte limit to read it; its sequence is never silently skipped.
 var ErrEventTooLarge = errors.New("session: event exceeds page byte limit")
 
+// ErrDurableHistoryUnavailable means the store cannot promise persisted reads.
+var ErrDurableHistoryUnavailable = errors.New("session: durable history unavailable")
+
+// DurableEventPageStore explicitly promises that returned events survived a
+// successful persistence barrier. Unlike UI history, it never fills gaps from
+// memory. Custom persistent stores opt in by implementing this interface.
+type DurableEventPageStore interface {
+	DurableEventsPage(ctx context.Context, id string, afterSeq uint64, limit int, maxBytes *int64) (EventPage, error)
+}
+
 // EventPage is a bounded transcript page. NextSeq is the last returned event's
 // sequence, or the supplied cursor for an empty page. HasMore means another
 // stored event follows; Truncated reports unavailable history, not pagination.

@@ -1,3 +1,4 @@
+import { Servers, type ServerOptions } from "./remote.ts";
 import { Conversation, type ConversationOptions } from "./conversation.ts";
 export {
   Conversation,
@@ -78,6 +79,8 @@ export {
 } from "./rpc.ts";
 
 export interface HarnessKitOptions {
+  /** Optional remote coordination. Preferences stay in settings; credentials stay in your secure store. */
+  servers?: ServerOptions;
   transport: Transport;
   clientInfo?: { name: string; version?: string };
   /** Explicit owner-supplied live settings, applied before this promise resolves.
@@ -128,7 +131,7 @@ function toToolResult(v: unknown): ToolResult {
 
 /** Connects to a Harness Kit server and performs the initialize handshake. */
 export async function createHarnessKit(options: HarnessKitOptions): Promise<HarnessKit> {
-  const kit = new HarnessKit(options.transport);
+  const kit = new HarnessKit(options.transport, options.servers);
   try {
     await kit._initialize(options.clientInfo ?? { name: "@tomanagle/harness-kit" });
     if (options.initialSettings !== undefined)
@@ -142,6 +145,7 @@ export async function createHarnessKit(options: HarnessKitOptions): Promise<Harn
 
 /** A connected Harness Kit client. Create one with `createHarnessKit`. */
 export class HarnessKit {
+  readonly servers: Servers;
   /** Schema-generated methods, with the protocol's exact request and result shapes. */
   readonly protocol: ProtocolClient;
   readonly #rpc: JsonRpcConnection;
@@ -156,7 +160,8 @@ export class HarnessKit {
   #server: InitializeResult | undefined;
 
   /** @internal Use createHarnessKit. */
-  constructor(transport: Transport) {
+  constructor(transport: Transport, servers?: ServerOptions) {
+    this.servers = new Servers(this.settings, servers, this.sessions);
     this.#transport = transport;
     this.#rpc = new JsonRpcConnection(transport, (method, params) => {
       if (method === "log") {
@@ -461,6 +466,10 @@ export class HarnessKit {
     setTags: async (sessionId: string, tags: string[]): Promise<SessionInfo> =>
       (await this.protocol.sessionTags({ sessionId, tags })).session,
     /** Reads one bounded page without starting the runtime. Use nextSeq while hasMore. */
+    durableEventsPage: (
+      sessionId: string,
+      opts: { afterSeq?: number; limit?: number } = {},
+    ): Promise<EventPage> => this.protocol.sessionDurableEventsPage({ sessionId, ...opts }),
     eventsPage: async (
       sessionId: string,
       opts: { afterSeq?: number; limit?: number } = {},
@@ -606,6 +615,7 @@ export class HarnessKit {
 
   /** Shuts the server down (closing every session) and closes the transport. */
   async close(): Promise<void> {
+    await this.servers.close();
     if (!this.#rpc.closed) {
       try {
         await withTimeout(this.protocol.shutdown(), 10_000);
@@ -778,6 +788,7 @@ export class Turn implements AsyncIterable<HarnessEvent> {
   #iteratorError: unknown;
   #buffer: HarnessEvent[] = [];
   #wake: (() => void) | undefined;
+  #accepted: Promise<void> = Promise.resolve();
   #finished = false;
   #error: unknown;
   #resolve!: (d: TurnCompletedData) => void;
@@ -823,14 +834,19 @@ export class Turn implements AsyncIterable<HarnessEvent> {
       } else signal.addEventListener("abort", onAbort, { once: true });
       void this.done.finally(() => signal.removeEventListener("abort", onAbort)).catch(() => {});
     }
-    kit.protocol
+    this.#accepted = kit.protocol
       .sessionPrompt({ sessionId, turnId, input, config, settings }, { signal })
-      .catch((e) => this.#fail(e));
+      .then(
+        () => {},
+        (e) => this.#fail(e),
+      );
   }
 
-  /** Interrupts this turn. */
+  /** Waits for prompt admission before interrupting this turn, so an immediate
+   * cancel cannot overtake the prompt. Completed or rejected turns are no-ops. */
   async cancel(): Promise<void> {
-    await this.#kit.protocol.sessionCancel({ sessionId: this.sessionId });
+    await this.#accepted;
+    if (!this.#finished) await this.#kit.protocol.sessionCancel({ sessionId: this.sessionId });
   }
 
   get bufferedEvents(): number {

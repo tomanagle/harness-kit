@@ -1,0 +1,65 @@
+package templates
+
+import "github.com/tomanagle/harness-kit/server/internal/wire"
+
+templ page(title string) {
+ <!DOCTYPE html>
+ <html lang="en">
+ <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>{ title }</title>
+ <style>body{font:16px system-ui;max-width:36rem;margin:4rem auto;padding:0 1rem;color:#172029;background:#fafafa}label{display:block;margin-top:1rem}input,select,button{font:inherit;padding:.6rem;box-sizing:border-box;width:100%;margin:.4rem 0}button{cursor:pointer}a{color:#1752aa}</style>
+ </head><body><main>{ children... }</main></body></html>
+}
+templ Login(registration bool) {
+ @page("Sign in") {
+ <h1>Harness Kit Server</h1><p><a href="/account/recover">Verify email or reset password</a></p>
+ <form method="post" action="/login">
+ <label>Email<input type="email" name="email" autocomplete="username" required/></label>
+ <label>Password<input type="password" name="password" autocomplete="current-password" required/></label>
+ <button type="submit">Sign in</button>
+ if registration {
+ <button type="submit" formaction="/register">Create account</button><p>New passwords need at least 12 characters.</p>
+ }
+ </form>
+ }
+}
+templ Device(code string, info wire.DeviceInfo, tenants []wire.Tenant) {
+ @page("Connect a device") {
+ <h1>Connect a device</h1><p><a href="/account/recover">Verify your email if this server requires it</a></p><form method="post" action="/logout"><button>Sign out</button></form>
+ if code == "" {
+ <form method="get" action="/device"><label>Code shown in your harness<input name="code" required autocomplete="off" maxlength="12"/></label><button>Continue</button></form>
+ } else {
+ <p>Application: <strong>{ info.ApplicationID }</strong></p><p>Device: <strong>{ info.Name }</strong></p><p>Approve only if you started this request. The application can read shared sessions and upload sessions to the selected tenant according to your role.</p>
+ <form method="post" action="/device"><input type="hidden" name="code" value={ code }/><label>Tenant<select name="tenant" required>
+for _, t := range tenants {
+<option value={ t.ID }>{ t.Name + " (" + t.Role + ")" }</option>
+}
+</select></label><button>Approve connection</button></form>
+ }
+ }
+}
+templ Approved() {
+ @page("Connected") {
+ <h1>Device approved</h1><p>Return to your harness to finish connecting.</p>
+ }
+}
+
+
+templ Recovery() {
+ @page("Account recovery") {
+ <h1>Account recovery</h1><form method="post" action="/account/recover"><label>Email<input type="email" name="email" required/></label><label>Request<select name="purpose"><option value="reset">Reset password</option><option value="verify">Verify email</option></select></label><button>Send email</button></form>
+ }
+}
+templ Confirm(token string, reset bool) {
+ @page("Confirm account") {
+ <h1>Confirm account</h1><form method="post" action="/account/confirm"><input type="hidden" name="token" value={ token }/>
+ if reset {
+ <label>New password<input type="password" name="password" minlength="12" autocomplete="new-password" required/></label>
+ }
+ <button>Confirm</button></form>
+ }
+}
+templ AccountMessage(message string) {
+ @page("Account") {
+ <p>{ message }</p><a href="/login">Sign in</a>
+ }
+}

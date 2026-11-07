@@ -76,6 +76,8 @@ func toRPCError(err error) error {
 		return rpcErr(protocol.CodeUnsupported, protocol.ReasonUnsupported, err.Error())
 	case errors.Is(err, session.ErrEventTooLarge):
 		return rpcErr(protocol.CodeEventTooLarge, protocol.ReasonEventTooLarge, err.Error())
+	case errors.Is(err, session.ErrDurableHistoryUnavailable):
+		return rpcErr(protocol.CodeDurableHistoryUnavailable, protocol.ReasonDurableHistoryUnavailable, err.Error())
 	case errors.Is(err, session.ErrBudgetExceeded):
 		return rpcErr(protocol.CodeBudgetExceeded, protocol.ReasonBudgetExceeded, err.Error())
 	case errors.Is(err, session.ErrForkSourceChanged):

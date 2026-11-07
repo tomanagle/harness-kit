@@ -10,3 +10,5 @@ coverage.out
 /examples/wails/frontend/dist/*
 !/examples/wails/frontend/dist/.gitkeep
 /examples/electron/node_modules/
+
+/server/bin/

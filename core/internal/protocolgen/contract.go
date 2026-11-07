@@ -73,6 +73,7 @@ func methods() []methodSpec {
 		method[protocol.SessionConfigureParams, protocol.SessionResult](protocol.MethodSessionConfigure),
 		method[protocol.SessionEventsParams, session.EventPage](protocol.MethodSessionEvents),
 		method[protocol.SessionEventsParams, session.EventPage](protocol.MethodSessionEventsPage),
+		method[protocol.SessionEventsParams, session.EventPage](protocol.MethodSessionDurableEventsPage),
 		method[protocol.SessionIDParams, protocol.Empty](protocol.MethodSessionEvict),
 		method[protocol.SessionIDParams, protocol.Empty](protocol.MethodSessionSuspend),
 		method[protocol.SessionPinParams, protocol.SessionResult](protocol.MethodSessionPin),

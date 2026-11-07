@@ -1,0 +1,1242 @@
+{
+  "$defs": {
+    "Account": {
+      "additionalProperties": false,
+      "properties": {
+        "accessToken": {
+          "type": "string"
+        },
+        "accountId": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accountId",
+        "accessToken",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "Ack": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lastSeq": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "lastSeq",
+        "cursor"
+      ],
+      "type": "object"
+    },
+    "AcquireLease": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedEpoch": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "expectedEpoch"
+      ],
+      "type": "object"
+    },
+    "AddMember": {
+      "additionalProperties": false,
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenantId",
+        "email",
+        "role"
+      ],
+      "type": "object"
+    },
+    "Change": {
+      "additionalProperties": false,
+      "properties": {
+        "archived": {
+          "type": "boolean"
+        },
+        "cursor": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "lastSeq": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "metadata": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "visibility": {
+          "type": "string"
+        },
+        "writerEpoch": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "writerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "writerId",
+        "writerEpoch",
+        "revision",
+        "tags",
+        "metadata",
+        "archived",
+        "deleted",
+        "cursor",
+        "sessionId",
+        "lastSeq",
+        "title",
+        "visibility",
+        "ownerId"
+      ],
+      "type": "object"
+    },
+    "Changes": {
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "items": {
+            "$ref": "#/$defs/Change"
+          },
+          "type": "array"
+        },
+        "cursor": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "changes",
+        "cursor"
+      ],
+      "type": "object"
+    },
+    "ChangesRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "waitMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "after",
+        "limit",
+        "waitMs"
+      ],
+      "type": "object"
+    },
+    "ClaimCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "epoch"
+      ],
+      "type": "object"
+    },
+    "Command": {
+      "additionalProperties": false,
+      "properties": {
+        "epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "result": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "sessionId",
+        "epoch",
+        "kind",
+        "payload",
+        "status",
+        "result"
+      ],
+      "type": "object"
+    },
+    "Commands": {
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "items": {
+            "$ref": "#/$defs/Command"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "commands"
+      ],
+      "type": "object"
+    },
+    "CompleteCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "result": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "sessionId",
+        "epoch",
+        "status",
+        "result"
+      ],
+      "type": "object"
+    },
+    "ConfirmEmail": {
+      "additionalProperties": false,
+      "properties": {
+        "password": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "password"
+      ],
+      "type": "object"
+    },
+    "CreateTenant": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "Credentials": {
+      "additionalProperties": false,
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "email",
+        "password"
+      ],
+      "type": "object"
+    },
+    "DeleteSession": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedRevision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "operationId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operationId",
+        "sessionId",
+        "expectedRevision"
+      ],
+      "type": "object"
+    },
+    "Device": {
+      "additionalProperties": false,
+      "properties": {
+        "applicationId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "revoked": {
+          "type": "boolean"
+        },
+        "tenantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "tenantId",
+        "applicationId",
+        "name",
+        "revoked"
+      ],
+      "type": "object"
+    },
+    "DeviceApprove": {
+      "additionalProperties": false,
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        },
+        "userCode": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "userCode",
+        "tenantId"
+      ],
+      "type": "object"
+    },
+    "DeviceAuthorization": {
+      "additionalProperties": false,
+      "properties": {
+        "deviceCode": {
+          "type": "string"
+        },
+        "expiresIn": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "interval": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "userCode": {
+          "type": "string"
+        },
+        "verificationUri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deviceCode",
+        "userCode",
+        "verificationUri",
+        "expiresIn",
+        "interval"
+      ],
+      "type": "object"
+    },
+    "DeviceBegin": {
+      "additionalProperties": false,
+      "properties": {
+        "applicationId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "applicationId",
+        "name"
+      ],
+      "type": "object"
+    },
+    "DeviceInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "applicationId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "applicationId",
+        "name"
+      ],
+      "type": "object"
+    },
+    "DeviceInspect": {
+      "additionalProperties": false,
+      "properties": {
+        "userCode": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "userCode"
+      ],
+      "type": "object"
+    },
+    "DevicePoll": {
+      "additionalProperties": false,
+      "properties": {
+        "deviceCode": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deviceCode"
+      ],
+      "type": "object"
+    },
+    "Devices": {
+      "additionalProperties": false,
+      "properties": {
+        "devices": {
+          "items": {
+            "$ref": "#/$defs/Device"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "devices"
+      ],
+      "type": "object"
+    },
+    "Empty": {
+      "additionalProperties": false,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "Error": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "Event": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {},
+        "seq": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seq",
+        "data"
+      ],
+      "type": "object"
+    },
+    "Events": {
+      "additionalProperties": false,
+      "properties": {
+        "events": {
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "type": "array"
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "lastSeq": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "nextAfter": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "events",
+        "lastSeq",
+        "nextAfter",
+        "hasMore"
+      ],
+      "type": "object"
+    },
+    "EventsRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "after",
+        "limit"
+      ],
+      "type": "object"
+    },
+    "GetCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "GetSession": {
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "type": "object"
+    },
+    "Grant": {
+      "additionalProperties": false,
+      "properties": {
+        "accessToken": {
+          "type": "string"
+        },
+        "accountId": {
+          "type": "string"
+        },
+        "applicationId": {
+          "type": "string"
+        },
+        "deviceId": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "refreshToken": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accountId",
+        "tenantId",
+        "applicationId",
+        "deviceId",
+        "accessToken",
+        "refreshToken",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "Lease": {
+      "additionalProperties": false,
+      "properties": {
+        "deviceId": {
+          "type": "string"
+        },
+        "epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "deviceId",
+        "epoch",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "Member": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accountId",
+        "email",
+        "role"
+      ],
+      "type": "object"
+    },
+    "Members": {
+      "additionalProperties": false,
+      "properties": {
+        "members": {
+          "items": {
+            "$ref": "#/$defs/Member"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "members"
+      ],
+      "type": "object"
+    },
+    "Push": {
+      "additionalProperties": false,
+      "properties": {
+        "epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "events": {
+          "items": {},
+          "type": "array"
+        },
+        "expectedSeq": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "operationId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "visibility": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operationId",
+        "sessionId",
+        "expectedSeq",
+        "title",
+        "visibility",
+        "events"
+      ],
+      "type": "object"
+    },
+    "Refresh": {
+      "additionalProperties": false,
+      "properties": {
+        "refreshToken": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "refreshToken"
+      ],
+      "type": "object"
+    },
+    "RemoveMember": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenantId",
+        "accountId"
+      ],
+      "type": "object"
+    },
+    "RenewLease": {
+      "additionalProperties": false,
+      "properties": {
+        "epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "epoch"
+      ],
+      "type": "object"
+    },
+    "RequestEmail": {
+      "additionalProperties": false,
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "email",
+        "purpose"
+      ],
+      "type": "object"
+    },
+    "Revoke": {
+      "additionalProperties": false,
+      "properties": {
+        "deviceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deviceId"
+      ],
+      "type": "object"
+    },
+    "SendCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "sessionId",
+        "epoch",
+        "kind",
+        "payload"
+      ],
+      "type": "object"
+    },
+    "SetMemberRole": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenantId",
+        "accountId",
+        "role"
+      ],
+      "type": "object"
+    },
+    "Tenant": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "role"
+      ],
+      "type": "object"
+    },
+    "TenantRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenantId"
+      ],
+      "type": "object"
+    },
+    "Tenants": {
+      "additionalProperties": false,
+      "properties": {
+        "tenants": {
+          "items": {
+            "$ref": "#/$defs/Tenant"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tenants"
+      ],
+      "type": "object"
+    },
+    "UpdateSession": {
+      "additionalProperties": false,
+      "properties": {
+        "archived": {
+          "type": "boolean"
+        },
+        "expectedRevision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "metadata": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "operationId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operationId",
+        "sessionId",
+        "expectedRevision",
+        "title",
+        "tags",
+        "metadata",
+        "archived"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://harness-kit.dev/protocol/server-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-methods": {
+    "/v1/auth/confirm-email": {
+      "request": {
+        "$ref": "#/$defs/ConfirmEmail"
+      },
+      "response": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "/v1/auth/login": {
+      "request": {
+        "$ref": "#/$defs/Credentials"
+      },
+      "response": {
+        "$ref": "#/$defs/Account"
+      }
+    },
+    "/v1/auth/logout": {
+      "request": {
+        "$ref": "#/$defs/Empty"
+      },
+      "response": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "/v1/auth/register": {
+      "request": {
+        "$ref": "#/$defs/Credentials"
+      },
+      "response": {
+        "$ref": "#/$defs/Account"
+      }
+    },
+    "/v1/auth/request-email": {
+      "request": {
+        "$ref": "#/$defs/RequestEmail"
+      },
+      "response": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "/v1/devices/approve": {
+      "request": {
+        "$ref": "#/$defs/DeviceApprove"
+      },
+      "response": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "/v1/devices/begin": {
+      "request": {
+        "$ref": "#/$defs/DeviceBegin"
+      },
+      "response": {
+        "$ref": "#/$defs/DeviceAuthorization"
+      }
+    },
+    "/v1/devices/inspect": {
+      "request": {
+        "$ref": "#/$defs/DeviceInspect"
+      },
+      "response": {
+        "$ref": "#/$defs/DeviceInfo"
+      }
+    },
+    "/v1/devices/list": {
+      "request": {
+        "$ref": "#/$defs/Empty"
+      },
+      "response": {
+        "$ref": "#/$defs/Devices"
+      }
+    },
+    "/v1/devices/poll": {
+      "request": {
+        "$ref": "#/$defs/DevicePoll"
+      },
+      "response": {
+        "$ref": "#/$defs/Grant"
+      }
+    },
+    "/v1/devices/refresh": {
+      "request": {
+        "$ref": "#/$defs/Refresh"
+      },
+      "response": {
+        "$ref": "#/$defs/Grant"
+      }
+    },
+    "/v1/devices/revoke": {
+      "request": {
+        "$ref": "#/$defs/Revoke"
+      },
+      "response": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "/v1/execution/acquire": {
+      "request": {
+        "$ref": "#/$defs/AcquireLease"
+      },
+      "response": {
+        "$ref": "#/$defs/Lease"
+      }
+    },
+    "/v1/execution/claim": {
+      "request": {
+        "$ref": "#/$defs/ClaimCommand"
+      },
+      "response": {
+        "$ref": "#/$defs/Commands"
+      }
+    },
+    "/v1/execution/complete": {
+      "request": {
+        "$ref": "#/$defs/CompleteCommand"
+      },
+      "response": {
+        "$ref": "#/$defs/Command"
+      }
+    },
+    "/v1/execution/get": {
+      "request": {
+        "$ref": "#/$defs/GetCommand"
+      },
+      "response": {
+        "$ref": "#/$defs/Command"
+      }
+    },
+    "/v1/execution/release": {
+      "request": {
+        "$ref": "#/$defs/RenewLease"
+      },
+      "response": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "/v1/execution/renew": {
+      "request": {
+        "$ref": "#/$defs/RenewLease"
+      },
+      "response": {
+        "$ref": "#/$defs/Lease"
+      }
+    },
+    "/v1/execution/send": {
+      "request": {
+        "$ref": "#/$defs/SendCommand"
+      },
+      "response": {
+        "$ref": "#/$defs/Command"
+      }
+    },
+    "/v1/sync/changes": {
+      "request": {
+        "$ref": "#/$defs/ChangesRequest"
+      },
+      "response": {
+        "$ref": "#/$defs/Changes"
+      }
+    },
+    "/v1/sync/delete": {
+      "request": {
+        "$ref": "#/$defs/DeleteSession"
+      },
+      "response": {
+        "$ref": "#/$defs/Change"
+      }
+    },
+    "/v1/sync/events": {
+      "request": {
+        "$ref": "#/$defs/EventsRequest"
+      },
+      "response": {
+        "$ref": "#/$defs/Events"
+      }
+    },
+    "/v1/sync/get": {
+      "request": {
+        "$ref": "#/$defs/GetSession"
+      },
+      "response": {
+        "$ref": "#/$defs/Change"
+      }
+    },
+    "/v1/sync/push": {
+      "request": {
+        "$ref": "#/$defs/Push"
+      },
+      "response": {
+        "$ref": "#/$defs/Ack"
+      }
+    },
+    "/v1/sync/update": {
+      "request": {
+        "$ref": "#/$defs/UpdateSession"
+      },
+      "response": {
+        "$ref": "#/$defs/Change"
+      }
+    },
+    "/v1/tenants/add-member": {
+      "request": {
+        "$ref": "#/$defs/AddMember"
+      },
+      "response": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "/v1/tenants/create": {
+      "request": {
+        "$ref": "#/$defs/CreateTenant"
+      },
+      "response": {
+        "$ref": "#/$defs/Tenant"
+      }
+    },
+    "/v1/tenants/list": {
+      "request": {
+        "$ref": "#/$defs/Empty"
+      },
+      "response": {
+        "$ref": "#/$defs/Tenants"
+      }
+    },
+    "/v1/tenants/members": {
+      "request": {
+        "$ref": "#/$defs/TenantRequest"
+      },
+      "response": {
+        "$ref": "#/$defs/Members"
+      }
+    },
+    "/v1/tenants/remove-member": {
+      "request": {
+        "$ref": "#/$defs/RemoveMember"
+      },
+      "response": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "/v1/tenants/set-role": {
+      "request": {
+        "$ref": "#/$defs/SetMemberRole"
+      },
+      "response": {
+        "$ref": "#/$defs/Empty"
+      }
+    }
+  }
+}

@@ -350,6 +350,32 @@ func maxTime(a, b time.Time) time.Time {
 	return a
 }
 
+// DurableEventsPage reads only persisted events for replication. Unsupported
+// stores fail closed; callers must also reject truncated pages. This never
+// restores a runtime or substitutes unsaved events from the UI cache.
+func (m *Manager) DurableEventsPage(ctx context.Context, id string, after uint64, limit int) (EventPage, error) {
+	if err := ctx.Err(); err != nil {
+		return EventPage{}, err
+	}
+	store, ok := m.store.(DurableEventPageStore)
+	if !ok {
+		return EventPage{}, ErrDurableHistoryUnavailable
+	}
+	p := m.historyPolicy()
+	if limit <= 0 || limit > p.MaxPageEvents {
+		limit = p.MaxPageEvents
+	}
+	if ms, live := m.lookup(id); live {
+		ms.emitMu.Lock()
+		defer ms.emitMu.Unlock()
+		// A failed Sync may leave readable but uncommitted bytes on disk.
+		if ms.eventWriteFailed {
+			return EventPage{}, ErrDurableHistoryUnavailable
+		}
+	}
+	return store.DurableEventsPage(ctx, id, after, limit, p.MaxPageBytes)
+}
+
 // EventsPage reads a bounded transcript page. Transcript reads do not restore
 // runtimes. Count and encoded-byte limits apply to each response independently.
 func (m *Manager) EventsPage(ctx context.Context, id string, after uint64, limit int) (EventPage, error) {

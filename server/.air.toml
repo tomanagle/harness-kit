@@ -1,0 +1,8 @@
+root = "."
+tmp_dir = "bin"
+[build]
+cmd = "go build -o ./bin/harness-kit-server ./cmd"
+bin = "./bin/harness-kit-server"
+include_ext = ["go"]
+exclude_dir = ["bin", "dev"]
+stop_on_error = true

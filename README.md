@@ -43,15 +43,37 @@ reporting or resume behavior.
 
 There are two product components in this repository:
 
-| Component                                                  | Location                                              | Status                                     |
-| ---------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------ |
-| Kit for building harness applications                      | [`core/`](core/README.md) and [`packages/`](packages) | Implemented and usable independently       |
-| Deployable server for coordinating sessions across devices | [`server/`](server/README.md)                         | Planned placeholder; no implementation yet |
+| Component                                                  | Location                                              | Status                                                                        |
+| ---------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Kit for building harness applications                      | [`core/`](core/README.md) and [`packages/`](packages) | Implemented and usable independently                                          |
+| Deployable server for coordinating sessions across devices | [`server/`](server/README.md)                         | Stateless Go/Postgres accounts, tenant RBAC, sync, and execution coordination |
 
 The existing `harness-kit serve` command is a **local stdio sidecar**. Your app
 can ship with it and work without a Harness Kit server. Cross-device sharing,
-accounts and coordination belong to the future server and your product design.
+accounts and coordination use the optional [Go/Postgres server](server/README.md).
+The server is under active development; the SDK remains usable on its own.
 Runnable applications live in root [`examples/`](examples).
+
+The TypeScript client can manage durable cross-device transcript sync. Supply a
+`fileSyncStore` from the Node entry point and a secure credential store when
+creating the kit, then explicitly publish a session to a connected account/tenant:
+
+```ts
+const work = await kit.servers.connect("work", { accountId, tenantId });
+await work.sync.publish(session.id, { title: "Review the build", visibility: "private" });
+work.sync.onStatus((status) => updateConnectionIndicator(status));
+work.sync.start();
+
+// Change sync policy through the same settings interface, without restarting.
+await kit.settings.configure({ patch: { sync: { paused: true } } });
+```
+
+The kit handles durable pending uploads, retry IDs, replay checkpoints, bounded
+incoming disk pages, and status updates. Session destinations stay fixed across
+UI tenant switches. See the [server integration example](server/README.md#integrate-a-harness)
+for setup, revisioned metadata, remote commands, cache reads, and storage limits.
+The [k6 guide](server/load/README.md) provides a three-replica load fixture, and
+[operations](server/docs/operations.md) covers deployment, email, and recovery.
 
 ## Start with TypeScript
 
@@ -780,7 +802,7 @@ packages/client-ts/  @tomanagle/harness-kit
 packages/client-go/  Standalone Go sidecar client
 protocol/            Generated schema and generation guide
 examples/            CLI, model, Node, Electron, Wails and shared dashboard
-server/              Future cross-device coordination server
+server/              Go/Postgres cross-device coordination server
 ```
 
 See the [SDK guide](core/README.md), [package boundaries and layout rationale](core/docs/packages.md)

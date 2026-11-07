@@ -1576,6 +1576,7 @@
         "budget_exceeded",
         "duplicate_tool",
         "duplicate_turn",
+        "durable_history_unavailable",
         "event_too_large",
         "fork_source_changed",
         "git_conflict",
@@ -5650,6 +5651,41 @@
         "workspace"
       ]
     },
+    "ServerConnection": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "x-go-name": "Enabled",
+          "x-go-type": "bool",
+          "x-go-json-tag": "enabled"
+        },
+        "id": {
+          "type": "string",
+          "x-go-name": "ID",
+          "x-go-type": "string",
+          "x-go-json-tag": "id"
+        },
+        "name": {
+          "type": "string",
+          "x-go-name": "Name",
+          "x-go-type": "string",
+          "x-go-json-tag": "name"
+        },
+        "url": {
+          "type": "string",
+          "x-go-name": "URL",
+          "x-go-type": "string",
+          "x-go-json-tag": "url"
+        }
+      },
+      "required": [
+        "enabled",
+        "id",
+        "name",
+        "url"
+      ]
+    },
     "ServerInfo": {
       "type": "object",
       "description": "ServerInfo identifies the server.",
@@ -5671,6 +5707,42 @@
         "name",
         "version"
       ]
+    },
+    "Servers": {
+      "type": "object",
+      "description": "Servers configures remote coordination services. It stores no credentials and\ndoes not opt local sessions into uploading. Hosts choose credential storage and\nexplicit account/tenant/application destinations through the remote client.",
+      "properties": {
+        "connections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ServerConnection",
+            "x-go-type": "ServerConnection"
+          },
+          "x-go-name": "Connections",
+          "x-go-type": "[]ServerConnection",
+          "x-go-json-tag": "connections"
+        }
+      },
+      "required": [
+        "connections"
+      ]
+    },
+    "ServersPatch": {
+      "type": "object",
+      "description": "Servers configures remote coordination services. It stores no credentials and\ndoes not opt local sessions into uploading. Hosts choose credential storage and\nexplicit account/tenant/application destinations through the remote client.",
+      "properties": {
+        "connections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ServerConnection",
+            "x-go-type": "ServerConnection"
+          },
+          "x-go-name": "Connections",
+          "x-go-type": "[]ServerConnection",
+          "x-go-json-tag": "connections"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
     },
     "SessionArchiveParams": {
       "type": "object",
@@ -6820,11 +6892,17 @@
         "process": {
           "$ref": "#/$defs/ProcessSettingsPatch"
         },
+        "servers": {
+          "$ref": "#/$defs/ServersPatch"
+        },
         "session": {
           "$ref": "#/$defs/SessionSettingsPatch"
         },
         "streams": {
           "$ref": "#/$defs/StreamSettingsPatch"
+        },
+        "sync": {
+          "$ref": "#/$defs/SyncSettingsPatch"
         },
         "workspace": {
           "$ref": "#/$defs/WorkspaceSettingsPatch"
@@ -6979,6 +7057,12 @@
           "x-go-type": "ProcessSettings",
           "x-go-json-tag": "process"
         },
+        "servers": {
+          "$ref": "#/$defs/Servers",
+          "x-go-name": "Servers",
+          "x-go-type": "Servers",
+          "x-go-json-tag": "servers"
+        },
         "session": {
           "$ref": "#/$defs/SessionSettings",
           "x-go-name": "Session",
@@ -6990,6 +7074,12 @@
           "x-go-name": "Streams",
           "x-go-type": "StreamSettings",
           "x-go-json-tag": "streams"
+        },
+        "sync": {
+          "$ref": "#/$defs/SyncSettings",
+          "x-go-name": "Sync",
+          "x-go-type": "SyncSettings",
+          "x-go-json-tag": "sync"
         },
         "workspace": {
           "$ref": "#/$defs/WorkspaceSettings",
@@ -7008,8 +7098,10 @@
         "logging",
         "memory",
         "process",
+        "servers",
         "session",
         "streams",
+        "sync",
         "workspace"
       ]
     },
@@ -7173,6 +7265,73 @@
         "id",
         "status"
       ]
+    },
+    "SyncSettings": {
+      "type": "object",
+      "description": "SyncSettings applies on the next worker cycle, without restarting the sidecar.\nRegistering a connection never opts sessions into publication.",
+      "properties": {
+        "batchEvents": {
+          "type": "integer",
+          "x-go-name": "BatchEvents",
+          "x-go-type": "int",
+          "x-go-json-tag": "batchEvents"
+        },
+        "paused": {
+          "type": "boolean",
+          "x-go-name": "Paused",
+          "x-go-type": "bool",
+          "x-go-json-tag": "paused"
+        },
+        "pollIntervalMs": {
+          "type": "integer",
+          "x-go-name": "PollIntervalMs",
+          "x-go-type": "int",
+          "x-go-json-tag": "pollIntervalMs"
+        },
+        "workPerCycle": {
+          "type": "integer",
+          "x-go-name": "WorkPerCycle",
+          "x-go-type": "int",
+          "x-go-json-tag": "workPerCycle"
+        }
+      },
+      "required": [
+        "batchEvents",
+        "paused",
+        "pollIntervalMs",
+        "workPerCycle"
+      ]
+    },
+    "SyncSettingsPatch": {
+      "type": "object",
+      "description": "SyncSettings applies on the next worker cycle, without restarting the sidecar.\nRegistering a connection never opts sessions into publication.",
+      "properties": {
+        "batchEvents": {
+          "type": "integer",
+          "x-go-name": "BatchEvents",
+          "x-go-type": "int",
+          "x-go-json-tag": "batchEvents"
+        },
+        "paused": {
+          "type": "boolean",
+          "x-go-name": "Paused",
+          "x-go-type": "bool",
+          "x-go-json-tag": "paused"
+        },
+        "pollIntervalMs": {
+          "type": "integer",
+          "x-go-name": "PollIntervalMs",
+          "x-go-type": "int",
+          "x-go-json-tag": "pollIntervalMs"
+        },
+        "workPerCycle": {
+          "type": "integer",
+          "x-go-name": "WorkPerCycle",
+          "x-go-type": "int",
+          "x-go-json-tag": "workPerCycle"
+        }
+      },
+      "x-go-type": "map[string]json.RawMessage"
     },
     "ToolCallParams": {
       "type": "object",
@@ -8155,6 +8314,7 @@
   "x-constants": {
     "CodeApprovalNotFound": -32007,
     "CodeBudgetExceeded": -32019,
+    "CodeDurableHistoryUnavailable": -32024,
     "CodeEventTooLarge": -32017,
     "CodeForkSourceChanged": -32018,
     "CodeGitConflict": -32021,
@@ -8214,6 +8374,7 @@
     "MethodSessionCreate": "session.create",
     "MethodSessionDelete": "session.delete",
     "MethodSessionDiff": "session.diff",
+    "MethodSessionDurableEventsPage": "session.durableEventsPage",
     "MethodSessionEvents": "session.events",
     "MethodSessionEventsPage": "session.eventsPage",
     "MethodSessionEvict": "session.evict",
@@ -8242,6 +8403,7 @@
     "ReasonBudgetExceeded": "budget_exceeded",
     "ReasonDuplicateTool": "duplicate_tool",
     "ReasonDuplicateTurn": "duplicate_turn",
+    "ReasonDurableHistoryUnavailable": "durable_history_unavailable",
     "ReasonEventTooLarge": "event_too_large",
     "ReasonForkSourceChanged": "fork_source_changed",
     "ReasonGitConflict": "git_conflict",
@@ -8614,6 +8776,17 @@
       "result": {
         "$ref": "#/$defs/WorkspaceDiff",
         "x-go-type": "WorkspaceDiff"
+      }
+    },
+    "session.durableEventsPage": {
+      "x-go-name": "SessionDurableEventsPage",
+      "params": {
+        "$ref": "#/$defs/SessionEventsParams",
+        "x-go-type": "SessionEventsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EventPage",
+        "x-go-type": "EventPage"
       }
     },
     "session.events": {

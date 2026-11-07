@@ -1,0 +1,242 @@
+// Package wire defines the versioned HTTP contract. contractgen produces the
+// JSON Schema, TypeScript types/methods, and Go client from these definitions.
+package wire
+
+import "encoding/json"
+
+type Empty struct{}
+type Error struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+type Credentials struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+type Account struct {
+	AccountID   string `json:"accountId"`
+	AccessToken string `json:"accessToken"`
+	ExpiresAt   string `json:"expiresAt"`
+}
+type Tenant struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Role string `json:"role"`
+}
+type Tenants struct {
+	Tenants []Tenant `json:"tenants"`
+}
+type CreateTenant struct {
+	Name string `json:"name"`
+}
+type AddMember struct {
+	TenantID string `json:"tenantId"`
+	Email    string `json:"email"`
+	Role     string `json:"role"`
+}
+type DeviceBegin struct {
+	ApplicationID string `json:"applicationId"`
+	Name          string `json:"name"`
+}
+type DeviceAuthorization struct {
+	DeviceCode      string `json:"deviceCode"`
+	UserCode        string `json:"userCode"`
+	VerificationURI string `json:"verificationUri"`
+	ExpiresIn       int    `json:"expiresIn"`
+	Interval        int    `json:"interval"`
+}
+type DeviceApprove struct {
+	UserCode string `json:"userCode"`
+	TenantID string `json:"tenantId"`
+}
+type DevicePoll struct {
+	DeviceCode string `json:"deviceCode"`
+}
+type Refresh struct {
+	RefreshToken string `json:"refreshToken"`
+}
+type Grant struct {
+	AccountID     string `json:"accountId"`
+	TenantID      string `json:"tenantId"`
+	ApplicationID string `json:"applicationId"`
+	DeviceID      string `json:"deviceId"`
+	AccessToken   string `json:"accessToken"`
+	RefreshToken  string `json:"refreshToken"`
+	ExpiresAt     string `json:"expiresAt"`
+}
+type Revoke struct {
+	DeviceID string `json:"deviceId"`
+}
+type Event struct {
+	Seq  int64           `json:"seq"`
+	Data json.RawMessage `json:"data"`
+}
+type Push struct {
+	Epoch       int64             `json:"epoch,omitempty"`
+	OperationID string            `json:"operationId"`
+	SessionID   string            `json:"sessionId"`
+	ExpectedSeq int64             `json:"expectedSeq"`
+	Title       string            `json:"title"`
+	Visibility  string            `json:"visibility"`
+	Events      []json.RawMessage `json:"events"`
+}
+type Ack struct {
+	SessionID string `json:"sessionId"`
+	LastSeq   int64  `json:"lastSeq"`
+	Cursor    int64  `json:"cursor"`
+}
+type ChangesRequest struct {
+	After  int64 `json:"after"`
+	Limit  int   `json:"limit"`
+	WaitMs int   `json:"waitMs"`
+}
+type Change struct {
+	WriterID    string                     `json:"writerId"`
+	WriterEpoch int64                      `json:"writerEpoch"`
+	Revision    int64                      `json:"revision"`
+	Tags        []string                   `json:"tags"`
+	Metadata    map[string]json.RawMessage `json:"metadata"`
+	Archived    bool                       `json:"archived"`
+	Deleted     bool                       `json:"deleted"`
+	Cursor      int64                      `json:"cursor"`
+	SessionID   string                     `json:"sessionId"`
+	LastSeq     int64                      `json:"lastSeq"`
+	Title       string                     `json:"title"`
+	Visibility  string                     `json:"visibility"`
+	OwnerID     string                     `json:"ownerId"`
+}
+type Changes struct {
+	Changes []Change `json:"changes"`
+	Cursor  int64    `json:"cursor"`
+}
+type EventsRequest struct {
+	SessionID string `json:"sessionId"`
+	After     int64  `json:"after"`
+	Limit     int    `json:"limit"`
+}
+type Events struct {
+	Events    []Event `json:"events"`
+	LastSeq   int64   `json:"lastSeq"`
+	NextAfter int64   `json:"nextAfter"`
+	HasMore   bool    `json:"hasMore"`
+}
+
+type DeviceInspect struct {
+	UserCode string `json:"userCode"`
+}
+type DeviceInfo struct {
+	ApplicationID string `json:"applicationId"`
+	Name          string `json:"name"`
+}
+
+type RemoveMember struct {
+	TenantID  string `json:"tenantId"`
+	AccountID string `json:"accountId"`
+}
+
+// UpdateSession replaces mutable metadata using optimistic concurrency. Titles,
+// tags and application data are independent of event sequence and execution.
+type UpdateSession struct {
+	OperationID      string                     `json:"operationId"`
+	SessionID        string                     `json:"sessionId"`
+	ExpectedRevision int64                      `json:"expectedRevision"`
+	Title            string                     `json:"title"`
+	Tags             []string                   `json:"tags"`
+	Metadata         map[string]json.RawMessage `json:"metadata"`
+	Archived         bool                       `json:"archived"`
+}
+type DeleteSession struct {
+	OperationID      string `json:"operationId"`
+	SessionID        string `json:"sessionId"`
+	ExpectedRevision int64  `json:"expectedRevision"`
+}
+
+// Lease acquisition is explicit and fenced by epoch. It does not migrate a CLI's
+// local native state or prove that an expired device stopped a running tool.
+type AcquireLease struct {
+	SessionID     string `json:"sessionId"`
+	ExpectedEpoch int64  `json:"expectedEpoch"`
+}
+type Lease struct {
+	SessionID string `json:"sessionId"`
+	DeviceID  string `json:"deviceId"`
+	Epoch     int64  `json:"epoch"`
+	ExpiresAt string `json:"expiresAt"`
+}
+type RenewLease struct {
+	SessionID string `json:"sessionId"`
+	Epoch     int64  `json:"epoch"`
+}
+type SendCommand struct {
+	ID        string                     `json:"id"`
+	SessionID string                     `json:"sessionId"`
+	Epoch     int64                      `json:"epoch"`
+	Kind      string                     `json:"kind"`
+	Payload   map[string]json.RawMessage `json:"payload"`
+}
+type Command struct {
+	ID        string                     `json:"id"`
+	SessionID string                     `json:"sessionId"`
+	Epoch     int64                      `json:"epoch"`
+	Kind      string                     `json:"kind"`
+	Payload   map[string]json.RawMessage `json:"payload"`
+	Status    string                     `json:"status"`
+	Result    map[string]json.RawMessage `json:"result"`
+}
+type ClaimCommand struct {
+	SessionID string `json:"sessionId"`
+	Epoch     int64  `json:"epoch"`
+}
+type Commands struct {
+	Commands []Command `json:"commands"`
+}
+type CompleteCommand struct {
+	ID        string                     `json:"id"`
+	SessionID string                     `json:"sessionId"`
+	Epoch     int64                      `json:"epoch"`
+	Status    string                     `json:"status"`
+	Result    map[string]json.RawMessage `json:"result"`
+}
+type GetCommand struct {
+	ID string `json:"id"`
+}
+
+type TenantRequest struct {
+	TenantID string `json:"tenantId"`
+}
+type Member struct {
+	AccountID string `json:"accountId"`
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+}
+type Members struct {
+	Members []Member `json:"members"`
+}
+type SetMemberRole struct {
+	TenantID  string `json:"tenantId"`
+	AccountID string `json:"accountId"`
+	Role      string `json:"role"`
+}
+type Device struct {
+	ID            string `json:"id"`
+	TenantID      string `json:"tenantId"`
+	ApplicationID string `json:"applicationId"`
+	Name          string `json:"name"`
+	Revoked       bool   `json:"revoked"`
+}
+type Devices struct {
+	Devices []Device `json:"devices"`
+}
+
+type GetSession struct {
+	SessionID string `json:"sessionId"`
+}
+
+type RequestEmail struct {
+	Email   string `json:"email"`
+	Purpose string `json:"purpose"`
+}
+type ConfirmEmail struct {
+	Token    string `json:"token"`
+	Password string `json:"password"`
+}

@@ -16,6 +16,10 @@
     "./conversation": {
       "types": "./dist/conversation.d.ts",
       "default": "./dist/conversation.js"
+    },
+    "./remote": {
+      "types": "./dist/remote.d.ts",
+      "default": "./dist/remote.js"
     }
   },
   "files": [
